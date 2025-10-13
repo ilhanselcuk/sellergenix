@@ -15,6 +15,9 @@ import {
   Lock,
   CheckCircle,
 } from 'lucide-react'
+import DashboardMockup from '../../../components/landing/DashboardMockup'
+import PPCVisualization from '../../../components/landing/PPCVisualization'
+import ProfitVisualization from '../../../components/landing/ProfitVisualization'
 
 export default function FeaturesPage() {
   const mainFeatures = [
@@ -200,39 +203,183 @@ export default function FeaturesPage() {
       {/* Main Features */}
       <section className="py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="space-y-16">
-            {mainFeatures.map((feature, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.6, delay: index * 0.1 }}
-                className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 lg:p-12"
-              >
-                <div className="flex flex-col lg:flex-row gap-8 items-start">
-                  <div className="flex-shrink-0">
-                    <div
-                      className={`w-16 h-16 bg-gradient-to-br ${feature.color} rounded-xl flex items-center justify-center text-white shadow-lg`}
-                    >
-                      {feature.icon}
-                    </div>
+          <div className="space-y-24">
+            {/* Feature 1: Real-time Analytics */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="grid lg:grid-cols-2 gap-12 items-center"
+            >
+              <div>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-16 h-16 bg-gradient-to-br from-primary-500 to-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                    <BarChart3 className="w-8 h-8" />
                   </div>
-                  <div className="flex-1">
-                    <h3 className="text-3xl font-bold text-white mb-4">{feature.title}</h3>
-                    <p className="text-lg text-white/70 mb-6">{feature.description}</p>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {feature.details.map((detail, idx) => (
-                        <div key={idx} className="flex items-start gap-3">
-                          <CheckCircle className="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5" />
-                          <span className="text-white/80 text-sm">{detail}</span>
+                  <h3 className="text-4xl font-bold text-white">Real-time Analytics Dashboard</h3>
+                </div>
+                <p className="text-lg text-white/70 mb-6">
+                  Get instant insights into your Amazon business performance with our comprehensive analytics dashboard.
+                </p>
+                <div className="grid gap-3">
+                  {mainFeatures[0].details.map((detail, idx) => (
+                    <div key={idx} className="flex items-start gap-3">
+                      <CheckCircle className="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5" />
+                      <span className="text-white/80 text-sm">{detail}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-primary-500/20 to-blue-600/20 rounded-2xl blur-3xl"></div>
+                <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+                  <DashboardMockup />
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Feature 2: PPC Optimization */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="grid lg:grid-cols-2 gap-12 items-center"
+            >
+              <div className="order-2 lg:order-1 relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-success-500/20 to-green-600/20 rounded-2xl blur-3xl"></div>
+                <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+                  <PPCVisualization />
+                </div>
+              </div>
+              <div className="order-1 lg:order-2">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-16 h-16 bg-gradient-to-br from-success-500 to-green-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                    <Target className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-4xl font-bold text-white">PPC Campaign Optimization</h3>
+                </div>
+                <p className="text-lg text-white/70 mb-6">
+                  Automate and optimize your Amazon advertising campaigns for maximum ROI and reduced ACOS.
+                </p>
+                <div className="grid gap-3">
+                  {mainFeatures[1].details.map((detail, idx) => (
+                    <div key={idx} className="flex items-start gap-3">
+                      <CheckCircle className="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5" />
+                      <span className="text-white/80 text-sm">{detail}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Feature 3: Profit Tracking */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="grid lg:grid-cols-2 gap-12 items-center"
+            >
+              <div>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-16 h-16 bg-gradient-to-br from-warning-500 to-amber-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                    <DollarSign className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-4xl font-bold text-white">Profit Tracking & Analysis</h3>
+                </div>
+                <p className="text-lg text-white/70 mb-6">
+                  Understand your true profitability with accurate cost tracking and margin analysis.
+                </p>
+                <div className="grid gap-3">
+                  {mainFeatures[2].details.map((detail, idx) => (
+                    <div key={idx} className="flex items-start gap-3">
+                      <CheckCircle className="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5" />
+                      <span className="text-white/80 text-sm">{detail}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-warning-500/20 to-amber-600/20 rounded-2xl blur-3xl"></div>
+                <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+                  <ProfitVisualization />
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Feature 4: WhatsApp Alerts */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="grid lg:grid-cols-2 gap-12 items-center"
+            >
+              <div className="order-2 lg:order-1 relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-danger-500/20 to-red-600/20 rounded-2xl blur-3xl"></div>
+                <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+                  <div className="space-y-4">
+                    <div className="bg-gradient-to-r from-success-500/10 to-green-600/10 border border-success-500/20 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-success-500 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-white text-xl">📈</span>
                         </div>
-                      ))}
+                        <div>
+                          <p className="text-success-400 font-semibold text-sm">Sales Milestone</p>
+                          <p className="text-white/80 text-sm">Congratulations! You hit $10,000 in sales today!</p>
+                          <p className="text-white/40 text-xs mt-1">2 minutes ago</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-gradient-to-r from-warning-500/10 to-amber-600/10 border border-warning-500/20 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-warning-500 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-white text-xl">⚠️</span>
+                        </div>
+                        <div>
+                          <p className="text-warning-400 font-semibold text-sm">Low Stock Alert</p>
+                          <p className="text-white/80 text-sm">Product ASIN-XYZ123 has only 12 units left</p>
+                          <p className="text-white/40 text-xs mt-1">15 minutes ago</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-gradient-to-r from-primary-500/10 to-blue-600/10 border border-primary-500/20 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-primary-500 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-white text-xl">💰</span>
+                        </div>
+                        <div>
+                          <p className="text-primary-400 font-semibold text-sm">Daily Summary</p>
+                          <p className="text-white/80 text-sm">Revenue: $3,450 | Orders: 42 | ACOS: 18%</p>
+                          <p className="text-white/40 text-xs mt-1">1 hour ago</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </motion.div>
-            ))}
+              </div>
+              <div className="order-1 lg:order-2">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-16 h-16 bg-gradient-to-br from-danger-500 to-red-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                    <Bell className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-4xl font-bold text-white">Smart WhatsApp Alerts</h3>
+                </div>
+                <p className="text-lg text-white/70 mb-6">
+                  Stay informed with real-time notifications delivered directly to your WhatsApp.
+                </p>
+                <div className="grid gap-3">
+                  {mainFeatures[3].details.map((detail, idx) => (
+                    <div key={idx} className="flex items-start gap-3">
+                      <CheckCircle className="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5" />
+                      <span className="text-white/80 text-sm">{detail}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
           </div>
         </div>
       </section>
