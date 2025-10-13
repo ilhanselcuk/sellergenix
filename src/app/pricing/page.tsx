@@ -235,15 +235,15 @@ export default function PricingPage() {
               },
               {
                 question: 'Can I change plans later?',
-                answer: 'Yes! You can upgrade or downgrade your plan at any time. Changes take effect immediately, and we'll prorate the difference.',
+                answer: 'Yes! You can upgrade or downgrade your plan at any time. Changes take effect immediately, and we&apos;ll prorate the difference.',
               },
               {
                 question: 'What happens after the free trial?',
-                answer: 'After your 14-day free trial ends, you'll be automatically charged for your selected plan. You can cancel anytime during the trial period with no charges.',
+                answer: 'After your 14-day free trial ends, you&apos;ll be automatically charged for your selected plan. You can cancel anytime during the trial period with no charges.',
               },
               {
                 question: 'Do you offer refunds?',
-                answer: 'We offer a 30-day money-back guarantee. If you're not satisfied with SellerGenix, contact us within 30 days for a full refund.',
+                answer: 'We offer a 30-day money-back guarantee. If you&apos;re not satisfied with SellerGenix, contact us within 30 days for a full refund.',
               },
               {
                 question: 'Is there a setup fee?',
