@@ -100,9 +100,9 @@ export default function PricingPage() {
             <p className="text-xl text-white/60 max-w-2xl mx-auto mb-8">
               Start with a 14-day free trial. No credit card required. Cancel anytime.
             </p>
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-success-500/10 border border-success-500/20 rounded-full">
-              <span className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></span>
-              <span className="text-success-500 text-sm font-medium">All plans include 14-day free trial</span>
+            <div className="inline-flex items-center gap-2 px-6 py-3 bg-success-500/20 border-2 border-success-500/50 rounded-full shadow-lg shadow-success-500/20">
+              <span className="w-3 h-3 bg-success-500 rounded-full animate-pulse"></span>
+              <span className="text-success-400 text-base font-bold">All plans include 14-day free trial</span>
             </div>
           </motion.div>
         </div>
@@ -120,10 +120,10 @@ export default function PricingPage() {
                 transition={{ duration: 0.6, delay: index * 0.1 }}
                 className={`relative bg-gradient-to-b ${
                   plan.popular
-                    ? 'from-primary-500/10 to-black/50 border-2 border-primary-500/50'
+                    ? 'from-primary-500/20 via-primary-600/10 to-black/70 border-2 border-primary-500/60'
                     : 'from-white/5 to-black/50 border border-white/10'
                 } backdrop-blur-xl rounded-2xl p-8 ${
-                  plan.popular ? 'shadow-2xl shadow-primary-500/20' : ''
+                  plan.popular ? 'shadow-2xl shadow-primary-500/40 scale-105' : ''
                 }`}
               >
                 {plan.popular && (
@@ -156,15 +156,16 @@ export default function PricingPage() {
                   )}
                 </div>
 
-                <button
-                  className={`w-full py-3 px-6 rounded-lg font-semibold transition-all duration-200 mb-8 ${
+                <Link
+                  href="/contact"
+                  className={`w-full py-3 px-6 rounded-lg font-semibold transition-all duration-200 mb-8 block text-center ${
                     plan.popular
                       ? 'bg-gradient-to-r from-primary-500 to-success-500 hover:from-primary-600 hover:to-success-600 text-white shadow-lg hover:shadow-primary-500/50 hover:scale-105'
                       : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
                   }`}
                 >
                   {plan.cta}
-                </button>
+                </Link>
 
                 <div className="space-y-4">
                   {plan.features.map((feature, idx) => (
