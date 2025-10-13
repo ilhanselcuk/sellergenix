@@ -29,12 +29,12 @@ const Navigation = () => {
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center gap-10">
             {/* Logo */}
-            <div className="flex items-center gap-2">
+            <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
               <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-success-500 rounded-lg flex items-center justify-center shadow-lg">
                 <span className="text-white font-bold text-sm">S</span>
               </div>
               <span className="text-lg font-semibold text-white">SellerGenix</span>
-            </div>
+            </Link>
 
             {/* Nav Links */}
             <div className="hidden md:flex items-center gap-8">
