@@ -46,12 +46,12 @@ const Navigation = () => {
 
           {/* Right Nav */}
           <div className="flex items-center gap-4">
-            <button className="text-sm text-white hover:text-primary-300 transition font-medium">
-              Sign In
-            </button>
-            <button className="px-4 py-2 bg-gradient-to-r from-primary-600 to-success-600 hover:from-primary-500 hover:to-success-500 text-white text-sm font-semibold rounded-lg shadow-lg hover:scale-105 transition-all duration-200">
-              Book Demo
-            </button>
+            <Link href="/contact" className="text-sm text-white hover:text-primary-300 transition font-medium">
+              Contact Us
+            </Link>
+            <Link href="/contact" className="px-4 py-2 bg-gradient-to-r from-primary-600 to-success-600 hover:from-primary-500 hover:to-success-500 text-white text-sm font-semibold rounded-lg shadow-lg hover:scale-105 transition-all duration-200">
+              Get Started
+            </Link>
           </div>
         </div>
       </div>
