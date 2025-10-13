@@ -7,17 +7,12 @@ import {
   Target,
   DollarSign,
   Bell,
-  Zap,
-  Shield,
   Globe,
   TrendingUp,
   PieChart,
   MessageSquare,
   RefreshCw,
   Lock,
-  Smartphone,
-  Database,
-  Clock,
   CheckCircle,
 } from 'lucide-react'
 

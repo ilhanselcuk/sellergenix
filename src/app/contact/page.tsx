@@ -330,7 +330,7 @@ export default function ContactPage() {
                 Multi-marketplace support • Custom AI insights • White-label options
               </p>
               <p className="text-primary-400 font-medium">
-                Select "Enterprise Quote Request" in the form above to get started
+                Select &quot;Enterprise Quote Request&quot; in the form above to get started
               </p>
             </div>
           </div>
