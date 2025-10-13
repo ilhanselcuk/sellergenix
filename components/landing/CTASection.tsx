@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
+import Link from 'next/link'
 import ProfitVisualization from './ProfitVisualization'
 
 const CTASection = () => {
@@ -67,12 +68,12 @@ const CTASection = () => {
             className="flex flex-col items-center justify-center gap-4 mb-8"
           >
             <div className="flex items-center justify-center gap-4">
-              <button className="px-8 py-3 bg-gradient-to-r from-gray-600 to-gray-700 text-gray-300 font-semibold rounded-lg shadow-lg cursor-not-allowed opacity-60">
+              <Link href="/contact" className="px-8 py-3 bg-gradient-to-r from-primary-600 to-success-600 hover:from-primary-700 hover:to-success-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-primary-500/50 hover:scale-105 transition-all duration-200">
                 🚀 Start Enterprise Trial
-              </button>
-              <button className="px-8 py-3 bg-gradient-to-r from-gray-600 to-gray-700 text-gray-300 font-semibold rounded-lg shadow-lg cursor-not-allowed opacity-60">
+              </Link>
+              <Link href="/contact" className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg border border-white/20 hover:scale-105 transition-all duration-200">
                 📞 Book Demo Call
-              </button>
+              </Link>
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-400">
               <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
