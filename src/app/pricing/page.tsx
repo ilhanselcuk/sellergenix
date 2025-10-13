@@ -102,7 +102,7 @@ export default function PricingPage() {
             </p>
             <div className="inline-flex items-center gap-2 px-6 py-3 bg-success-500/20 border-2 border-success-500/50 rounded-full shadow-lg shadow-success-500/20">
               <span className="w-3 h-3 bg-success-500 rounded-full animate-pulse"></span>
-              <span className="text-success-400 text-base font-bold">All plans include 14-day free trial</span>
+              <span className="text-white text-base font-bold">All plans include 14-day free trial</span>
             </div>
           </motion.div>
         </div>
@@ -160,7 +160,7 @@ export default function PricingPage() {
                   href="/contact"
                   className={`w-full py-3 px-6 rounded-lg font-semibold transition-all duration-200 mb-8 block text-center ${
                     plan.popular
-                      ? 'bg-gradient-to-r from-primary-500 to-success-500 hover:from-primary-600 hover:to-success-600 text-white shadow-lg hover:shadow-primary-500/50 hover:scale-105'
+                      ? 'bg-gradient-to-r from-primary-600 to-success-600 hover:from-primary-700 hover:to-success-700 text-white shadow-xl hover:shadow-primary-500/60 hover:scale-105'
                       : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
                   }`}
                 >
