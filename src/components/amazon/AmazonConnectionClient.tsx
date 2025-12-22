@@ -311,23 +311,18 @@ export function AmazonConnectionClient({ userId }: AmazonConnectionClientProps) 
 
             {/* Connection Options */}
             <div className="space-y-4">
-              {/* OAuth Button (Disabled - Draft App) */}
-              <div className="relative">
-                <button
-                  disabled
-                  className="group px-8 py-4 bg-gradient-to-r from-[#6c757d] to-[#495057] text-white/60 rounded-2xl font-bold text-lg inline-flex items-center gap-3 w-full justify-center cursor-not-allowed"
-                >
-                  <Cloud className="w-6 h-6" />
-                  <span>OAuth Login</span>
-                  <ExternalLink className="w-5 h-5" />
-                </button>
-                <div className="absolute -top-2 -right-2 bg-gradient-to-r from-[#fbbc05] to-[#f29900] text-white px-3 py-1 rounded-full text-xs font-black shadow-lg">
-                  COMING SOON
-                </div>
-                <p className="text-xs text-[#6c757d] mt-2 text-center">
-                  OAuth flow requires published app (currently in draft mode)
-                </p>
-              </div>
+              {/* OAuth Button - Production Ready */}
+              <button
+                onClick={handleConnect}
+                className="group px-8 py-4 bg-gradient-to-r from-[#FF9900] to-[#FF6600] text-white rounded-2xl font-bold text-lg inline-flex items-center gap-3 w-full justify-center hover:shadow-2xl transition-all hover:scale-105"
+              >
+                <Cloud className="w-6 h-6" />
+                <span>Connect Amazon Account</span>
+                <ExternalLink className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </button>
+              <p className="text-xs text-[#6c757d] text-center">
+                Securely connect via Amazon Seller Central OAuth
+              </p>
 
               {/* Divider */}
               <div className="flex items-center gap-4">
