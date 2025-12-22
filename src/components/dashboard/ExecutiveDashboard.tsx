@@ -54,7 +54,7 @@ import {
 } from 'recharts'
 import { motion, AnimatePresence } from 'framer-motion'
 import { SearchHelp } from './SearchHelp'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 
 interface ExecutiveDashboardProps {
   profileName: string
@@ -569,7 +569,7 @@ export function ExecutiveDashboard({ profileName, email }: ExecutiveDashboardPro
 
   // Export Product Breakdown Function - will be called with filteredProducts
   // Now includes children/variants AND full breakdown data (Sales, Units, Ad Spend, Amazon Fees, etc.)
-  const exportProductBreakdown = (format: 'csv' | 'xlsx', products: any[]) => {
+  const exportProductBreakdown = async (format: 'csv' | 'xlsx', products: any[]) => {
     // Full headers with all breakdown data
     const headers = [
       'Type', 'Product', 'ASIN', 'SKU', 'Stock',
@@ -729,61 +729,36 @@ export function ExecutiveDashboard({ profileName, email }: ExecutiveDashboardPro
       link.click()
       URL.revokeObjectURL(url)
     } else {
-      // Use xlsx library for proper Excel file generation
-      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+      // Use exceljs library for proper Excel file generation
+      const workbook = new ExcelJS.Workbook()
+      workbook.creator = 'SellerGenix'
+      workbook.created = new Date()
 
-      // Set column widths for all columns
-      worksheet['!cols'] = [
-        { wch: 10 },  // Type
-        { wch: 30 },  // Product
-        { wch: 14 },  // ASIN
-        { wch: 16 },  // SKU
-        { wch: 7 },   // Stock
-        // Sales breakdown
-        { wch: 12 },  // Sales (Total)
-        { wch: 14 },  // Sales (Organic)
-        { wch: 18 },  // Sales (Sponsored Products)
-        { wch: 18 },  // Sales (Sponsored Display)
-        // Units breakdown
-        { wch: 12 },  // Units (Total)
-        { wch: 14 },  // Units (Organic)
-        { wch: 10 },  // Units (SP)
-        { wch: 10 },  // Units (SD)
-        // Orders
-        { wch: 8 },   // Orders
-        // Ad Spend breakdown
-        { wch: 14 },  // Ad Spend (Total)
-        { wch: 12 },  // Ad Spend (SP)
-        { wch: 12 },  // Ad Spend (SBV)
-        { wch: 12 },  // Ad Spend (SD)
-        { wch: 12 },  // Ad Spend (SB)
-        // Amazon Fees breakdown
-        { wch: 16 },  // Amazon Fees (Total)
-        { wch: 14 },  // FBA Fulfillment
-        { wch: 12 },  // Referral Fee
-        { wch: 12 },  // Storage Fee
-        // Refund Cost breakdown
-        { wch: 16 },  // Refund Cost (Total)
-        { wch: 14 },  // Refunded Amount
-        { wch: 16 },  // Refund Commission
-        // COGS
-        { wch: 10 },  // COGS
-        // Profit
-        { wch: 12 },  // Gross Profit
-        { wch: 16 },  // Indirect Expenses
-        { wch: 12 },  // Net Profit
-        { wch: 12 },  // Est. Payout
-        // Metrics
-        { wch: 10 },  // Margin %
-        { wch: 8 },   // ROI %
-        { wch: 10 },  // BSR
-      ]
+      const worksheet = workbook.addWorksheet('Product Breakdown')
 
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Product Breakdown')
+      // Set column widths
+      const colWidths = [10, 30, 14, 16, 7, 12, 14, 18, 18, 12, 14, 10, 10, 8, 14, 12, 12, 12, 12, 16, 14, 12, 12, 16, 14, 16, 10, 12, 16, 12, 12, 10, 8, 10]
+      worksheet.columns = headers.map((h, i) => ({ header: h, key: `col${i}`, width: colWidths[i] || 12 }))
+
+      // Add header row
+      worksheet.addRow(headers)
+
+      // Add data rows
+      rows.forEach(row => worksheet.addRow(row))
+
+      // Style header row
+      const headerRow = worksheet.getRow(1)
+      headerRow.font = { bold: true }
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } }
+      headerRow.eachCell(cell => { cell.font = { bold: true, color: { argb: 'FFFFFFFF' } } })
 
       // Generate and download the file
-      XLSX.writeFile(workbook, `product-breakdown-${dateStr}.xlsx`)
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `product-breakdown-${dateStr}.xlsx`
+      link.click()
     }
     setShowExportDropdown(false)
   }

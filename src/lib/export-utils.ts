@@ -3,7 +3,7 @@
  * Supports CSV, Excel, PNG, and PDF exports
  */
 
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import html2canvas from 'html2canvas'
@@ -70,7 +70,7 @@ export function exportToCSV(products: ProductData[], options: ExportOptions = {}
  * Export comprehensive data to Excel (.xlsx)
  * Includes: Metrics, Products, Chart Data
  */
-export function exportToExcel(
+export async function exportToExcel(
   metrics: MetricCard[],
   products: ProductData[],
   chartData: any[],
@@ -79,29 +79,27 @@ export function exportToExcel(
   const { filename = 'dashboard-export', dateRange = '', period = '30D' } = options
 
   // Create new workbook
-  const wb = XLSX.utils.book_new()
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'SellerGenix'
+  wb.created = new Date()
 
   // Sheet 1: Summary Metrics
-  const metricsData = [
-    ['SellerGenix Dashboard Export'],
-    [`Period: ${period}`, `Date Range: ${dateRange}`],
-    [],
-    ['Metric', 'Value', 'Change'],
-    ...metrics.map(m => [m.label, m.value, m.change || '-'])
-  ]
-  const ws1 = XLSX.utils.aoa_to_sheet(metricsData)
-
-  // Style summary sheet
-  ws1['!cols'] = [{ wch: 25 }, { wch: 20 }, { wch: 15 }]
-  XLSX.utils.book_append_sheet(wb, ws1, 'Summary')
+  const ws1 = wb.addWorksheet('Summary')
+  ws1.addRow(['SellerGenix Dashboard Export'])
+  ws1.addRow([`Period: ${period}`, `Date Range: ${dateRange}`])
+  ws1.addRow([])
+  ws1.addRow(['Metric', 'Value', 'Change'])
+  metrics.forEach(m => ws1.addRow([m.label, m.value, m.change || '-']))
+  ws1.columns = [{ width: 25 }, { width: 20 }, { width: 15 }]
 
   // Sheet 2: Products
-  const productsData = [
-    ['Product Performance Report'],
-    [`Generated: ${new Date().toLocaleString()}`],
-    [],
-    ['Product Name', 'ASIN', 'Sales', 'Units Sold', 'Gross Profit', 'Net Profit', 'Margin %', 'ROI %'],
-    ...products.map(p => [
+  const ws2 = wb.addWorksheet('Products')
+  ws2.addRow(['Product Performance Report'])
+  ws2.addRow([`Generated: ${new Date().toLocaleString()}`])
+  ws2.addRow([])
+  ws2.addRow(['Product Name', 'ASIN', 'Sales', 'Units Sold', 'Gross Profit', 'Net Profit', 'Margin %', 'ROI %'])
+  products.forEach(p => {
+    ws2.addRow([
       p.name || 'N/A',
       p.asin || 'N/A',
       p.sales || 0,
@@ -111,40 +109,33 @@ export function exportToExcel(
       p.margin || 0,
       p.roi || 0
     ])
+  })
+  ws2.columns = [
+    { width: 35 }, { width: 15 }, { width: 12 }, { width: 12 },
+    { width: 15 }, { width: 15 }, { width: 10 }, { width: 10 }
   ]
-  const ws2 = XLSX.utils.aoa_to_sheet(productsData)
-  ws2['!cols'] = [
-    { wch: 35 }, // Product Name
-    { wch: 15 }, // ASIN
-    { wch: 12 }, // Sales
-    { wch: 12 }, // Units
-    { wch: 15 }, // Gross Profit
-    { wch: 15 }, // Net Profit
-    { wch: 10 }, // Margin
-    { wch: 10 }  // ROI
-  ]
-  XLSX.utils.book_append_sheet(wb, ws2, 'Products')
 
   // Sheet 3: Chart Data (Daily/Weekly/Monthly breakdown)
   if (chartData && chartData.length > 0) {
+    const ws3 = wb.addWorksheet('Chart Data')
     const chartHeaders = ['Date', ...Object.keys(chartData[0]).filter(k => k !== 'date' && k !== 'dateString')]
-    const chartRows = chartData.map(row => {
+    ws3.addRow(['Chart Data'])
+    ws3.addRow([])
+    ws3.addRow(chartHeaders)
+    chartData.forEach(row => {
       const date = row.date || row.dateString
-      return [date, ...chartHeaders.slice(1).map(h => row[h] || 0)]
+      ws3.addRow([date, ...chartHeaders.slice(1).map(h => row[h] || 0)])
     })
-    const chartSheetData = [
-      ['Chart Data'],
-      [],
-      chartHeaders,
-      ...chartRows
-    ]
-    const ws3 = XLSX.utils.aoa_to_sheet(chartSheetData)
-    ws3['!cols'] = Array(chartHeaders.length).fill({ wch: 12 })
-    XLSX.utils.book_append_sheet(wb, ws3, 'Chart Data')
+    ws3.columns = Array(chartHeaders.length).fill({ width: 12 })
   }
 
   // Download
-  XLSX.writeFile(wb, `${filename}-${Date.now()}.xlsx`)
+  const buffer = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `${filename}-${Date.now()}.xlsx`
+  link.click()
 }
 
 /**

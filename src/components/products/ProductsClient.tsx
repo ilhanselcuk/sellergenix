@@ -54,7 +54,7 @@ import { SearchHelp } from '@/components/dashboard/SearchHelp'
 import { getUserProductsAction, calculateInventoryMetrics } from '@/app/actions/cogs-actions'
 import { getProductsCostsForExportAction } from '@/app/actions/product-costs-actions'
 import type { Product, InventoryMetrics } from '@/app/actions/cogs-actions'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 
 interface ProductsClientProps {
   userId: string
@@ -466,14 +466,21 @@ export function ProductsClient({ userId }: ProductsClientProps) {
       })
 
       // Create workbook with multiple sheets
-      const wb = XLSX.utils.book_new()
+      const wb = new ExcelJS.Workbook()
+      wb.creator = 'SellerGenix'
+      wb.created = new Date()
 
       // Main Products Sheet
-      const wsProducts = XLSX.utils.json_to_sheet(data)
-      XLSX.utils.book_append_sheet(wb, wsProducts, 'Products & Costs')
+      const wsProducts = wb.addWorksheet('Products & Costs')
+      if (data.length > 0) {
+        wsProducts.columns = Object.keys(data[0]).map(key => ({ header: key, key, width: 15 }))
+        data.forEach(row => wsProducts.addRow(row))
+      }
 
       // Summary Sheet
-      const summary = [
+      const wsSummary = wb.addWorksheet('Summary')
+      wsSummary.columns = [{ header: 'Metric', key: 'Metric', width: 25 }, { header: 'Value', key: 'Value', width: 25 }]
+      const summaryData = [
         { 'Metric': 'Total Products', 'Value': products.length },
         { 'Metric': 'Products with COGS', 'Value': stats.productsWithCOGS },
         { 'Metric': 'Products without COGS', 'Value': stats.productsWithoutCOGS },
@@ -484,10 +491,15 @@ export function ProductsClient({ userId }: ProductsClientProps) {
         { 'Metric': 'Low Stock Count', 'Value': stats.lowStockCount },
         { 'Metric': 'Export Date', 'Value': new Date().toISOString() },
       ]
-      const wsSummary = XLSX.utils.json_to_sheet(summary)
-      XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary')
+      summaryData.forEach(row => wsSummary.addRow(row))
 
-      XLSX.writeFile(wb, `SellerGenix-Products-Detailed-${new Date().toISOString().split('T')[0]}.xlsx`)
+      // Download
+      const buffer = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `SellerGenix-Products-Detailed-${new Date().toISOString().split('T')[0]}.xlsx`
+      link.click()
     } catch (error) {
       console.error('Export error:', error)
       alert('Failed to export. Please try again.')
