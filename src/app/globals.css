@@ -1,8 +1,49 @@
 @import "tailwindcss";
 
+/* ============================================
+   SELLERGENIX DESIGN SYSTEM - GLOBALS
+   Google Material Design Inspired
+   ============================================ */
+
 :root {
+  /* Primary Colors */
+  --color-primary: #4285f4;
+  --color-primary-dark: #3367d6;
+  --color-primary-light: #81a3f7;
+
+  /* Success Colors */
+  --color-success: #34a853;
+  --color-success-dark: #137333;
+  --color-success-light: #81c995;
+
+  /* Warning Colors */
+  --color-warning: #fbbc05;
+  --color-warning-dark: #f29900;
+  --color-warning-light: #fdd663;
+
+  /* Danger Colors */
+  --color-danger: #ea4335;
+  --color-danger-dark: #c5221f;
+  --color-danger-light: #f28b82;
+
+  /* Premium Colors */
+  --color-purple: #9333ea;
+  --color-purple-dark: #7e22ce;
+  --color-purple-light: #c084fc;
+
+  /* Neutral Colors */
+  --color-gray-50: #f8f9fa;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-600: #6c757d;
+  --color-gray-700: #4b5563;
+  --color-gray-800: #343a40;
+  --color-gray-900: #1f2937;
+
+  /* Background & Foreground */
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #343a40;
 }
 
 @theme inline {
@@ -12,15 +53,142 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================
+   CUSTOM ANIMATIONS
+   ============================================ */
+
+@keyframes blob {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-20px) rotate(5deg);
+  }
+}
+
+@keyframes shine {
+  from {
+    transform: translateX(-100%) skewX(-12deg);
+  }
+  to {
+    transform: translateX(300%) skewX(-12deg);
+  }
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+
+/* ============================================
+   BACKGROUND PATTERNS
+   ============================================ */
+
+.bg-grid-pattern {
+  background-image: radial-gradient(circle, #e5e7eb 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.bg-dot-pattern {
+  background-image: radial-gradient(circle at 30px 30px, rgba(66, 133, 244, 0.3) 2px, transparent 0);
+  background-size: 60px 60px;
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+.text-gradient-primary {
+  background: linear-gradient(to right, #4285f4, #34a853);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-premium {
+  background: linear-gradient(to right, #9333ea, #c026d3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.shadow-glow-primary {
+  box-shadow: 0 0 40px rgba(66, 133, 244, 0.3);
+}
+
+.shadow-glow-success {
+  box-shadow: 0 0 40px rgba(52, 168, 83, 0.3);
+}
+
+.shadow-glow-premium {
+  box-shadow: 0 0 40px rgba(147, 51, 234, 0.3);
+}
+
+/* ============================================
+   SCROLLBAR STYLING
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4285f4;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3367d6;
+}
+
+/* ============================================
+   SELECTION STYLING
+   ============================================ */
+
+::selection {
+  background-color: #4285f4;
+  color: white;
+}
+
+::-moz-selection {
+  background-color: #4285f4;
+  color: white;
 }

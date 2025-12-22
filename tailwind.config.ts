@@ -42,6 +42,19 @@ const config: Config = {
           700: '#b91c1c',
           900: '#7f1d1d',
         },
+        // NEW: Premium Purple Palette 💜
+        purple: {
+          50: '#faf5ff',
+          100: '#f3e8ff',
+          200: '#e9d5ff',
+          300: '#d8b4fe',
+          400: '#c084fc',
+          500: '#a855f7', // Primary Purple
+          600: '#9333ea', // Deep Purple
+          700: '#7e22ce',
+          800: '#6b21a8',
+          900: '#581c87',
+        },
         dark: {
           50: '#f8fafc',
           100: '#f1f5f9',
@@ -52,6 +65,7 @@ const config: Config = {
         glass: {
           light: 'rgba(255, 255, 255, 0.1)',
           dark: 'rgba(10, 15, 28, 0.1)',
+          purple: 'rgba(168, 85, 247, 0.1)', // Purple glass
         },
         background: "var(--background)",
         foreground: "var(--foreground)",
