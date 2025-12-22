@@ -6,7 +6,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getUserProfile } from '@/lib/supabase/queries'
+import { getUserProfile, getActiveAmazonConnection } from '@/lib/supabase/queries'
 import { ExecutiveDashboard } from '@/components/dashboard/ExecutiveDashboard'
 
 export default async function DashboardPage() {
@@ -21,8 +21,10 @@ export default async function DashboardPage() {
     redirect('/auth/login')
   }
 
-  // Get user profile
+  // Get user profile and Amazon connection
   const profile = await getUserProfile(user.id)
+  const amazonConnection = await getActiveAmazonConnection(user.id)
+  const hasAmazonConnection = !!amazonConnection
 
   return (
     <div className="min-h-screen bg-slate-900">
@@ -51,24 +53,19 @@ export default async function DashboardPage() {
                 >
                   Products
                 </Link>
-                <Link
-                  href="/dashboard/ppc"
-                  className="px-4 py-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg font-semibold transition-all"
-                >
-                  PPC
-                </Link>
-                <Link
-                  href="/dashboard/inventory"
-                  className="px-4 py-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg font-semibold transition-all"
-                >
-                  Inventory
-                </Link>
-                <Link
-                  href="/dashboard/amazon"
-                  className="px-4 py-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg font-semibold transition-all"
-                >
-                  Amazon
-                </Link>
+                <div className="relative group">
+                  <span
+                    className="px-4 py-2 text-slate-500 rounded-lg font-semibold cursor-not-allowed flex items-center gap-2"
+                  >
+                    PPC
+                    <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded-full font-bold">
+                      Soon
+                    </span>
+                  </span>
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                    Coming Soon
+                  </div>
+                </div>
               </nav>
             </div>
 
@@ -100,6 +97,7 @@ export default async function DashboardPage() {
       <ExecutiveDashboard
         profileName={profile?.full_name || 'User'}
         email={user.email || ''}
+        hasAmazonConnection={hasAmazonConnection}
       />
 
       {/* Footer - Dark Theme */}

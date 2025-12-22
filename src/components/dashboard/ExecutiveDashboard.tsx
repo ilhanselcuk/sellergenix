@@ -7,12 +7,14 @@
  */
 
 import React, { useState, useMemo } from 'react'
+import Link from 'next/link'
 import {
   TrendingUp,
   TrendingDown,
   DollarSign,
   Package,
   ShoppingCart,
+  Link as LinkIcon,
   BarChart3,
   ArrowUpRight,
   ArrowDownRight,
@@ -59,6 +61,7 @@ import ExcelJS from 'exceljs'
 interface ExecutiveDashboardProps {
   profileName: string
   email: string
+  hasAmazonConnection?: boolean
 }
 
 // Color palette - Dark Executive Theme
@@ -531,7 +534,7 @@ const PERIOD_OPTIONS = [
   { id: 'custom', label: 'Custom Range', periods: ['custom'] },
 ]
 
-export function ExecutiveDashboard({ profileName, email }: ExecutiveDashboardProps) {
+export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = false }: ExecutiveDashboardProps) {
   const [selectedPeriod, setSelectedPeriod] = useState<string>('today-yesterday')
   const [refreshing, setRefreshing] = useState(false)
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null)
@@ -541,6 +544,9 @@ export function ExecutiveDashboard({ profileName, email }: ExecutiveDashboardPro
   const [showPeriodDropdown, setShowPeriodDropdown] = useState(false)
   const [detailProduct, setDetailProduct] = useState<any | null>(null) // Product detail panel
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['sales', 'units'])) // Default expanded sections
+
+  // Amazon Connection Popup - show if user hasn't connected Amazon yet
+  const [showAmazonPopup, setShowAmazonPopup] = useState(!hasAmazonConnection)
   // Custom date range
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
@@ -5570,6 +5576,99 @@ export function ExecutiveDashboard({ profileName, email }: ExecutiveDashboardPro
                       </div>
                     ))}
                   </div>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Amazon Connection Popup - Show for new users */}
+      <AnimatePresence>
+        {showAmazonPopup && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100]"
+            />
+
+            {/* Popup Modal */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="fixed inset-0 z-[101] flex items-center justify-center p-4"
+            >
+              <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700 rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden">
+                {/* Header with gradient */}
+                <div className="bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-500 p-1">
+                  <div className="bg-slate-900 rounded-t-2xl p-8 text-center">
+                    {/* Amazon Logo Icon */}
+                    <div className="w-20 h-20 bg-gradient-to-br from-orange-500 to-yellow-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/30">
+                      <svg viewBox="0 0 24 24" className="w-12 h-12 text-slate-900" fill="currentColor">
+                        <path d="M13.958 10.09c0 1.232.029 2.256-.591 3.351-.502.891-1.301 1.438-2.186 1.438-1.214 0-1.922-.924-1.922-2.292 0-2.692 2.415-3.182 4.7-3.182v.685zm3.186 7.705c-.209.189-.512.201-.745.074-1.052-.872-1.238-1.276-1.814-2.106-1.734 1.767-2.962 2.297-5.209 2.297-2.66 0-4.731-1.641-4.731-4.925 0-2.565 1.391-4.309 3.37-5.164 1.715-.754 4.11-.891 5.942-1.095v-.41c0-.753.058-1.642-.385-2.294-.385-.579-1.124-.82-1.775-.82-1.205 0-2.277.618-2.54 1.897-.054.285-.261.566-.549.58l-3.061-.333c-.259-.056-.548-.266-.473-.66C6.078 1.553 8.82 0 11.411 0c1.324 0 3.052.352 4.096 1.355 1.324 1.234 1.2 2.881 1.2 4.676v4.237c0 1.271.527 1.829 1.02 2.516.175.246.213.541-.008.725-.553.461-1.534 1.32-2.075 1.8l-.001-.514zM21.83 18.848C19.755 20.598 16.612 21.5 13.908 21.5c-3.773 0-7.174-1.396-9.742-3.716-.202-.183-.022-.432.221-.291 2.774 1.614 6.204 2.585 9.746 2.585 2.39 0 5.017-.495 7.434-1.518.365-.155.671.24.263.288z"/>
+                      </svg>
+                    </div>
+
+                    <h2 className="text-2xl font-black text-white mb-3">
+                      Connect Your Amazon Account
+                    </h2>
+                    <p className="text-slate-400 text-sm leading-relaxed">
+                      To view your real sales data, profits, and analytics, please connect your Amazon Seller Central account.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="p-8">
+                  {/* Features */}
+                  <div className="space-y-4 mb-8">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                        <Check className="w-5 h-5 text-green-400" />
+                      </div>
+                      <div>
+                        <p className="text-white font-semibold text-sm">Real-Time Sales Data</p>
+                        <p className="text-slate-500 text-xs">Sync your orders, revenue, and profits automatically</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+                        <Check className="w-5 h-5 text-blue-400" />
+                      </div>
+                      <div>
+                        <p className="text-white font-semibold text-sm">Product Performance</p>
+                        <p className="text-slate-500 text-xs">Track each product's profitability and trends</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+                        <Check className="w-5 h-5 text-purple-400" />
+                      </div>
+                      <div>
+                        <p className="text-white font-semibold text-sm">AI-Powered Insights</p>
+                        <p className="text-slate-500 text-xs">Get smart recommendations to grow your business</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CTA Button */}
+                  <Link
+                    href="/dashboard/amazon"
+                    className="w-full flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-orange-500 via-orange-600 to-yellow-500 hover:from-orange-600 hover:via-orange-700 hover:to-yellow-600 text-white font-bold rounded-xl shadow-lg shadow-orange-500/30 hover:shadow-orange-500/50 transition-all duration-300 hover:scale-[1.02]"
+                  >
+                    <LinkIcon className="w-5 h-5" />
+                    Connect Amazon Account
+                  </Link>
+
+                  {/* Security Note */}
+                  <p className="text-center text-slate-500 text-xs mt-4">
+                    Secure OAuth connection • Read-only access • Disconnect anytime
+                  </p>
                 </div>
               </div>
             </motion.div>
