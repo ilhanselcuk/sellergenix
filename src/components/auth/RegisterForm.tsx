@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Register Form Component
+ * Register Form Component - Premium Dark Theme
  *
  * Handles user registration with Supabase Auth
  */
@@ -9,6 +9,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { Eye, EyeOff, Mail, Lock, User, Building, Loader2, Check } from 'lucide-react'
 
 export function RegisterForm() {
   const router = useRouter()
@@ -83,74 +84,99 @@ export function RegisterForm() {
     }
   }
 
+  // Password strength indicators
+  const passwordLength = formData.password.length >= 8
+  const passwordMatch = formData.password === formData.confirmPassword && formData.confirmPassword.length > 0
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Error message */}
       {error && (
-        <div className="p-4 rounded-xl bg-[#ea4335]/10 border border-[#ea4335]/30 text-[#ea4335] text-sm font-medium">
-          {error}
+        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-medium flex items-start gap-3">
+          <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <span className="text-red-400 text-xs">!</span>
+          </div>
+          <span>{error}</span>
         </div>
       )}
 
       {/* Full Name */}
       <div>
-        <label htmlFor="fullName" className="block text-sm font-semibold text-[#343a40] mb-2">
+        <label htmlFor="fullName" className="block text-sm font-semibold text-gray-300 mb-2">
           Full name
         </label>
-        <input
-          id="fullName"
-          name="fullName"
-          type="text"
-          required
-          value={formData.fullName}
-          onChange={handleChange}
-          className="w-full px-4 py-3 bg-white border-2 border-[#e5e7eb] rounded-xl text-[#343a40] placeholder-[#6c757d] focus:outline-none focus:ring-2 focus:ring-[#34a853] focus:border-[#34a853] transition-all"
-          placeholder="John Doe"
-          disabled={loading}
-        />
+        <div className="relative">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+            <User className="w-5 h-5" />
+          </div>
+          <input
+            id="fullName"
+            name="fullName"
+            type="text"
+            required
+            value={formData.fullName}
+            onChange={handleChange}
+            className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853]/50 transition-all hover:border-white/20"
+            placeholder="John Doe"
+            disabled={loading}
+          />
+        </div>
       </div>
 
       {/* Email */}
       <div>
-        <label htmlFor="email" className="block text-sm font-semibold text-[#343a40] mb-2">
+        <label htmlFor="email" className="block text-sm font-semibold text-gray-300 mb-2">
           Email address
         </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          required
-          value={formData.email}
-          onChange={handleChange}
-          className="w-full px-4 py-3 bg-white border-2 border-[#e5e7eb] rounded-xl text-[#343a40] placeholder-[#6c757d] focus:outline-none focus:ring-2 focus:ring-[#34a853] focus:border-[#34a853] transition-all"
-          placeholder="you@company.com"
-          disabled={loading}
-        />
+        <div className="relative">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+            <Mail className="w-5 h-5" />
+          </div>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            required
+            value={formData.email}
+            onChange={handleChange}
+            className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853]/50 transition-all hover:border-white/20"
+            placeholder="you@company.com"
+            disabled={loading}
+          />
+        </div>
       </div>
 
       {/* Company Name */}
       <div>
-        <label htmlFor="companyName" className="block text-sm font-semibold text-[#343a40] mb-2">
-          Company name <span className="text-[#6c757d] text-xs font-normal">(optional)</span>
+        <label htmlFor="companyName" className="block text-sm font-semibold text-gray-300 mb-2">
+          Company name <span className="text-gray-500 text-xs font-normal">(optional)</span>
         </label>
-        <input
-          id="companyName"
-          name="companyName"
-          type="text"
-          value={formData.companyName}
-          onChange={handleChange}
-          className="w-full px-4 py-3 bg-white border-2 border-[#e5e7eb] rounded-xl text-[#343a40] placeholder-[#6c757d] focus:outline-none focus:ring-2 focus:ring-[#34a853] focus:border-[#34a853] transition-all"
-          placeholder="Your Company LLC"
-          disabled={loading}
-        />
+        <div className="relative">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+            <Building className="w-5 h-5" />
+          </div>
+          <input
+            id="companyName"
+            name="companyName"
+            type="text"
+            value={formData.companyName}
+            onChange={handleChange}
+            className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853]/50 transition-all hover:border-white/20"
+            placeholder="Your Company LLC"
+            disabled={loading}
+          />
+        </div>
       </div>
 
       {/* Password */}
       <div>
-        <label htmlFor="password" className="block text-sm font-semibold text-[#343a40] mb-2">
+        <label htmlFor="password" className="block text-sm font-semibold text-gray-300 mb-2">
           Password
         </label>
         <div className="relative">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+            <Lock className="w-5 h-5" />
+          </div>
           <input
             id="password"
             name="password"
@@ -158,65 +184,88 @@ export function RegisterForm() {
             required
             value={formData.password}
             onChange={handleChange}
-            className="w-full px-4 py-3 bg-white border-2 border-[#e5e7eb] rounded-xl text-[#343a40] placeholder-[#6c757d] focus:outline-none focus:ring-2 focus:ring-[#34a853] focus:border-[#34a853] transition-all pr-12"
+            className="w-full pl-12 pr-12 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853]/50 transition-all hover:border-white/20"
             placeholder="••••••••"
             disabled={loading}
           />
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6c757d] hover:text-[#343a40] transition-colors"
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
           >
             {showPassword ? (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-              </svg>
+              <EyeOff className="w-5 h-5" />
             ) : (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
+              <Eye className="w-5 h-5" />
             )}
           </button>
         </div>
-        <p className="text-xs text-[#6c757d] mt-1">
-          Minimum 8 characters
-        </p>
+        {/* Password strength indicator */}
+        <div className="flex items-center gap-2 mt-2">
+          <div className={`flex items-center gap-1 text-xs ${passwordLength ? 'text-[#34a853]' : 'text-gray-500'}`}>
+            <Check className={`w-3 h-3 ${passwordLength ? 'opacity-100' : 'opacity-50'}`} />
+            <span>8+ characters</span>
+          </div>
+        </div>
       </div>
 
       {/* Confirm Password */}
       <div>
-        <label htmlFor="confirmPassword" className="block text-sm font-semibold text-[#343a40] mb-2">
+        <label htmlFor="confirmPassword" className="block text-sm font-semibold text-gray-300 mb-2">
           Confirm password
         </label>
-        <input
-          id="confirmPassword"
-          name="confirmPassword"
-          type={showPassword ? 'text' : 'password'}
-          required
-          value={formData.confirmPassword}
-          onChange={handleChange}
-          className="w-full px-4 py-3 bg-white border-2 border-[#e5e7eb] rounded-xl text-[#343a40] placeholder-[#6c757d] focus:outline-none focus:ring-2 focus:ring-[#34a853] focus:border-[#34a853] transition-all"
-          placeholder="••••••••"
-          disabled={loading}
-        />
+        <div className="relative">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+            <Lock className="w-5 h-5" />
+          </div>
+          <input
+            id="confirmPassword"
+            name="confirmPassword"
+            type={showPassword ? 'text' : 'password'}
+            required
+            value={formData.confirmPassword}
+            onChange={handleChange}
+            className={`w-full pl-12 pr-12 py-3.5 bg-white/5 border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition-all hover:border-white/20 ${
+              formData.confirmPassword.length > 0
+                ? passwordMatch
+                  ? 'border-[#34a853]/50 focus:ring-[#34a853]/50 focus:border-[#34a853]/50'
+                  : 'border-red-500/50 focus:ring-red-500/50 focus:border-red-500/50'
+                : 'border-white/10 focus:ring-[#34a853]/50 focus:border-[#34a853]/50'
+            }`}
+            placeholder="••••••••"
+            disabled={loading}
+          />
+          {formData.confirmPassword.length > 0 && (
+            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+              {passwordMatch ? (
+                <Check className="w-5 h-5 text-[#34a853]" />
+              ) : (
+                <span className="text-red-400 text-xs">✕</span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Submit button */}
       <button
         type="submit"
-        disabled={loading}
-        className="group relative overflow-hidden w-full py-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+        disabled={loading || !passwordLength || !passwordMatch}
+        className="group relative overflow-hidden w-full py-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed mt-2"
       >
-        <div className="absolute inset-0 bg-gradient-to-r from-[#34a853] to-[#137333] rounded-xl"></div>
+        {/* Gradient Background */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#34a853] via-emerald-600 to-[#137333] rounded-xl"></div>
+
+        {/* Hover Shine Effect */}
         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:translate-x-full transition-all duration-700 -translate-x-full"></div>
+
+        {/* Glow Effect */}
+        <div className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 shadow-[0_0_30px_rgba(52,168,83,0.5)]"></div>
+
         <span className="relative text-white font-black text-lg flex items-center justify-center gap-2">
           {loading ? (
             <>
-              <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
+              <Loader2 className="w-5 h-5 animate-spin" />
               <span>Creating account...</span>
             </>
           ) : (
@@ -224,16 +273,6 @@ export function RegisterForm() {
           )}
         </span>
       </button>
-
-      {/* Free trial info */}
-      <div className="mt-4 p-3 bg-[#34a853]/10 border border-[#34a853]/30 rounded-xl">
-        <p className="text-xs text-[#34a853] flex items-center gap-2 font-medium">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          <span>14-day free trial • No credit card required</span>
-        </p>
-      </div>
     </form>
   )
 }
