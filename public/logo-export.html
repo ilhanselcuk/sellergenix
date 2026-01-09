@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SellerGenix Logo Export</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: white;
+      padding: 40px;
+      text-align: center;
+    }
+    h1 {
+      color: #a855f7;
+      margin-bottom: 10px;
+    }
+    p {
+      color: #888;
+      margin-bottom: 40px;
+    }
+    .logo-container {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 20px 40px;
+      padding: 30px;
+      background: #16213e;
+      border-radius: 16px;
+    }
+    .logo-box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12.5%;
+      background: linear-gradient(135deg, #a855f7 0%, #3b82f6 100%);
+      font-weight: 900;
+      color: white;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+    }
+    .logo-512 {
+      width: 512px;
+      height: 512px;
+      font-size: 220px;
+      letter-spacing: -8px;
+      border-radius: 64px;
+    }
+    .logo-300 {
+      width: 300px;
+      height: 300px;
+      font-size: 130px;
+      letter-spacing: -5px;
+      border-radius: 38px;
+    }
+    .logo-220 {
+      width: 220px;
+      height: 220px;
+      font-size: 96px;
+      letter-spacing: -4px;
+      border-radius: 28px;
+    }
+    .size-label {
+      margin-top: 15px;
+      font-size: 14px;
+      color: #888;
+    }
+    .instructions {
+      max-width: 800px;
+      margin: 40px auto;
+      text-align: left;
+      background: #16213e;
+      padding: 30px;
+      border-radius: 16px;
+      line-height: 1.8;
+    }
+    .instructions h2 {
+      color: #a855f7;
+      margin-bottom: 20px;
+    }
+    .instructions ol {
+      padding-left: 20px;
+    }
+    .instructions li {
+      margin-bottom: 15px;
+    }
+    .instructions code {
+      background: #0f3460;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .highlight {
+      color: #f59e0b;
+      font-weight: bold;
+    }
+    .green {
+      color: #22c55e;
+    }
+    .download-btn {
+      display: inline-block;
+      margin-top: 15px;
+      padding: 12px 24px;
+      background: linear-gradient(135deg, #a855f7 0%, #3b82f6 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .download-btn:hover {
+      opacity: 0.9;
+    }
+    canvas {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>SellerGenix Logo Export Tool</h1>
+  <p>Amazon SP-API App Listing için logo dosyaları</p>
+
+  <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 20px;">
+    <!-- 300x300 Logo -->
+    <div class="logo-container">
+      <div id="logo300" class="logo-box logo-300">SG</div>
+      <div class="size-label">300 × 300 px <span class="highlight">(Amazon Required)</span></div>
+      <button class="download-btn" onclick="downloadLogo(300)">Download PNG</button>
+    </div>
+
+    <!-- 220x220 Logo -->
+    <div class="logo-container">
+      <div id="logo220" class="logo-box logo-220">SG</div>
+      <div class="size-label">220 × 220 px <span class="highlight">(Amazon Required)</span></div>
+      <button class="download-btn" onclick="downloadLogo(220)">Download PNG</button>
+    </div>
+
+    <!-- 512x512 Logo -->
+    <div class="logo-container">
+      <div id="logo512" class="logo-box logo-512">SG</div>
+      <div class="size-label">512 × 512 px (High Resolution)</div>
+      <button class="download-btn" onclick="downloadLogo(512)">Download PNG</button>
+    </div>
+  </div>
+
+  <div class="instructions">
+    <h2>📋 Amazon Listing Update Checklist</h2>
+    <ol>
+      <li>
+        <strong class="highlight">Listing Name'i Değiştir:</strong><br>
+        <code>SellerGenix – Amazon Analytics Dashboard</code> → <code class="green">SellerGenix – Seller Analytics Dashboard</code><br>
+        veya sadece <code class="green">SellerGenix</code>
+      </li>
+      <li>
+        <strong class="highlight">Logo Dosyalarını İndir:</strong><br>
+        Yukarıdaki "Download PNG" butonlarına tıklayarak <code>300x300</code> ve <code>220x220</code> boyutlarında PNG dosyalarını indir.
+      </li>
+      <li>
+        <strong class="highlight">Amazon'a Yükle:</strong><br>
+        Solution Provider Portal'da App Listing → Images bölümüne git ve yeni logoları yükle.
+      </li>
+      <li>
+        <strong>Case'e Yanıt Ver:</strong><br>
+        <a href="https://solutionproviderportal.amazon.com/cu/case-dashboard/view-case?caseID=19173249561" target="_blank" style="color: #3b82f6;">Case #19173249561</a> linkinden değişiklikleri bildirin.
+      </li>
+    </ol>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <script>
+    function downloadLogo(size) {
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+
+      canvas.width = size;
+      canvas.height = size;
+
+      // Calculate corner radius proportionally
+      const cornerRadius = size * 0.125; // 12.5% of size
+
+      // Create gradient
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, '#a855f7');
+      gradient.addColorStop(1, '#3b82f6');
+
+      // Draw rounded rectangle
+      ctx.beginPath();
+      ctx.moveTo(cornerRadius, 0);
+      ctx.lineTo(size - cornerRadius, 0);
+      ctx.quadraticCurveTo(size, 0, size, cornerRadius);
+      ctx.lineTo(size, size - cornerRadius);
+      ctx.quadraticCurveTo(size, size, size - cornerRadius, size);
+      ctx.lineTo(cornerRadius, size);
+      ctx.quadraticCurveTo(0, size, 0, size - cornerRadius);
+      ctx.lineTo(0, cornerRadius);
+      ctx.quadraticCurveTo(0, 0, cornerRadius, 0);
+      ctx.closePath();
+
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      // Draw text
+      const fontSize = size * 0.43;
+      ctx.font = `900 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif`;
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.letterSpacing = `${-size * 0.016}px`;
+      ctx.fillText('SG', size / 2, size / 2 + fontSize * 0.05);
+
+      // Download
+      const link = document.createElement('a');
+      link.download = `sellergenix-logo-${size}x${size}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+  </script>
+</body>
+</html>

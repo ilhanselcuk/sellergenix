@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>SellerGenix Analytics Screenshot</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+        }
+        .header {
+            background: white;
+            padding: 16px 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #e5e7eb;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 24px;
+            font-weight: 800;
+            color: #343a40;
+        }
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #FF9900, #FF6600);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 900;
+            font-size: 16px;
+        }
+        .nav {
+            display: flex;
+            gap: 32px;
+        }
+        .nav a {
+            color: #6c757d;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 15px;
+        }
+        .nav a.active {
+            color: #FF9900;
+        }
+        .main {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            height: calc(100% - 73px);
+        }
+        .sidebar {
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            padding: 24px 16px;
+            overflow-y: auto;
+        }
+        .sidebar-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+        }
+        .metric-group {
+            margin-bottom: 20px;
+        }
+        .metric-group-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #343a40;
+            padding: 10px 12px;
+            background: linear-gradient(135deg, rgba(147,51,234,0.1), rgba(147,51,234,0.05));
+            border-radius: 10px;
+            margin-bottom: 8px;
+            cursor: pointer;
+        }
+        .metric-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            font-size: 13px;
+            color: #6c757d;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .metric-item:hover {
+            background: #f8f9fa;
+        }
+        .metric-item.active {
+            background: linear-gradient(135deg, #FF9900, #FF6600);
+            color: white;
+        }
+        .metric-value {
+            font-weight: 700;
+            color: #343a40;
+        }
+        .metric-item.active .metric-value {
+            color: white;
+        }
+        .metric-trend {
+            font-size: 11px;
+            color: #22c55e;
+        }
+        .metric-trend.negative {
+            color: #ef4444;
+        }
+        .content {
+            padding: 32px;
+            overflow-y: auto;
+        }
+        .content-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+        .content-title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #343a40;
+        }
+        .controls {
+            display: flex;
+            gap: 12px;
+        }
+        .control-btn {
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            border: 1px solid #e5e7eb;
+            background: white;
+            color: #6c757d;
+            cursor: pointer;
+        }
+        .control-btn.active {
+            background: linear-gradient(135deg, #FF9900, #FF6600);
+            color: white;
+            border: none;
+        }
+        .chart-container {
+            background: white;
+            border-radius: 20px;
+            padding: 32px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            margin-bottom: 24px;
+        }
+        .chart-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+        .chart-title {
+            font-size: 18px;
+            font-weight: 800;
+            color: #343a40;
+        }
+        .chart-legend {
+            display: flex;
+            gap: 24px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #6c757d;
+        }
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .chart-area {
+            height: 350px;
+            position: relative;
+            background: linear-gradient(180deg, rgba(34,197,94,0.05) 0%, transparent 100%);
+            border-radius: 12px;
+        }
+        .chart-svg {
+            width: 100%;
+            height: 100%;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            border-left: 4px solid;
+        }
+        .stat-card:nth-child(1) { border-color: #22c55e; }
+        .stat-card:nth-child(2) { border-color: #3b82f6; }
+        .stat-card:nth-child(3) { border-color: #f59e0b; }
+        .stat-card:nth-child(4) { border-color: #9333ea; }
+        .stat-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6c757d;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 800;
+            color: #343a40;
+            margin-bottom: 4px;
+        }
+        .stat-change {
+            font-size: 13px;
+            font-weight: 600;
+            color: #22c55e;
+        }
+        .stat-change.negative {
+            color: #ef4444;
+        }
+        .download-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #FF9900, #FF6600);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            <div class="logo-icon">SG</div>
+            SellerGenix
+        </div>
+        <nav class="nav">
+            <a href="#">Dashboard</a>
+            <a href="#">Products</a>
+            <a href="#" class="active">Analytics</a>
+            <a href="#">PPC</a>
+            <a href="#">Inventory</a>
+        </nav>
+        <div style="display:flex;align-items:center;gap:12px;">
+            <span style="color:#6c757d;font-size:14px;">John Seller</span>
+            <div style="width:36px;height:36px;background:#e5e7eb;border-radius:50%;"></div>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="sidebar">
+            <div class="sidebar-title">Select Metrics</div>
+
+            <div class="metric-group">
+                <div class="metric-group-title">
+                    <span style="color:#9333ea;">$</span> Revenue & Sales
+                </div>
+                <div class="metric-item active">
+                    <span>Net Profit</span>
+                    <span class="metric-value">$58,234</span>
+                </div>
+                <div class="metric-item">
+                    <span>Total Sales</span>
+                    <span class="metric-value">$128,900</span>
+                </div>
+                <div class="metric-item">
+                    <span>Units Sold</span>
+                    <span class="metric-value">2,456</span>
+                </div>
+            </div>
+
+            <div class="metric-group">
+                <div class="metric-group-title">
+                    <span style="color:#3b82f6;">%</span> Advertising
+                </div>
+                <div class="metric-item active">
+                    <span>Ad Spend</span>
+                    <span class="metric-value">$22,340</span>
+                </div>
+                <div class="metric-item">
+                    <span>ACOS</span>
+                    <span class="metric-value">17.3%</span>
+                </div>
+                <div class="metric-item">
+                    <span>ROAS</span>
+                    <span class="metric-value">5.8x</span>
+                </div>
+            </div>
+
+            <div class="metric-group">
+                <div class="metric-group-title">
+                    <span style="color:#22c55e;">$</span> Costs & Fees
+                </div>
+                <div class="metric-item">
+                    <span>Amazon Fees</span>
+                    <span class="metric-value">$19,335</span>
+                </div>
+                <div class="metric-item">
+                    <span>COGS</span>
+                    <span class="metric-value">$38,670</span>
+                </div>
+                <div class="metric-item">
+                    <span>Refunds</span>
+                    <span class="metric-value">$2,578</span>
+                </div>
+            </div>
+
+            <div class="metric-group">
+                <div class="metric-group-title">
+                    <span style="color:#f59e0b;">%</span> Performance
+                </div>
+                <div class="metric-item">
+                    <span>Profit Margin</span>
+                    <span class="metric-value">45.2%</span>
+                </div>
+                <div class="metric-item">
+                    <span>ROI</span>
+                    <span class="metric-value">89.3%</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="content-header">
+                <div class="content-title">Performance Analytics</div>
+                <div class="controls">
+                    <button class="control-btn">7 Days</button>
+                    <button class="control-btn active">30 Days</button>
+                    <button class="control-btn">90 Days</button>
+                    <button class="control-btn">Custom</button>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="chart-header">
+                    <div class="chart-title">Net Profit & Ad Spend Trends</div>
+                    <div class="chart-legend">
+                        <div class="legend-item">
+                            <div class="legend-dot" style="background:#22c55e;"></div>
+                            Net Profit
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-dot" style="background:#ef4444;"></div>
+                            Ad Spend
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-dot" style="background:#3b82f6;"></div>
+                            Sales
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-area">
+                    <svg class="chart-svg" viewBox="0 0 1200 350" preserveAspectRatio="none">
+                        <!-- Grid lines -->
+                        <g stroke="#e5e7eb" stroke-width="1">
+                            <line x1="0" y1="70" x2="1200" y2="70" />
+                            <line x1="0" y1="140" x2="1200" y2="140" />
+                            <line x1="0" y1="210" x2="1200" y2="210" />
+                            <line x1="0" y1="280" x2="1200" y2="280" />
+                        </g>
+
+                        <!-- Net Profit Area -->
+                        <defs>
+                            <linearGradient id="profitGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" style="stop-color:#22c55e;stop-opacity:0.4"/>
+                                <stop offset="100%" style="stop-color:#22c55e;stop-opacity:0.05"/>
+                            </linearGradient>
+                            <linearGradient id="salesGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.3"/>
+                                <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:0.05"/>
+                            </linearGradient>
+                        </defs>
+
+                        <!-- Sales Area (background) -->
+                        <path d="M0,180 Q100,160 200,150 T400,120 T600,100 T800,80 T1000,60 T1200,40 L1200,350 L0,350 Z" fill="url(#salesGradient)"/>
+                        <path d="M0,180 Q100,160 200,150 T400,120 T600,100 T800,80 T1000,60 T1200,40" stroke="#3b82f6" stroke-width="3" fill="none"/>
+
+                        <!-- Net Profit Area -->
+                        <path d="M0,250 Q100,240 200,220 T400,200 T600,170 T800,150 T1000,120 T1200,100 L1200,350 L0,350 Z" fill="url(#profitGradient)"/>
+                        <path d="M0,250 Q100,240 200,220 T400,200 T600,170 T800,150 T1000,120 T1200,100" stroke="#22c55e" stroke-width="3" fill="none"/>
+
+                        <!-- Ad Spend Line -->
+                        <path d="M0,300 Q100,295 200,290 T400,280 T600,270 T800,265 T1000,260 T1200,255" stroke="#ef4444" stroke-width="3" fill="none" stroke-dasharray="8,4"/>
+
+                        <!-- Data points -->
+                        <g fill="#22c55e">
+                            <circle cx="0" cy="250" r="5"/>
+                            <circle cx="200" cy="220" r="5"/>
+                            <circle cx="400" cy="200" r="5"/>
+                            <circle cx="600" cy="170" r="5"/>
+                            <circle cx="800" cy="150" r="5"/>
+                            <circle cx="1000" cy="120" r="5"/>
+                            <circle cx="1200" cy="100" r="5"/>
+                        </g>
+                    </svg>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Net Profit</div>
+                    <div class="stat-value">$58,234</div>
+                    <div class="stat-change">+15.4% vs last period</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total Sales</div>
+                    <div class="stat-value">$128,900</div>
+                    <div class="stat-change">+12.8% vs last period</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Average ACOS</div>
+                    <div class="stat-value">17.3%</div>
+                    <div class="stat-change negative">-2.1% vs last period</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Profit Margin</div>
+                    <div class="stat-value">45.2%</div>
+                    <div class="stat-change">+3.2% vs last period</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button class="download-btn" onclick="alert('Press Cmd+Shift+4 (Mac) to capture this screenshot at 1920x1080')">Screenshot Instructions</button>
+</body>
+</html>

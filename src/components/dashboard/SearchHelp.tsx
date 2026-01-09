@@ -205,26 +205,14 @@ export function SearchHelp({ className = '' }: SearchHelpProps) {
               onClick={handleClose}
             />
 
-            {/* Modal Content - Positioned below header buttons */}
+            {/* Modal Content - Responsive positioning */}
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
               onClick={e => e.stopPropagation()}
-              className="bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-slate-700"
-              style={{
-                position: 'fixed',
-                top: '120px',
-                left: '32.5%',
-                transform: 'translateX(-50%)',
-                zIndex: 10001,
-                width: '100%',
-                maxWidth: '672px',
-                maxHeight: 'calc(100vh - 140px)',
-                display: 'flex',
-                flexDirection: 'column'
-              }}
+              className="fixed top-[100px] left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-full sm:max-w-[672px] z-[10001] bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-slate-700 flex flex-col max-h-[calc(100vh-120px)]"
             >
               {/* Search Input */}
               <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-700 bg-slate-800/50">
@@ -372,24 +360,14 @@ export function SearchHelp({ className = '' }: SearchHelpProps) {
               onClick={() => setSelectedItem(null)}
             />
 
-            {/* Detail Content - Fixed position below header (same as search modal) */}
+            {/* Detail Content - Responsive positioning */}
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
               onClick={e => e.stopPropagation()}
-              className="bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-slate-700"
-              style={{
-                position: 'fixed',
-                top: '100px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 10003,
-                width: '100%',
-                maxWidth: '512px',
-                maxHeight: 'calc(100vh - 120px)'
-              }}
+              className="fixed top-[90px] left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-full sm:max-w-[512px] z-[10003] bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-slate-700 max-h-[calc(100vh-110px)] overflow-y-auto"
             >
               {/* Header */}
               <div className="px-6 py-4 bg-gradient-to-r from-amber-600 to-orange-600">

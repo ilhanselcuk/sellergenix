@@ -232,7 +232,7 @@ export default function RegisterPage() {
               <div className="absolute -inset-[1px] bg-gradient-to-br from-[#34a853] via-emerald-600/50 to-[#137333] rounded-3xl"></div>
 
               {/* Card Content */}
-              <div className="relative bg-[#0a0f1c]/90 backdrop-blur-xl rounded-3xl p-8">
+              <div className="relative bg-[#0a0f1c]/90 backdrop-blur-xl rounded-3xl p-6 md:p-8">
                 <div className="mb-6">
                   <h1 className="text-3xl font-black text-white mb-2">Create Account</h1>
                   <p className="text-gray-400">

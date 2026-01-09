@@ -268,23 +268,22 @@ export default function LoginPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3, duration: 0.6 }}
-              className="mt-8 text-center text-sm text-gray-500 space-x-4"
+              className="mt-8 text-center text-xs sm:text-sm text-gray-500"
             >
-              <Link href="/terms" className="hover:text-[#4285f4] transition-colors">
-                Terms
-              </Link>
-              <span className="text-gray-700">•</span>
-              <Link href="/privacy" className="hover:text-[#4285f4] transition-colors">
-                Privacy
-              </Link>
-              <span className="text-gray-700">•</span>
-              <Link href="/sales-agreement" className="hover:text-[#4285f4] transition-colors">
-                Sales Agreement
-              </Link>
-              <span className="text-gray-700">•</span>
-              <Link href="/contact" className="hover:text-[#4285f4] transition-colors">
-                Support
-              </Link>
+              <div className="flex flex-wrap justify-center gap-x-4 gap-y-2">
+                <Link href="/terms" className="hover:text-[#4285f4] transition-colors">
+                  Terms
+                </Link>
+                <Link href="/privacy" className="hover:text-[#4285f4] transition-colors">
+                  Privacy
+                </Link>
+                <Link href="/sales-agreement" className="hover:text-[#4285f4] transition-colors">
+                  Sales Agreement
+                </Link>
+                <Link href="/contact" className="hover:text-[#4285f4] transition-colors">
+                  Support
+                </Link>
+              </div>
             </motion.div>
 
             {/* Copyright */}

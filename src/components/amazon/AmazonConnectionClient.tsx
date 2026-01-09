@@ -31,7 +31,6 @@ import {
   getSyncHistoryAction,
   syncProductsAction,
   syncSalesDataAction,
-  connectWithManualTokenAction,
   type AmazonConnection,
   type SyncHistory
 } from '@/app/actions/amazon-actions'
@@ -48,10 +47,6 @@ export function AmazonConnectionClient({ userId }: AmazonConnectionClientProps) 
   const [disconnecting, setDisconnecting] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
-  const [showManualConnect, setShowManualConnect] = useState(false)
-  const [manualToken, setManualToken] = useState('')
-  const [connectingManually, setConnectingManually] = useState(false)
-  const [manualError, setManualError] = useState<string | null>(null)
 
   useEffect(() => {
     loadConnection()
@@ -92,34 +87,6 @@ export function AmazonConnectionClient({ userId }: AmazonConnectionClientProps) 
       window.location.href = result.url
     } else {
       console.error('❌ Failed to generate OAuth URL:', result.error)
-    }
-  }
-
-  const handleManualConnect = async () => {
-    if (!manualToken.trim()) {
-      setManualError('Please enter a refresh token')
-      return
-    }
-
-    setConnectingManually(true)
-    setManualError(null)
-
-    try {
-      const result = await connectWithManualTokenAction(userId, manualToken.trim())
-
-      if (result.success) {
-        setConnection(result.connection!)
-        setShowManualConnect(false)
-        setManualToken('')
-        await loadSyncHistory()
-      } else {
-        setManualError(result.error || 'Failed to connect')
-      }
-    } catch (error: any) {
-      console.error('Error connecting manually:', error)
-      setManualError(error.message || 'Unknown error occurred')
-    } finally {
-      setConnectingManually(false)
     }
   }
 
@@ -311,7 +278,7 @@ export function AmazonConnectionClient({ userId }: AmazonConnectionClientProps) 
 
             {/* Connection Options */}
             <div className="space-y-4">
-              {/* OAuth Button - Production Ready */}
+              {/* OAuth Button */}
               <button
                 onClick={handleConnect}
                 className="group px-8 py-4 bg-gradient-to-r from-[#FF9900] to-[#FF6600] text-white rounded-2xl font-bold text-lg inline-flex items-center gap-3 w-full justify-center hover:shadow-2xl transition-all hover:scale-105"
@@ -323,95 +290,6 @@ export function AmazonConnectionClient({ userId }: AmazonConnectionClientProps) 
               <p className="text-xs text-[#6c757d] text-center">
                 Securely connect via Amazon Seller Central OAuth
               </p>
-
-              {/* Divider */}
-              <div className="flex items-center gap-4">
-                <div className="flex-1 h-px bg-[#e5e7eb]"></div>
-                <span className="text-sm font-bold text-[#6c757d]">OR</span>
-                <div className="flex-1 h-px bg-[#e5e7eb]"></div>
-              </div>
-
-              {/* Manual Token Connection */}
-              {!showManualConnect ? (
-                <button
-                  onClick={() => setShowManualConnect(true)}
-                  className="group px-8 py-4 bg-gradient-to-r from-[#4285f4] to-[#3367d6] text-white rounded-2xl font-bold text-lg hover:shadow-2xl transition-all hover:scale-105 inline-flex items-center gap-3 w-full justify-center"
-                >
-                  <Zap className="w-6 h-6" />
-                  <span>I Have a Refresh Token</span>
-                </button>
-              ) : (
-                <div className="bg-gradient-to-br from-[#4285f4]/10 to-[#34a853]/10 border-2 border-[#4285f4]/30 rounded-2xl p-6 space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="font-black text-[#343a40] mb-1">Enter Refresh Token</h3>
-                      <p className="text-sm text-[#6c757d]">
-                        Get your token from Solution Provider Portal
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setShowManualConnect(false)
-                        setManualToken('')
-                        setManualError(null)
-                      }}
-                      className="text-[#6c757d] hover:text-[#343a40] transition-colors"
-                    >
-                      <XCircle className="w-6 h-6" />
-                    </button>
-                  </div>
-
-                  {/* Instructions */}
-                  <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 space-y-2 text-sm">
-                    <p className="font-bold text-[#343a40]">How to get your refresh token:</p>
-                    <ol className="list-decimal list-inside space-y-1 text-[#6c757d]">
-                      <li>Go to <a href="https://developer.amazonservices.com" target="_blank" rel="noopener noreferrer" className="text-[#4285f4] hover:underline">Solution Provider Portal</a></li>
-                      <li>Select your SellerGenix app</li>
-                      <li>Click "Authorize app" button</li>
-                      <li>Copy the refresh token and paste below</li>
-                    </ol>
-                  </div>
-
-                  {/* Token Input */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-[#343a40]">Refresh Token:</label>
-                    <textarea
-                      value={manualToken}
-                      onChange={(e) => setManualToken(e.target.value)}
-                      placeholder="Atzr|IwEBIHHjzodZFWbNXmglgTPSjP3oTep..."
-                      className="w-full px-4 py-3 border-2 border-[#e5e7eb] rounded-xl focus:border-[#4285f4] focus:outline-none transition-colors font-mono text-sm resize-none"
-                      rows={4}
-                    />
-                  </div>
-
-                  {/* Error Message */}
-                  {manualError && (
-                    <div className="flex items-start gap-3 p-3 bg-[#ea4335]/10 border-2 border-[#ea4335]/30 rounded-xl">
-                      <AlertTriangle className="w-5 h-5 text-[#ea4335] flex-shrink-0 mt-0.5" />
-                      <p className="text-sm text-[#ea4335] font-semibold">{manualError}</p>
-                    </div>
-                  )}
-
-                  {/* Connect Button */}
-                  <button
-                    onClick={handleManualConnect}
-                    disabled={connectingManually || !manualToken.trim()}
-                    className="w-full px-6 py-3 bg-gradient-to-r from-[#34a853] to-[#137333] text-white rounded-xl font-bold hover:shadow-xl transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
-                  >
-                    {connectingManually ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        <span>Connecting...</span>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-5 h-5" />
-                        <span>Connect with Token</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </motion.div>

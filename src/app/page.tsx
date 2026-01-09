@@ -27,7 +27,9 @@ import {
   Bell,
   Sparkles,
   Play,
-  ChevronRight
+  ChevronRight,
+  Menu,
+  X
 } from 'lucide-react'
 import { AuthModal } from '@/components/modals/AuthModal'
 import { createClient } from '@/lib/supabase/client'
@@ -38,6 +40,7 @@ export default function LandingPage() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -76,12 +79,13 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center gap-2 group">
-              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20 group-hover:shadow-purple-500/40 transition-all">
-                <span className="text-xl font-black text-white">SG</span>
+              <div className="w-9 h-9 md:w-10 md:h-10 bg-gradient-to-br from-purple-500 to-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20 group-hover:shadow-purple-500/40 transition-all">
+                <span className="text-lg md:text-xl font-black text-white">SG</span>
               </div>
-              <span className="text-xl font-black text-white">SellerGenix</span>
+              <span className="text-lg md:text-xl font-black text-white">SellerGenix</span>
             </Link>
 
+            {/* Desktop Navigation */}
             <div className="hidden md:flex items-center gap-8">
               <Link href="/features" className="text-slate-400 hover:text-white font-semibold transition-colors">
                 Features
@@ -94,18 +98,18 @@ export default function LandingPage() {
               </Link>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 md:gap-4">
               {!loading && (
                 <>
                   {user ? (
                     <>
                       <Link
                         href="/dashboard"
-                        className="text-purple-400 hover:text-purple-300 font-semibold transition-colors"
+                        className="text-purple-400 hover:text-purple-300 font-semibold transition-colors text-sm md:text-base"
                       >
                         Dashboard
                       </Link>
-                      <form action="/auth/logout" method="post">
+                      <form action="/auth/logout" method="post" className="hidden md:block">
                         <button
                           type="submit"
                           className="px-4 py-2 text-sm border border-slate-700 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10 rounded-xl font-bold transition-all duration-300"
@@ -118,23 +122,98 @@ export default function LandingPage() {
                     <>
                       <button
                         onClick={() => openAuthModal('login')}
-                        className="text-slate-400 hover:text-white font-semibold transition-colors"
+                        className="hidden md:block text-slate-400 hover:text-white font-semibold transition-colors"
                       >
                         Sign In
                       </button>
                       <button
                         onClick={() => openAuthModal('register')}
-                        className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-purple-500/25 transition-all duration-300"
+                        className="px-4 py-2 md:px-5 md:py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold text-sm md:text-base hover:shadow-lg hover:shadow-purple-500/25 transition-all duration-300"
                       >
-                        Start Free Trial
+                        Start Free
                       </button>
                     </>
                   )}
                 </>
               )}
+
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 text-slate-400 hover:text-white transition-colors"
+              >
+                {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
             </div>
           </div>
         </div>
+
+        {/* Mobile Menu Overlay */}
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="md:hidden bg-slate-900/95 backdrop-blur-xl border-b border-slate-800"
+          >
+            <div className="px-4 py-4 space-y-4">
+              <Link
+                href="/features"
+                className="block text-slate-300 hover:text-white font-semibold transition-colors py-2"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Features
+              </Link>
+              <Link
+                href="/pricing"
+                className="block text-slate-300 hover:text-white font-semibold transition-colors py-2"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Pricing
+              </Link>
+              <Link
+                href="/contact"
+                className="block text-slate-300 hover:text-white font-semibold transition-colors py-2"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Contact
+              </Link>
+              <div className="pt-4 border-t border-slate-700 space-y-3">
+                {user ? (
+                  <form action="/auth/logout" method="post">
+                    <button
+                      type="submit"
+                      className="w-full px-4 py-3 text-sm border border-slate-700 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10 rounded-xl font-bold transition-all duration-300"
+                    >
+                      Sign Out
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        openAuthModal('login')
+                        setMobileMenuOpen(false)
+                      }}
+                      className="w-full px-4 py-3 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 rounded-xl font-bold transition-colors"
+                    >
+                      Sign In
+                    </button>
+                    <button
+                      onClick={() => {
+                        openAuthModal('register')
+                        setMobileMenuOpen(false)
+                      }}
+                      className="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold hover:shadow-lg transition-all"
+                    >
+                      Start Free Trial
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
       </nav>
 
       {/* Hero Section */}
@@ -254,7 +333,7 @@ export default function LandingPage() {
                     <div className="flex items-center justify-between mb-6">
                       <div>
                         <h3 className="text-lg font-bold text-white">Analytics Dashboard</h3>
-                        <p className="text-xs text-slate-500">Welcome back, ILHAN SELCUK. Click on chart bars to see daily breakdown.</p>
+                        <p className="text-xs text-slate-500">Click on chart bars to see daily breakdown.</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="px-3 py-1.5 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-500/30 rounded-lg flex items-center gap-2">

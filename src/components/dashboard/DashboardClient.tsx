@@ -404,6 +404,16 @@ export function DashboardClient({ profileName, email }: DashboardClientProps) {
   })
   const cardInfoButtonRefs = useRef<{ [key: string]: HTMLButtonElement | null }>({})
 
+  // Track if mobile for responsive popups
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
   // Toggle metric selection (max 5 metrics)
   const toggleMetric = (metricId: string) => {
     setSelectedMetrics((prev) => {
@@ -4142,19 +4152,27 @@ export function DashboardClient({ profileName, email }: DashboardClientProps) {
                 className="fixed inset-0 bg-black/20 backdrop-blur-[2px] z-[9997]"
               />
 
-              {/* Popup */}
+              {/* Popup - Mobile responsive */}
               <motion.div
-                initial={{ opacity: 0, x: cardPopupPosition.placement === 'right' ? -20 : 20, scale: 0.95 }}
-                animate={{ opacity: 1, x: 0, scale: 1 }}
-                exit={{ opacity: 0, x: cardPopupPosition.placement === 'right' ? -20 : 20, scale: 0.95 }}
+                initial={{ opacity: 0, scale: 0.95, ...(isMobile ? { y: 20 } : { x: cardPopupPosition.placement === 'right' ? -20 : 20 }) }}
+                animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, ...(isMobile ? { y: 20 } : { x: cardPopupPosition.placement === 'right' ? -20 : 20 }) }}
                 transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
                 style={{
                   position: 'fixed',
-                  top: `${cardPopupPosition.top}px`,
-                  left: `${cardPopupPosition.left}px`,
-                  zIndex: 9999
+                  zIndex: 9999,
+                  maxWidth: '400px',
+                  width: isMobile ? 'calc(100% - 32px)' : '400px',
+                  ...(!isMobile ? {
+                    top: `${cardPopupPosition.top}px`,
+                    left: `${cardPopupPosition.left}px`,
+                  } : {})
                 }}
-                className="w-[400px] max-h-[80vh] overflow-y-auto"
+                className={`max-h-[80vh] overflow-y-auto ${
+                  isMobile
+                    ? 'inset-x-4 bottom-4 top-auto'
+                    : ''
+                }`}
               >
                 {/* Popup Content */}
                 <div className="bg-gradient-to-br from-purple-600 via-[#4285f4] to-[#34a853] rounded-2xl p-[2px] shadow-2xl">
@@ -4202,14 +4220,14 @@ export function DashboardClient({ profileName, email }: DashboardClientProps) {
                   </div>
                 </div>
 
-                {/* Arrow Indicator */}
-                {cardPopupPosition.placement === 'right' && (
+                {/* Arrow Indicator - Only on desktop */}
+                {!isMobile && cardPopupPosition.placement === 'right' && (
                   <div
                     className="absolute top-6 -left-2 w-4 h-4 bg-gradient-to-br from-purple-600 to-[#4285f4] rotate-45"
                     style={{ clipPath: 'polygon(0 0, 0 100%, 100% 100%)' }}
                   />
                 )}
-                {cardPopupPosition.placement === 'left' && (
+                {!isMobile && cardPopupPosition.placement === 'left' && (
                   <div
                     className="absolute top-6 -right-2 w-4 h-4 bg-gradient-to-br from-[#4285f4] to-[#34a853] rotate-45"
                     style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
@@ -4234,14 +4252,20 @@ export function DashboardClient({ profileName, email }: DashboardClientProps) {
 
           return (
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
+              initial={{ opacity: 0, scale: 0.95, ...(isMobile ? { y: 20 } : {}) }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, ...(isMobile ? { y: 20 } : {}) }}
               transition={{ duration: 0.15 }}
-              className="fixed z-[9999] w-80 bg-white/95 backdrop-blur-lg dark:bg-gray-900/95 border border-purple-200/30 dark:border-purple-800/30 rounded-xl shadow-2xl p-4"
+              className={`fixed z-[9999] bg-white/95 backdrop-blur-lg dark:bg-gray-900/95 border border-purple-200/30 dark:border-purple-800/30 rounded-xl shadow-2xl p-4 ${
+                isMobile ? 'inset-x-4 bottom-4 top-auto' : 'w-80'
+              }`}
               style={{
-                top: `${popupPosition.top}px`,
-                left: `${popupPosition.left}px`,
+                maxWidth: '320px',
+                width: isMobile ? 'calc(100% - 32px)' : '320px',
+                ...(!isMobile ? {
+                  top: `${popupPosition.top}px`,
+                  left: `${popupPosition.left}px`,
+                } : {})
               }}
             >
               <div className="flex items-start justify-between gap-3 mb-3">
@@ -4276,8 +4300,8 @@ export function DashboardClient({ profileName, email }: DashboardClientProps) {
                 </span>
               </div>
 
-              {/* Triangle pointer */}
-              {popupPosition.left > 400 && (
+              {/* Triangle pointer - Only on desktop */}
+              {!isMobile && popupPosition.left > 400 && (
                 <div
                   className="absolute w-3 h-3 bg-white/95 dark:bg-gray-900/95 border-l border-t border-purple-200/30 dark:border-purple-800/30 transform rotate-45"
                   style={{
@@ -4286,7 +4310,7 @@ export function DashboardClient({ profileName, email }: DashboardClientProps) {
                   }}
                 />
               )}
-              {popupPosition.left <= 400 && (
+              {!isMobile && popupPosition.left <= 400 && (
                 <div
                   className="absolute w-3 h-3 bg-white/95 dark:bg-gray-900/95 border-r border-b border-purple-200/30 dark:border-purple-800/30 transform rotate-45"
                   style={{

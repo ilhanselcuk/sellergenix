@@ -546,7 +546,9 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['sales', 'units'])) // Default expanded sections
 
   // Amazon Connection Popup - show if user hasn't connected Amazon yet
-  const [showAmazonPopup, setShowAmazonPopup] = useState(!hasAmazonConnection)
+  // Demo account (demo@sellergenix.io) should not see the popup
+  const isDemoAccount = email === 'demo@sellergenix.io'
+  const [showAmazonPopup, setShowAmazonPopup] = useState(!hasAmazonConnection && !isDemoAccount)
   // Custom date range
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
@@ -4907,19 +4909,30 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="fixed inset-4 md:inset-8 lg:inset-12 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-[10002] flex flex-col overflow-hidden"
             >
-              {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 bg-slate-800/50">
-                <div className="flex items-center gap-4">
+              {/* Header - Mobile Responsive */}
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between px-4 md:px-6 py-3 md:py-4 border-b border-slate-700 bg-slate-800/50 gap-3">
+                {/* Title Row */}
+                <div className="flex items-center justify-between lg:justify-start gap-3">
                   <div className="flex items-center gap-3">
-                    <Map className="w-5 h-5 text-emerald-400" />
+                    <Map className="w-5 h-5 text-emerald-400 flex-shrink-0" />
                     <div>
-                      <h2 className="text-xl font-bold text-white">Sales Heat Map</h2>
+                      <h2 className="text-lg md:text-xl font-bold text-white">Sales Heat Map</h2>
                       <p className="text-xs text-slate-400">{getMapDateLabel()} • {selectedMarketplaceNames || '🇺🇸'}</p>
                     </div>
                   </div>
+                  {/* Close Button - Mobile Only */}
+                  <button
+                    onClick={() => setShowRegionalMap(false)}
+                    className="lg:hidden p-2 hover:bg-slate-700 rounded-lg transition-colors"
+                  >
+                    <X className="w-5 h-5 text-slate-400" />
+                  </button>
+                </div>
 
+                {/* Controls Row - Stack on mobile */}
+                <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
                   {/* Product Filter with Autocomplete */}
-                  <div className="relative">
+                  <div className="relative flex-1 lg:flex-initial">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
                       type="text"
@@ -4930,7 +4943,7 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
                         setShowProductSuggestions(true)
                       }}
                       onFocus={() => setShowProductSuggestions(true)}
-                      className="w-80 pl-9 pr-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      className="w-full lg:w-80 pl-9 pr-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                     />
                     {(regionalSearch || selectedRegionalProduct) && (
                       <button
@@ -5144,25 +5157,24 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
                       </div>
                     )}
                   </div>
-                </div>
 
-                <div className="flex items-center gap-3">
-                  {/* Color Legend - Sales only */}
-                  <div className="flex items-center gap-2 text-xs text-slate-400">
-                    <span className="font-medium">High Sales</span>
+                  {/* Color Legend - Hidden on small mobile, visible on sm+ */}
+                  <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400">
+                    <span className="font-medium hidden md:inline">High Sales</span>
                     <div className="flex gap-0.5">
-                      <div className="w-5 h-4 rounded-sm" style={{ backgroundColor: '#22c55e' }} />
-                      <div className="w-5 h-4 rounded-sm" style={{ backgroundColor: '#84cc16' }} />
-                      <div className="w-5 h-4 rounded-sm" style={{ backgroundColor: '#eab308' }} />
-                      <div className="w-5 h-4 rounded-sm" style={{ backgroundColor: '#f97316' }} />
-                      <div className="w-5 h-4 rounded-sm" style={{ backgroundColor: '#ef4444' }} />
+                      <div className="w-4 md:w-5 h-3 md:h-4 rounded-sm" style={{ backgroundColor: '#22c55e' }} />
+                      <div className="w-4 md:w-5 h-3 md:h-4 rounded-sm" style={{ backgroundColor: '#84cc16' }} />
+                      <div className="w-4 md:w-5 h-3 md:h-4 rounded-sm" style={{ backgroundColor: '#eab308' }} />
+                      <div className="w-4 md:w-5 h-3 md:h-4 rounded-sm" style={{ backgroundColor: '#f97316' }} />
+                      <div className="w-4 md:w-5 h-3 md:h-4 rounded-sm" style={{ backgroundColor: '#ef4444' }} />
                     </div>
-                    <span className="font-medium">Low Sales</span>
+                    <span className="font-medium hidden md:inline">Low Sales</span>
                   </div>
 
+                  {/* Desktop Close Button */}
                   <button
                     onClick={() => setShowRegionalMap(false)}
-                    className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+                    className="hidden lg:block p-2 hover:bg-slate-700 rounded-lg transition-colors"
                   >
                     <X className="w-5 h-5 text-slate-400" />
                   </button>
@@ -5170,7 +5182,7 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
               </div>
 
               {/* Content */}
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-4 md:p-6">
                 {/* US Map - Grid Layout with Direct Values & Distinct Colors */}
                 <div className="mb-8">
                   {/* Helper function to render state cell with clear values and distinct colors */}
@@ -5249,7 +5261,7 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
                       return (
                         <div
                           key={code}
-                          className="h-20 rounded-lg cursor-pointer transition-all hover:scale-110 hover:z-10 flex flex-col items-center justify-center px-1 border-2 shadow-lg"
+                          className="h-14 md:h-20 min-w-[45px] md:min-w-0 rounded-lg cursor-pointer transition-all hover:scale-110 hover:z-10 flex flex-col items-center justify-center px-0.5 md:px-1 border-2 shadow-lg"
                           style={{
                             backgroundColor: colors.bg,
                             borderColor: colors.border,
@@ -5260,28 +5272,28 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
                         >
                           {/* Line 1: State Code */}
                           <span
-                            className="text-sm font-black text-white drop-shadow-md"
+                            className="text-xs md:text-sm font-black text-white drop-shadow-md"
                             style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
                           >
                             {code}
                           </span>
                           {/* Line 2: Sales */}
                           <span
-                            className="text-[10px] font-bold text-white/95 leading-tight"
+                            className="text-[8px] md:text-[10px] font-bold text-white/95 leading-tight"
                             style={{ textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
                           >
                             {salesDisplay}
                           </span>
-                          {/* Line 3: Units */}
+                          {/* Line 3: Units - Hidden on mobile */}
                           <span
-                            className="text-[9px] font-medium text-white/90 leading-tight"
+                            className="hidden md:block text-[9px] font-medium text-white/90 leading-tight"
                             style={{ textShadow: '0 1px 1px rgba(0,0,0,0.3)' }}
                           >
                             {unitsValue} units
                           </span>
-                          {/* Line 4: Stock */}
+                          {/* Line 4: Stock - Hidden on mobile */}
                           <span
-                            className="text-[9px] font-medium text-white/85 leading-tight"
+                            className="hidden md:block text-[9px] font-medium text-white/85 leading-tight"
                             style={{ textShadow: '0 1px 1px rgba(0,0,0,0.3)' }}
                           >
                             {stockValue} Stock
@@ -5291,7 +5303,8 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
                     }
 
                     return (
-                      <div className="grid grid-cols-11 gap-1 max-w-4xl mx-auto">
+                      <div className="overflow-x-auto pb-4">
+                        <div className="grid grid-cols-11 gap-1 min-w-[600px] md:min-w-0 max-w-4xl mx-auto">
                         {/* Row 1 */}
                         <div className="col-span-2" />
                         {['WA', 'ID', 'MT', 'ND', 'MN', 'WI', 'MI', 'VT', 'ME'].map(renderStateCell)}
@@ -5315,6 +5328,7 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
                         {/* Row 6 - Alaska & Hawaii */}
                         {['AK', 'HI'].map(renderStateCell)}
                         <div className="col-span-9" />
+                        </div>
                       </div>
                     )
                   })()}
@@ -5323,64 +5337,67 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
                 {/* Regional Data Table */}
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-white">All Regions</h3>
+                    <h3 className="text-base md:text-lg font-bold text-white">All Regions</h3>
                     {regionalSearch && (
-                      <span className="text-sm text-slate-400">
+                      <span className="text-xs md:text-sm text-slate-400">
                         Showing {filteredRegionalData.length} of {regionalData.length} regions
                       </span>
                     )}
                   </div>
 
-                  {/* Table Header */}
-                  <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-slate-800/50 rounded-lg mb-2 text-xs font-bold text-slate-400 uppercase">
-                    <div className="col-span-2">Region</div>
-                    <div className="text-right">Stock</div>
-                    <div className="text-right">Orders</div>
-                    <div className="text-right">Units</div>
-                    <div className="text-right">Sales</div>
-                    <div className="text-right">Amazon Fees</div>
-                    <div className="text-right">Sellable Returns</div>
-                    <div className="text-right">COGS</div>
-                    <div className="text-right">Refund Cost</div>
-                    <div className="text-right">Gross Profit</div>
-                    <div className="text-center">Info</div>
-                  </div>
+                  {/* Scrollable Table Container */}
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[800px]">
+                      {/* Table Header */}
+                      <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-slate-800/50 rounded-lg mb-2 text-xs font-bold text-slate-400 uppercase">
+                        <div className="col-span-2">Region</div>
+                        <div className="text-right">Stock</div>
+                        <div className="text-right">Orders</div>
+                        <div className="text-right">Units</div>
+                        <div className="text-right">Sales</div>
+                        <div className="text-right">Amazon Fees</div>
+                        <div className="text-right">Sellable Ret.</div>
+                        <div className="text-right">COGS</div>
+                        <div className="text-right">Refund</div>
+                        <div className="text-right">Gross Profit</div>
+                        <div className="text-center">Info</div>
+                      </div>
 
-                  {/* Table Rows */}
-                  <div className="space-y-1">
-                    {filteredRegionalData.map((region) => (
-                      <div key={region.code}>
-                        {/* Main Row */}
-                        <div
-                          className={`grid grid-cols-12 gap-2 px-4 py-3 rounded-lg text-sm transition-all cursor-pointer ${
-                            expandedRegions.has(region.code)
-                              ? 'bg-slate-700/50'
-                              : 'hover:bg-slate-800/50'
-                          }`}
-                          onClick={() => toggleRegionExpand(region.code)}
-                        >
-                          <div className="col-span-2 flex items-center gap-2">
-                            <ChevronRight
-                              className={`w-4 h-4 text-slate-400 transition-transform ${
-                                expandedRegions.has(region.code) ? 'rotate-90' : ''
+                      {/* Table Rows */}
+                      <div className="space-y-1">
+                        {filteredRegionalData.map((region) => (
+                          <div key={region.code}>
+                            {/* Main Row */}
+                            <div
+                              className={`grid grid-cols-12 gap-2 px-4 py-3 rounded-lg text-sm transition-all cursor-pointer ${
+                                expandedRegions.has(region.code)
+                                  ? 'bg-slate-700/50'
+                                  : 'hover:bg-slate-800/50'
                               }`}
-                            />
-                            <span className="text-lg">🇺🇸</span>
-                            <span className="font-medium text-white">{region.name}</span>
-                          </div>
-                          <div className="text-right text-slate-300">{region.stock}</div>
-                          <div className="text-right text-slate-300">{region.orders}</div>
-                          <div className="text-right text-slate-300">{region.units}</div>
-                          <div className="text-right text-emerald-400 font-medium">${region.sales.toLocaleString('en-US')}</div>
-                          <div className="text-right text-red-400">-${region.amazonFees.toLocaleString('en-US')}</div>
-                          <div className="text-right text-slate-300">{region.sellableReturns}%</div>
-                          <div className="text-right text-slate-300">${region.cogs.toLocaleString('en-US')}</div>
-                          <div className="text-right text-red-400">-${Math.abs(region.refundCost).toLocaleString('en-US')}</div>
-                          <div className="text-right text-emerald-400 font-medium">${region.grossProfit.toLocaleString('en-US')}</div>
-                          <div className="text-center">
-                            <span className="text-blue-400 text-xs font-medium">More</span>
-                          </div>
-                        </div>
+                              onClick={() => toggleRegionExpand(region.code)}
+                            >
+                              <div className="col-span-2 flex items-center gap-2">
+                                <ChevronRight
+                                  className={`w-4 h-4 text-slate-400 transition-transform flex-shrink-0 ${
+                                    expandedRegions.has(region.code) ? 'rotate-90' : ''
+                                  }`}
+                                />
+                                <span className="text-lg flex-shrink-0">🇺🇸</span>
+                                <span className="font-medium text-white truncate">{region.name}</span>
+                              </div>
+                              <div className="text-right text-slate-300">{region.stock}</div>
+                              <div className="text-right text-slate-300">{region.orders}</div>
+                              <div className="text-right text-slate-300">{region.units}</div>
+                              <div className="text-right text-emerald-400 font-medium">${region.sales.toLocaleString('en-US')}</div>
+                              <div className="text-right text-red-400">-${region.amazonFees.toLocaleString('en-US')}</div>
+                              <div className="text-right text-slate-300">{region.sellableReturns}%</div>
+                              <div className="text-right text-slate-300">${region.cogs.toLocaleString('en-US')}</div>
+                              <div className="text-right text-red-400">-${Math.abs(region.refundCost).toLocaleString('en-US')}</div>
+                              <div className="text-right text-emerald-400 font-medium">${region.grossProfit.toLocaleString('en-US')}</div>
+                              <div className="text-center">
+                                <span className="text-blue-400 text-xs font-medium">More</span>
+                              </div>
+                            </div>
 
                         {/* Expanded Detail with Product Breakdown */}
                         <AnimatePresence>
@@ -5573,8 +5590,10 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
                             </motion.div>
                           )}
                         </AnimatePresence>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -5603,28 +5622,28 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
               className="fixed inset-0 z-[101] flex items-center justify-center p-4"
             >
-              <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700 rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden">
+              <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700 rounded-2xl md:rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] overflow-y-auto">
                 {/* Header with gradient */}
                 <div className="bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-500 p-1">
-                  <div className="bg-slate-900 rounded-t-2xl p-8 text-center">
+                  <div className="bg-slate-900 rounded-t-xl md:rounded-t-2xl p-4 md:p-8 text-center">
                     {/* Amazon Logo Icon */}
-                    <div className="w-20 h-20 bg-gradient-to-br from-orange-500 to-yellow-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/30">
-                      <svg viewBox="0 0 24 24" className="w-12 h-12 text-slate-900" fill="currentColor">
+                    <div className="w-14 h-14 md:w-20 md:h-20 bg-gradient-to-br from-orange-500 to-yellow-500 rounded-xl md:rounded-2xl flex items-center justify-center mx-auto mb-4 md:mb-6 shadow-lg shadow-orange-500/30">
+                      <svg viewBox="0 0 24 24" className="w-8 h-8 md:w-12 md:h-12 text-slate-900" fill="currentColor">
                         <path d="M13.958 10.09c0 1.232.029 2.256-.591 3.351-.502.891-1.301 1.438-2.186 1.438-1.214 0-1.922-.924-1.922-2.292 0-2.692 2.415-3.182 4.7-3.182v.685zm3.186 7.705c-.209.189-.512.201-.745.074-1.052-.872-1.238-1.276-1.814-2.106-1.734 1.767-2.962 2.297-5.209 2.297-2.66 0-4.731-1.641-4.731-4.925 0-2.565 1.391-4.309 3.37-5.164 1.715-.754 4.11-.891 5.942-1.095v-.41c0-.753.058-1.642-.385-2.294-.385-.579-1.124-.82-1.775-.82-1.205 0-2.277.618-2.54 1.897-.054.285-.261.566-.549.58l-3.061-.333c-.259-.056-.548-.266-.473-.66C6.078 1.553 8.82 0 11.411 0c1.324 0 3.052.352 4.096 1.355 1.324 1.234 1.2 2.881 1.2 4.676v4.237c0 1.271.527 1.829 1.02 2.516.175.246.213.541-.008.725-.553.461-1.534 1.32-2.075 1.8l-.001-.514zM21.83 18.848C19.755 20.598 16.612 21.5 13.908 21.5c-3.773 0-7.174-1.396-9.742-3.716-.202-.183-.022-.432.221-.291 2.774 1.614 6.204 2.585 9.746 2.585 2.39 0 5.017-.495 7.434-1.518.365-.155.671.24.263.288z"/>
                       </svg>
                     </div>
 
-                    <h2 className="text-2xl font-black text-white mb-3">
+                    <h2 className="text-xl md:text-2xl font-black text-white mb-2 md:mb-3">
                       Connect Your Amazon Account
                     </h2>
-                    <p className="text-slate-400 text-sm leading-relaxed">
+                    <p className="text-slate-400 text-xs md:text-sm leading-relaxed">
                       To view your real sales data, profits, and analytics, please connect your Amazon Seller Central account.
                     </p>
                   </div>
                 </div>
 
                 {/* Content */}
-                <div className="p-8">
+                <div className="p-4 md:p-8">
                   {/* Features */}
                   <div className="space-y-4 mb-8">
                     <div className="flex items-center gap-4">

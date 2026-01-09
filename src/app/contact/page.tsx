@@ -7,10 +7,11 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Mail, Phone, MapPin, Clock, MessageSquare, Send, ArrowRight, Sparkles } from 'lucide-react'
+import { Mail, Phone, MapPin, Clock, MessageSquare, Send, ArrowRight, Sparkles, Menu, X } from 'lucide-react'
 import { useState } from 'react'
 
 export default function ContactPage() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -87,18 +88,74 @@ export default function ContactPage() {
             </div>
 
             <div className="flex items-center gap-4">
-              <Link href="/auth/login" className="text-slate-400 hover:text-white font-semibold transition-colors">
+              <Link href="/auth/login" className="hidden sm:block text-slate-400 hover:text-white font-semibold transition-colors">
                 Sign In
               </Link>
               <Link
                 href="/auth/register"
-                className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-purple-500/25 transition-all duration-300"
+                className="hidden sm:block px-5 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-purple-500/25 transition-all duration-300"
               >
                 Start Free Trial
               </Link>
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 text-slate-400 hover:text-white transition-colors"
+              >
+                {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
             </div>
           </div>
         </div>
+
+        {/* Mobile Menu */}
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="md:hidden bg-slate-900/95 backdrop-blur-xl border-b border-slate-800"
+          >
+            <div className="px-4 py-4 space-y-4">
+              <Link
+                href="/features"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block py-2 text-slate-400 hover:text-white font-semibold transition-colors"
+              >
+                Features
+              </Link>
+              <Link
+                href="/pricing"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block py-2 text-slate-400 hover:text-white font-semibold transition-colors"
+              >
+                Pricing
+              </Link>
+              <Link
+                href="/contact"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block py-2 text-white font-semibold"
+              >
+                Contact
+              </Link>
+              <div className="pt-4 border-t border-slate-800 space-y-3">
+                <Link
+                  href="/auth/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block py-2 text-slate-400 hover:text-white font-semibold transition-colors"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  href="/auth/register"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold text-center"
+                >
+                  Start Free Trial
+                </Link>
+              </div>
+            </div>
+          </motion.div>
+        )}
       </nav>
 
       {/* Hero Section */}
@@ -158,10 +215,10 @@ export default function ContactPage() {
                         <div>
                           <h3 className="text-white font-bold mb-1">Email</h3>
                           <a
-                            href="mailto:media@mentoreis.com"
+                            href="mailto:info@sellergenix.io"
                             className="text-purple-400 hover:text-purple-300 transition-colors font-medium"
                           >
-                            media@mentoreis.com
+                            info@sellergenix.io
                           </a>
                           <p className="text-slate-500 text-sm mt-1">24-hour response time</p>
                         </div>

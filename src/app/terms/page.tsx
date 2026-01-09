@@ -79,7 +79,7 @@ export default function TermsOfService() {
                   <p className="text-[#343a40]"><strong>Company Name:</strong> MENTOREIS LLC</p>
                   <p className="text-[#343a40]"><strong>Platform:</strong> SellerGenix</p>
                   <p className="text-[#343a40]"><strong>Website:</strong> www.sellergenix.io</p>
-                  <p className="text-[#343a40]"><strong>Email:</strong> media@mentoreis.com</p>
+                  <p className="text-[#343a40]"><strong>Email:</strong> info@sellergenix.io</p>
                 </div>
                 <div className="space-y-2">
                   <p className="text-[#343a40]"><strong>Address:</strong> 2501 Chatham Road, STE 5143</p>
@@ -376,7 +376,7 @@ export default function TermsOfService() {
                 <p>Springfield, IL 62704</p>
                 <p>United States</p>
                 <p><strong>Phone:</strong> +1 (206) 312-8915</p>
-                <p><strong>Email:</strong> media@mentoreis.com</p>
+                <p><strong>Email:</strong> info@sellergenix.io</p>
                 <p><strong>Website:</strong> www.sellergenix.io</p>
                 <p><strong>Business Hours:</strong> Monday - Friday, 09:00 - 17:00 EST</p>
               </div>
@@ -433,7 +433,7 @@ export default function TermsOfService() {
               <h4 className="font-bold mb-4">Company</h4>
               <div className="space-y-2 text-sm">
                 <Link href="/contact" className="block text-gray-400 hover:text-white transition-colors">Contact</Link>
-                <a href="mailto:media@mentoreis.com" className="block text-gray-400 hover:text-white transition-colors">Support</a>
+                <a href="mailto:info@sellergenix.io" className="block text-gray-400 hover:text-white transition-colors">Support</a>
               </div>
             </div>
 

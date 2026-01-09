@@ -36,9 +36,14 @@ export function getAmazonAuthorizationUrl(params?: AmazonOAuthParams): string {
   url.searchParams.set('redirect_uri', redirectUri)
   url.searchParams.set('state', state)
 
-  // CRITICAL: Draft apps require version=beta parameter
-  // Without this, you get blank page or "Something went wrong" error
-  url.searchParams.set('version', 'beta')
+  // Note: version=beta is ONLY for draft apps
+  // Published/production apps should NOT use version=beta
+  // The blank page issue happens when the app is not properly configured in Amazon Solution Provider Portal
+  // Make sure the redirect_uri is registered and the app is published
+  const isDraftApp = process.env.AMAZON_SP_API_SANDBOX === 'true'
+  if (isDraftApp) {
+    url.searchParams.set('version', 'beta')
+  }
 
   console.log('🔐 OAuth URL Generation:')
   console.log('  Application ID:', applicationId)

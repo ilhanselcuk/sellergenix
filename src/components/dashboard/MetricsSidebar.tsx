@@ -72,6 +72,16 @@ export function MetricsSidebar({ selectedMetrics, onToggleMetric, periodMetrics 
   // Refs for info buttons
   const infoButtonRefs = useRef<{ [key: string]: HTMLButtonElement | null }>({})
 
+  // Track if mobile for responsive popup
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
   // Calculate popup position when showing info
   useEffect(() => {
     if (showingInfo && infoButtonRefs.current[showingInfo.id]) {
@@ -604,19 +614,25 @@ export function MetricsSidebar({ selectedMetrics, onToggleMetric, periodMetrics 
               onClick={() => setShowingInfo(null)}
             />
 
-            {/* Popup with dynamic position */}
+            {/* Popup with dynamic position - Mobile responsive */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
+              initial={{ opacity: 0, scale: 0.95, y: isMobile ? 20 : 0 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: isMobile ? 20 : 0 }}
               transition={{ duration: 0.2 }}
+              className={`fixed z-[9999] max-h-[80vh] overflow-y-auto ${
+                isMobile
+                  ? 'inset-x-4 bottom-4 top-auto'
+                  : ''
+              }`}
               style={{
-                position: 'fixed',
-                top: `${popupPosition.top}px`,
-                left: `${popupPosition.left}px`,
-                zIndex: 9999
+                maxWidth: '400px',
+                width: isMobile ? 'calc(100% - 32px)' : '400px',
+                ...(!isMobile ? {
+                  top: `${popupPosition.top}px`,
+                  left: `${popupPosition.left}px`,
+                } : {})
               }}
-              className="w-[400px] max-h-[80vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="relative">
