@@ -327,12 +327,143 @@ export default function FeaturesPage() {
                 </div>
                 <div className={index % 2 === 1 ? 'lg:col-start-1 lg:row-start-1' : ''}>
                   <div className={`bg-gradient-to-br ${feature.gradient} rounded-2xl p-px`}>
-                    <div className="bg-slate-900 rounded-2xl p-8">
-                      <div className="w-full h-80 bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-xl flex items-center justify-center border border-slate-700/50 overflow-hidden">
-                        <div className="relative w-full h-full flex items-center justify-center">
-                          <feature.icon className="w-32 h-32 text-white/10" />
-                          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent" />
-                        </div>
+                    <div className="bg-slate-900 rounded-2xl p-4">
+                      <div className="w-full h-80 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700/50 overflow-hidden">
+                        {/* Analytics Dashboard Preview */}
+                        {index === 0 && (
+                          <div className="p-4 h-full flex flex-col">
+                            {/* Mini Header */}
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 bg-gradient-to-br from-purple-500 to-blue-500 rounded-md" />
+                                <span className="text-xs font-bold text-white">Dashboard</span>
+                              </div>
+                              <div className="flex gap-1">
+                                <div className="w-12 h-5 bg-purple-500/20 rounded text-[8px] text-purple-400 flex items-center justify-center font-bold">Tiles</div>
+                                <div className="w-12 h-5 bg-slate-700/50 rounded text-[8px] text-slate-400 flex items-center justify-center">Chart</div>
+                                <div className="w-10 h-5 bg-slate-700/50 rounded text-[8px] text-slate-400 flex items-center justify-center">P&L</div>
+                              </div>
+                            </div>
+                            {/* Mini Metric Cards */}
+                            <div className="grid grid-cols-5 gap-2 mb-3">
+                              {[
+                                { period: 'Today', value: '$2,456', change: '+12.3%' },
+                                { period: 'Yesterday', value: '$1,892', change: '+8.7%' },
+                                { period: '7 Days', value: '$14,230', change: '+15.2%' },
+                                { period: '30 Days', value: '$48,670', change: '+22.1%' },
+                                { period: 'Month', value: '$52,340', change: '+18.9%' },
+                              ].map((item, i) => (
+                                <div key={i} className={`p-2 rounded-lg ${i === 0 ? 'bg-purple-500/20 border border-purple-500/30' : 'bg-slate-800/50'}`}>
+                                  <p className="text-[7px] text-slate-400 mb-1">{item.period}</p>
+                                  <p className="text-xs font-bold text-emerald-400">{item.value}</p>
+                                  <p className="text-[7px] text-emerald-400">{item.change}</p>
+                                </div>
+                              ))}
+                            </div>
+                            {/* Mini Chart */}
+                            <div className="flex-1 bg-slate-800/30 rounded-lg p-3">
+                              <div className="flex items-end justify-between h-full gap-1">
+                                {[45, 62, 38, 71, 55, 48, 82, 65, 43, 78, 52, 69, 41, 85, 58, 73, 49, 91, 67, 76].map((height, i) => (
+                                  <div
+                                    key={i}
+                                    className="flex-1 bg-gradient-to-t from-purple-500 to-blue-500 rounded-t opacity-80"
+                                    style={{ height: `${height}%` }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Product & COGS Management Preview */}
+                        {index === 1 && (
+                          <div className="p-4 h-full flex flex-col">
+                            {/* Mini Header */}
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-xs font-bold text-white">Products</span>
+                              <div className="px-2 py-1 bg-amber-500/20 rounded text-[8px] text-amber-400 font-bold">24 Products</div>
+                            </div>
+                            {/* Mini Product Table */}
+                            <div className="flex-1 space-y-2 overflow-hidden">
+                              {[
+                                { name: 'Premium Yoga Mat', asin: 'B08XYZ123', cogs: '$18.50' },
+                                { name: 'Wireless Earbuds', asin: 'B09ABC456', cogs: '$24.99' },
+                                { name: 'Phone Stand', asin: 'B07DEF789', cogs: '$8.25' },
+                                { name: 'LED Strip Lights', asin: 'B08GHI012', cogs: '$12.75' },
+                              ].map((product, i) => (
+                                <div key={i} className="flex items-center gap-2 p-2 bg-slate-800/50 rounded-lg">
+                                  <div className="w-8 h-8 bg-gradient-to-br from-amber-500/30 to-orange-500/30 rounded-md flex items-center justify-center">
+                                    <Package className="w-4 h-4 text-amber-400" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[9px] font-bold text-white truncate">{product.name}</p>
+                                    <p className="text-[7px] text-slate-400">ASIN: {product.asin}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-[9px] font-bold text-emerald-400">{product.cogs}</p>
+                                    <p className="text-[7px] text-slate-400">COGS</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            {/* Mini Cost Breakdown */}
+                            <div className="mt-2 p-2 bg-slate-800/30 rounded-lg">
+                              <div className="flex items-center justify-between text-[8px]">
+                                <span className="text-slate-400">Total COGS Value:</span>
+                                <span className="font-bold text-amber-400">$12,450</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Profit Tracking Preview */}
+                        {index === 2 && (
+                          <div className="p-4 h-full flex flex-col">
+                            {/* Mini Header */}
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-xs font-bold text-white">Profit Analysis</span>
+                              <div className="px-2 py-1 bg-emerald-500/20 rounded text-[8px] text-emerald-400 font-bold">Last 30 Days</div>
+                            </div>
+                            {/* Mini Profit Cards */}
+                            <div className="grid grid-cols-3 gap-2 mb-3">
+                              <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                                <p className="text-[7px] text-slate-400">Net Profit</p>
+                                <p className="text-sm font-black text-emerald-400">$8,456</p>
+                                <p className="text-[7px] text-emerald-400">↑ 23.5%</p>
+                              </div>
+                              <div className="p-2 bg-slate-800/50 rounded-lg">
+                                <p className="text-[7px] text-slate-400">Gross Profit</p>
+                                <p className="text-sm font-bold text-white">$12,890</p>
+                                <p className="text-[7px] text-emerald-400">↑ 18.2%</p>
+                              </div>
+                              <div className="p-2 bg-slate-800/50 rounded-lg">
+                                <p className="text-[7px] text-slate-400">Margin</p>
+                                <p className="text-sm font-bold text-white">34.2%</p>
+                                <p className="text-[7px] text-emerald-400">↑ 2.1%</p>
+                              </div>
+                            </div>
+                            {/* Mini Breakdown */}
+                            <div className="flex-1 bg-slate-800/30 rounded-lg p-3 space-y-2">
+                              {[
+                                { label: 'Revenue', value: '$24,500', color: 'bg-blue-500' },
+                                { label: 'Amazon Fees', value: '-$4,230', color: 'bg-red-500' },
+                                { label: 'Ad Spend', value: '-$2,890', color: 'bg-amber-500' },
+                                { label: 'COGS', value: '-$8,924', color: 'bg-purple-500' },
+                              ].map((item, i) => (
+                                <div key={i} className="flex items-center gap-2">
+                                  <div className={`w-2 h-2 ${item.color} rounded-full`} />
+                                  <span className="text-[8px] text-slate-400 flex-1">{item.label}</span>
+                                  <span className={`text-[9px] font-bold ${item.value.startsWith('-') ? 'text-red-400' : 'text-emerald-400'}`}>{item.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                            {/* ROI Badge */}
+                            <div className="mt-2 flex items-center justify-center gap-2 p-2 bg-gradient-to-r from-emerald-500/20 to-green-500/20 rounded-lg border border-emerald-500/30">
+                              <TrendingUp className="w-4 h-4 text-emerald-400" />
+                              <span className="text-xs font-black text-emerald-400">ROI: 142%</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
