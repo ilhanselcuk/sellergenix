@@ -116,7 +116,8 @@ export function RegisterForm() {
             required
             value={formData.fullName}
             onChange={handleChange}
-            className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-300"
+            className="w-full pl-12 pr-4 py-3.5 bg-white border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-400"
+            style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937' }}
             placeholder="John Doe"
             disabled={loading}
           />
@@ -139,7 +140,8 @@ export function RegisterForm() {
             required
             value={formData.email}
             onChange={handleChange}
-            className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-300"
+            className="w-full pl-12 pr-4 py-3.5 bg-white border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-400"
+            style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937' }}
             placeholder="you@company.com"
             disabled={loading}
           />
@@ -161,7 +163,8 @@ export function RegisterForm() {
             type="text"
             value={formData.companyName}
             onChange={handleChange}
-            className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-300"
+            className="w-full pl-12 pr-4 py-3.5 bg-white border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-400"
+            style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937' }}
             placeholder="Your Company LLC"
             disabled={loading}
           />
@@ -184,7 +187,8 @@ export function RegisterForm() {
             required
             value={formData.password}
             onChange={handleChange}
-            className="w-full pl-12 pr-12 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-300"
+            className="w-full pl-12 pr-12 py-3.5 bg-white border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-400"
+            style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937' }}
             placeholder="••••••••"
             disabled={loading}
           />
@@ -225,13 +229,14 @@ export function RegisterForm() {
             required
             value={formData.confirmPassword}
             onChange={handleChange}
-            className={`w-full pl-12 pr-12 py-3.5 bg-gray-50 border rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 transition-all hover:border-gray-300 ${
+            className={`w-full pl-12 pr-12 py-3.5 bg-white border rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-all hover:border-gray-400 ${
               formData.confirmPassword.length > 0
                 ? passwordMatch
                   ? 'border-[#34a853] focus:ring-[#34a853]/50 focus:border-[#34a853]'
                   : 'border-red-400 focus:ring-red-400/50 focus:border-red-400'
-                : 'border-gray-200 focus:ring-[#34a853]/50 focus:border-[#34a853]'
+                : 'border-gray-300 focus:ring-[#34a853]/50 focus:border-[#34a853]'
             }`}
+            style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937' }}
             placeholder="••••••••"
             disabled={loading}
           />

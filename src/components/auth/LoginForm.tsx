@@ -77,7 +77,8 @@ export function LoginForm() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#4285f4]/50 focus:border-[#4285f4] transition-all hover:border-gray-300"
+            className="w-full pl-12 pr-4 py-3.5 bg-white border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#4285f4]/50 focus:border-[#4285f4] transition-all hover:border-gray-400"
+            style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937' }}
             placeholder="you@company.com"
             disabled={loading}
           />
@@ -107,7 +108,8 @@ export function LoginForm() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full pl-12 pr-12 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#4285f4]/50 focus:border-[#4285f4] transition-all hover:border-gray-300"
+            className="w-full pl-12 pr-12 py-3.5 bg-white border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#4285f4]/50 focus:border-[#4285f4] transition-all hover:border-gray-400"
+            style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937' }}
             placeholder="••••••••"
             disabled={loading}
           />
