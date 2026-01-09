@@ -92,9 +92,9 @@ export function RegisterForm() {
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Error message */}
       {error && (
-        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-medium flex items-start gap-3">
-          <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <span className="text-red-400 text-xs">!</span>
+        <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm font-medium flex items-start gap-3">
+          <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <span className="text-red-500 text-xs">!</span>
           </div>
           <span>{error}</span>
         </div>
@@ -102,11 +102,11 @@ export function RegisterForm() {
 
       {/* Full Name */}
       <div>
-        <label htmlFor="fullName" className="block text-sm font-semibold text-gray-300 mb-2">
+        <label htmlFor="fullName" className="block text-sm font-semibold text-[#6c757d] mb-2">
           Full name
         </label>
         <div className="relative">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6c757d]">
             <User className="w-5 h-5" />
           </div>
           <input
@@ -116,7 +116,7 @@ export function RegisterForm() {
             required
             value={formData.fullName}
             onChange={handleChange}
-            className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853]/50 transition-all hover:border-white/20"
+            className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-300"
             placeholder="John Doe"
             disabled={loading}
           />
@@ -125,11 +125,11 @@ export function RegisterForm() {
 
       {/* Email */}
       <div>
-        <label htmlFor="email" className="block text-sm font-semibold text-gray-300 mb-2">
+        <label htmlFor="email" className="block text-sm font-semibold text-[#6c757d] mb-2">
           Email address
         </label>
         <div className="relative">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6c757d]">
             <Mail className="w-5 h-5" />
           </div>
           <input
@@ -139,7 +139,7 @@ export function RegisterForm() {
             required
             value={formData.email}
             onChange={handleChange}
-            className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853]/50 transition-all hover:border-white/20"
+            className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-300"
             placeholder="you@company.com"
             disabled={loading}
           />
@@ -148,11 +148,11 @@ export function RegisterForm() {
 
       {/* Company Name */}
       <div>
-        <label htmlFor="companyName" className="block text-sm font-semibold text-gray-300 mb-2">
-          Company name <span className="text-gray-500 text-xs font-normal">(optional)</span>
+        <label htmlFor="companyName" className="block text-sm font-semibold text-[#6c757d] mb-2">
+          Company name <span className="text-gray-400 text-xs font-normal">(optional)</span>
         </label>
         <div className="relative">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6c757d]">
             <Building className="w-5 h-5" />
           </div>
           <input
@@ -161,7 +161,7 @@ export function RegisterForm() {
             type="text"
             value={formData.companyName}
             onChange={handleChange}
-            className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853]/50 transition-all hover:border-white/20"
+            className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-300"
             placeholder="Your Company LLC"
             disabled={loading}
           />
@@ -170,11 +170,11 @@ export function RegisterForm() {
 
       {/* Password */}
       <div>
-        <label htmlFor="password" className="block text-sm font-semibold text-gray-300 mb-2">
+        <label htmlFor="password" className="block text-sm font-semibold text-[#6c757d] mb-2">
           Password
         </label>
         <div className="relative">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6c757d]">
             <Lock className="w-5 h-5" />
           </div>
           <input
@@ -184,14 +184,14 @@ export function RegisterForm() {
             required
             value={formData.password}
             onChange={handleChange}
-            className="w-full pl-12 pr-12 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853]/50 transition-all hover:border-white/20"
+            className="w-full pl-12 pr-12 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#34a853]/50 focus:border-[#34a853] transition-all hover:border-gray-300"
             placeholder="••••••••"
             disabled={loading}
           />
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6c757d] hover:text-[#343a40] transition-colors"
           >
             {showPassword ? (
               <EyeOff className="w-5 h-5" />
@@ -202,7 +202,7 @@ export function RegisterForm() {
         </div>
         {/* Password strength indicator */}
         <div className="flex items-center gap-2 mt-2">
-          <div className={`flex items-center gap-1 text-xs ${passwordLength ? 'text-[#34a853]' : 'text-gray-500'}`}>
+          <div className={`flex items-center gap-1 text-xs ${passwordLength ? 'text-[#34a853]' : 'text-[#6c757d]'}`}>
             <Check className={`w-3 h-3 ${passwordLength ? 'opacity-100' : 'opacity-50'}`} />
             <span>8+ characters</span>
           </div>
@@ -211,11 +211,11 @@ export function RegisterForm() {
 
       {/* Confirm Password */}
       <div>
-        <label htmlFor="confirmPassword" className="block text-sm font-semibold text-gray-300 mb-2">
+        <label htmlFor="confirmPassword" className="block text-sm font-semibold text-[#6c757d] mb-2">
           Confirm password
         </label>
         <div className="relative">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6c757d]">
             <Lock className="w-5 h-5" />
           </div>
           <input
@@ -225,12 +225,12 @@ export function RegisterForm() {
             required
             value={formData.confirmPassword}
             onChange={handleChange}
-            className={`w-full pl-12 pr-12 py-3.5 bg-white/5 border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition-all hover:border-white/20 ${
+            className={`w-full pl-12 pr-12 py-3.5 bg-gray-50 border rounded-xl text-[#343a40] placeholder-gray-400 focus:outline-none focus:ring-2 transition-all hover:border-gray-300 ${
               formData.confirmPassword.length > 0
                 ? passwordMatch
-                  ? 'border-[#34a853]/50 focus:ring-[#34a853]/50 focus:border-[#34a853]/50'
-                  : 'border-red-500/50 focus:ring-red-500/50 focus:border-red-500/50'
-                : 'border-white/10 focus:ring-[#34a853]/50 focus:border-[#34a853]/50'
+                  ? 'border-[#34a853] focus:ring-[#34a853]/50 focus:border-[#34a853]'
+                  : 'border-red-400 focus:ring-red-400/50 focus:border-red-400'
+                : 'border-gray-200 focus:ring-[#34a853]/50 focus:border-[#34a853]'
             }`}
             placeholder="••••••••"
             disabled={loading}
@@ -240,7 +240,7 @@ export function RegisterForm() {
               {passwordMatch ? (
                 <Check className="w-5 h-5 text-[#34a853]" />
               ) : (
-                <span className="text-red-400 text-xs">✕</span>
+                <span className="text-red-500 text-xs font-bold">✕</span>
               )}
             </div>
           )}
