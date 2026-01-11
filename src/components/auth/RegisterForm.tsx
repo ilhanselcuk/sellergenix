@@ -24,6 +24,7 @@ export function RegisterForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [success, setSuccess] = useState(false)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -73,9 +74,8 @@ export function RegisterForm() {
         throw new Error('Failed to create account')
       }
 
-      // Success! Redirect to dashboard
-      router.push('/dashboard')
-      router.refresh()
+      // Success! Show confirmation message
+      setSuccess(true)
     } catch (err: any) {
       console.error('Registration error:', err)
       setError(err.message || 'Failed to create account. Please try again.')
@@ -87,6 +87,24 @@ export function RegisterForm() {
   // Password strength indicators
   const passwordLength = formData.password.length >= 8
   const passwordMatch = formData.password === formData.confirmPassword && formData.confirmPassword.length > 0
+
+  // Show success message after registration
+  if (success) {
+    return (
+      <div className="text-center py-8">
+        <div className="w-16 h-16 bg-gradient-to-br from-[#34a853] to-[#137333] rounded-full flex items-center justify-center mx-auto mb-6">
+          <Check className="w-8 h-8 text-white" />
+        </div>
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Check Your Email</h3>
+        <p className="text-gray-600 mb-4">
+          We've sent a confirmation link to <strong>{formData.email}</strong>
+        </p>
+        <p className="text-sm text-gray-500">
+          Click the link in your email to activate your account. If you don't see it, check your spam folder.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
