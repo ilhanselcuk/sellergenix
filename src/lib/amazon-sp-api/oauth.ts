@@ -24,9 +24,11 @@ export function getAmazonAuthorizationUrl(params?: AmazonOAuthParams): string {
   const redirectUri = params?.redirectUri || process.env.AMAZON_OAUTH_REDIRECT_URI || 'http://localhost:3001/api/auth/amazon/callback'
   const state = params?.state || generateRandomState()
 
-  // Use LWA Client ID if available, otherwise fall back to SP-API Client ID
-  const lwaClientId = process.env.AMAZON_LWA_CLIENT_ID
-  const applicationId = lwaClientId || config.clientId
+  // For OAuth authorization URL, use the SP Solution ID (not LWA Client ID)
+  // SP Solution ID format: amzn1.sp.solution.*
+  // LWA Client ID format: amzn1.application-oa2-client.* (used for token exchange only)
+  const spSolutionId = process.env.AMAZON_SP_SOLUTION_ID
+  const applicationId = spSolutionId || config.clientId
 
   // Amazon Seller Central authorization URL
   const authUrl = 'https://sellercentral.amazon.com/apps/authorize/consent'
