@@ -36,11 +36,10 @@ export function getAmazonAuthorizationUrl(params?: AmazonOAuthParams): string {
   url.searchParams.set('redirect_uri', redirectUri)
   url.searchParams.set('state', state)
 
-  // Note: version=beta is ONLY for draft apps
-  // Published/production apps should NOT use version=beta
-  // The blank page issue happens when the app is not properly configured in Amazon Solution Provider Portal
-  // Make sure the redirect_uri is registered and the app is published
-  const isDraftApp = process.env.AMAZON_SP_API_SANDBOX === 'true'
+  // Note: version=beta is required for draft apps (not yet published)
+  // Once the app is fully published in Amazon Solution Provider Portal, set this to false
+  // "Ready For Publishing" status still requires version=beta until you click "Publish"
+  const isDraftApp = process.env.AMAZON_APP_IS_DRAFT !== 'false'
   if (isDraftApp) {
     url.searchParams.set('version', 'beta')
   }
