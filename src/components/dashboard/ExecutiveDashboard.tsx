@@ -58,10 +58,35 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { SearchHelp } from './SearchHelp'
 import ExcelJS from 'exceljs'
 
+interface PeriodMetrics {
+  sales: number
+  units: number
+  orders: number
+  refunds: number
+  adSpend: number
+  amazonFees: number
+  grossProfit: number
+  netProfit: number
+  margin: number
+  roi: number
+}
+
+interface DashboardData {
+  today: PeriodMetrics
+  yesterday: PeriodMetrics
+  last7Days: PeriodMetrics
+  last30Days: PeriodMetrics
+  lastMonth: PeriodMetrics
+  dailyMetrics: any[]
+  recentOrders: any[]
+  hasRealData: boolean
+}
+
 interface ExecutiveDashboardProps {
   profileName: string
   email: string
   hasAmazonConnection?: boolean
+  dashboardData?: DashboardData
 }
 
 // Color palette - Dark Executive Theme
@@ -534,7 +559,7 @@ const PERIOD_OPTIONS = [
   { id: 'custom', label: 'Custom Range', periods: ['custom'] },
 ]
 
-export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = false }: ExecutiveDashboardProps) {
+export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = false, dashboardData }: ExecutiveDashboardProps) {
   const [selectedPeriod, setSelectedPeriod] = useState<string>('today-yesterday')
   const [refreshing, setRefreshing] = useState(false)
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null)
@@ -1903,7 +1928,21 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
       <div className="sticky top-0 z-[10000] bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-6 py-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Analytics Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-white">Analytics Dashboard</h1>
+            {/* Data Status Badge */}
+            {dashboardData?.hasRealData ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/20 border border-emerald-500/30 rounded-full text-xs font-semibold text-emerald-400">
+                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                Live Data
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/20 border border-amber-500/30 rounded-full text-xs font-semibold text-amber-400">
+                <span className="w-1.5 h-1.5 bg-amber-400 rounded-full" />
+                Demo Data
+              </span>
+            )}
+          </div>
           <p className="text-slate-400 text-sm">Welcome back, {profileName}. Click on chart bars to see daily breakdown.</p>
         </div>
 

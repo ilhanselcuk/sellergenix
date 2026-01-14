@@ -6,7 +6,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getUserProfile, getActiveAmazonConnection } from '@/lib/supabase/queries'
+import { getUserProfile, getActiveAmazonConnection, getDashboardData } from '@/lib/supabase/queries'
 import { ExecutiveDashboard } from '@/components/dashboard/ExecutiveDashboard'
 
 export default async function DashboardPage() {
@@ -21,10 +21,13 @@ export default async function DashboardPage() {
     redirect('/auth/login')
   }
 
-  // Get user profile and Amazon connection
+  // Get user profile, Amazon connection, and dashboard data
   const profile = await getUserProfile(user.id)
   const amazonConnection = await getActiveAmazonConnection(user.id)
   const hasAmazonConnection = !!amazonConnection
+
+  // Fetch real dashboard data from database
+  const dashboardData = await getDashboardData(user.id)
 
   return (
     <div className="min-h-screen bg-slate-900">
@@ -98,6 +101,7 @@ export default async function DashboardPage() {
         profileName={profile?.full_name || 'User'}
         email={user.email || ''}
         hasAmazonConnection={hasAmazonConnection}
+        dashboardData={dashboardData}
       />
 
       {/* Footer - Dark Theme */}
