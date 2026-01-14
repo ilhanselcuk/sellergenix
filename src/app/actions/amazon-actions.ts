@@ -581,19 +581,30 @@ export async function syncProductsAction(
       }
     }
 
-    // Get marketplace ID (use first marketplace or default to US)
-    const marketplaceId = connection.marketplace_ids?.[0] || 'ATVPDKIKX0DER'
+    // Get marketplace ID - prioritize US marketplace where most products are
+    const US_MARKETPLACE = 'ATVPDKIKX0DER'
+    const marketplaceIds = connection.marketplace_ids || []
+
+    // Use US if available, otherwise first marketplace
+    const marketplaceId = marketplaceIds.includes(US_MARKETPLACE)
+      ? US_MARKETPLACE
+      : (marketplaceIds[0] || US_MARKETPLACE)
+
+    const sellerId = connection.seller_id
 
     console.log('🚀 Starting product sync for user:', userId)
     console.log('  Connection ID:', connection.id)
-    console.log('  Marketplace:', marketplaceId)
+    console.log('  Seller ID:', sellerId)
+    console.log('  Available Marketplaces:', marketplaceIds)
+    console.log('  Using Marketplace:', marketplaceId)
 
-    // Run sync with history tracking
+    // Run sync with history tracking (sellerId is passed for Listings API)
     const result = await syncProductsWithHistory(
       userId,
       connection.id,
       connection.refresh_token,
-      marketplaceId
+      marketplaceId,
+      sellerId
     )
 
     revalidatePath('/dashboard/amazon')

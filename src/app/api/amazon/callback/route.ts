@@ -16,14 +16,33 @@ export async function GET(request: NextRequest) {
 
   try {
     const searchParams = request.nextUrl.searchParams
+
+    // Log ALL incoming parameters for debugging
+    console.log('🔍 OAuth Callback - Full URL:', request.url)
+    console.log('🔍 OAuth Callback - All params:', Object.fromEntries(searchParams.entries()))
+
+    // Check for Amazon error response first
+    const amazonError = searchParams.get('error')
+    const amazonErrorDescription = searchParams.get('error_description')
+
+    if (amazonError) {
+      console.error('❌ Amazon OAuth Error:', amazonError, amazonErrorDescription)
+      return NextResponse.redirect(`${baseUrl}/dashboard/amazon?error=amazon_error&details=${encodeURIComponent(amazonErrorDescription || amazonError)}`)
+    }
+
     const code = searchParams.get('code')
     const state = searchParams.get('state')
     const sellingPartnerId = searchParams.get('selling_partner_id')
+    const spapi_oauth_code = searchParams.get('spapi_oauth_code') // Alternative param name
     const mwsAuthToken = searchParams.get('mws_auth_token')
 
+    // Use either code or spapi_oauth_code
+    const authCode = code || spapi_oauth_code
+
     // Validate parameters
-    if (!code) {
+    if (!authCode) {
       console.error('❌ No authorization code provided')
+      console.error('❌ Received params:', { code, spapi_oauth_code, state, sellingPartnerId })
       return NextResponse.redirect(`${baseUrl}/dashboard/amazon?error=no_code`)
     }
 
@@ -39,7 +58,8 @@ export async function GET(request: NextRequest) {
     console.log('🔄 Processing OAuth callback for user:', user.id)
 
     // Exchange authorization code for tokens
-    const tokenResult = await exchangeAuthorizationCode(code)
+    console.log('🔄 Exchanging auth code:', authCode.substring(0, 20) + '...')
+    const tokenResult = await exchangeAuthorizationCode(authCode)
 
     if (!tokenResult.success || !tokenResult.data) {
       console.error('❌ Token exchange failed:', tokenResult.error)
@@ -92,8 +112,19 @@ export async function GET(request: NextRequest) {
 
     console.log('✅ Amazon connection saved successfully!')
 
-    // Redirect to Amazon page with success message
-    return NextResponse.redirect(`${baseUrl}/dashboard/amazon?success=connected`)
+    // Start background sync (fire and forget)
+    try {
+      fetch(`${baseUrl}/api/amazon/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      }).catch(() => {}) // Ignore errors, sync runs in background
+    } catch (e) {
+      // Ignore - background sync is not critical for redirect
+    }
+
+    // Redirect directly to main dashboard - sync happens in background
+    return NextResponse.redirect(`${baseUrl}/dashboard`)
   } catch (error: any) {
     console.error('❌ OAuth callback error:', error)
     return NextResponse.redirect(`${baseUrl}/dashboard/amazon?error=unknown`)

@@ -1,0 +1,276 @@
+/**
+ * Orders Sync Service
+ *
+ * Syncs orders from Amazon SP-API to local database
+ */
+
+import { createClient } from '@/lib/supabase/server'
+import {
+  getOrders,
+  getOrderItems,
+  type Order,
+  type OrderItem,
+} from '@/lib/amazon-sp-api'
+
+export interface SyncOrdersResult {
+  success: boolean
+  ordersSync: number
+  ordersFailed: number
+  errors: string[]
+  duration: number
+}
+
+export interface OrderSyncData {
+  amazon_order_id: string
+  purchase_date: string
+  order_status: string
+  fulfillment_channel: string
+  order_total: number
+  currency_code: string
+  items_shipped: number
+  items_unshipped: number
+  marketplace_id: string
+  is_prime: boolean
+  is_business_order: boolean
+  ship_city?: string
+  ship_state?: string
+  ship_country?: string
+}
+
+/**
+ * Sync orders from Amazon to database
+ *
+ * @param userId - User ID
+ * @param refreshToken - Amazon refresh token
+ * @param marketplaceIds - Amazon marketplace IDs
+ * @param daysBack - Number of days to sync (default 30)
+ * @returns Sync result
+ */
+export async function syncOrders(
+  userId: string,
+  refreshToken: string,
+  marketplaceIds: string[],
+  daysBack: number = 30
+): Promise<SyncOrdersResult> {
+  const startTime = Date.now()
+  let ordersSync = 0
+  let ordersFailed = 0
+  const errors: string[] = []
+
+  console.log('🚀 Starting orders sync for user:', userId)
+  console.log('📋 Marketplace IDs:', marketplaceIds)
+  console.log('📅 Days back:', daysBack)
+
+  try {
+    const supabase = await createClient()
+
+    // Calculate date range
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - daysBack)
+
+    // Step 1: Fetch orders from Amazon
+    console.log('📦 Step 1: Fetching orders...')
+    const ordersResult = await getOrders(
+      refreshToken,
+      marketplaceIds,
+      startDate,
+      endDate
+    )
+
+    if (!ordersResult.success || !ordersResult.orders) {
+      console.log('❌ Failed to fetch orders:', ordersResult.error)
+      return {
+        success: false,
+        ordersSync: 0,
+        ordersFailed: 0,
+        errors: [ordersResult.error || 'Failed to fetch orders'],
+        duration: Date.now() - startTime,
+      }
+    }
+
+    const orders = ordersResult.orders
+    console.log(`✅ Found ${orders.length} orders`)
+
+    if (orders.length === 0) {
+      return {
+        success: true,
+        ordersSync: 0,
+        ordersFailed: 0,
+        errors: [],
+        duration: Date.now() - startTime,
+      }
+    }
+
+    // Step 2: Process each order
+    console.log('⚙️ Step 2: Processing orders...')
+
+    for (const order of orders) {
+      try {
+        const orderId = order.amazonOrderId
+
+        // Prepare order data
+        const orderData: OrderSyncData = {
+          amazon_order_id: orderId,
+          purchase_date: order.purchaseDate,
+          order_status: order.orderStatus,
+          fulfillment_channel: order.fulfillmentChannel,
+          order_total: order.orderTotal ? parseFloat(order.orderTotal.amount) : 0,
+          currency_code: order.orderTotal?.currencyCode || 'USD',
+          items_shipped: order.numberOfItemsShipped || 0,
+          items_unshipped: order.numberOfItemsUnshipped || 0,
+          marketplace_id: order.marketplaceId || marketplaceIds[0],
+          is_prime: order.isPrime || false,
+          is_business_order: order.isBusinessOrder || false,
+          ship_city: order.shippingAddress?.city,
+          ship_state: order.shippingAddress?.stateOrRegion,
+          ship_country: order.shippingAddress?.countryCode,
+        }
+
+        // Upsert order to database
+        const { error: orderError } = await supabase
+          .from('orders')
+          .upsert(
+            {
+              user_id: userId,
+              ...orderData,
+              updated_at: new Date().toISOString(),
+            },
+            {
+              onConflict: 'user_id,amazon_order_id',
+            }
+          )
+
+        if (orderError) {
+          console.error(`  ❌ Failed to save order ${orderId}:`, orderError.message)
+          ordersFailed++
+          errors.push(`Failed to save order ${orderId}: ${orderError.message}`)
+          continue
+        }
+
+        // Fetch and save order items
+        try {
+          const itemsResult = await getOrderItems(refreshToken, orderId)
+
+          if (itemsResult.success && itemsResult.orderItems) {
+            for (const item of itemsResult.orderItems) {
+              const { error: itemError } = await supabase
+                .from('order_items')
+                .upsert(
+                  {
+                    user_id: userId,
+                    amazon_order_id: orderId,
+                    order_item_id: item.orderItemId,
+                    asin: item.asin,
+                    seller_sku: item.sellerSKU,
+                    title: item.title,
+                    quantity_ordered: item.quantityOrdered,
+                    quantity_shipped: item.quantityShipped,
+                    item_price: item.itemPrice ? parseFloat(item.itemPrice.amount) : 0,
+                    item_tax: item.itemTax ? parseFloat(item.itemTax.amount) : 0,
+                    shipping_price: item.shippingPrice ? parseFloat(item.shippingPrice.amount) : 0,
+                    promotion_discount: item.promotionDiscount ? parseFloat(item.promotionDiscount.amount) : 0,
+                    updated_at: new Date().toISOString(),
+                  },
+                  {
+                    onConflict: 'user_id,order_item_id',
+                  }
+                )
+
+              if (itemError) {
+                console.warn(`  ⚠️ Failed to save order item:`, itemError.message)
+              }
+            }
+          }
+        } catch (itemsError: any) {
+          console.warn(`  ⚠️ Failed to fetch order items for ${orderId}:`, itemsError.message)
+        }
+
+        console.log(`  ✅ Saved order ${orderId}`)
+        ordersSync++
+
+        // Add small delay to avoid rate limiting
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      } catch (error: any) {
+        console.error(`  ❌ Error processing order:`, error.message)
+        ordersFailed++
+        errors.push(error.message)
+      }
+    }
+
+    const duration = Date.now() - startTime
+    console.log(`✅ Orders sync completed: ${ordersSync} synced, ${ordersFailed} failed in ${duration}ms`)
+
+    return {
+      success: true,
+      ordersSync,
+      ordersFailed,
+      errors,
+      duration,
+    }
+  } catch (error: any) {
+    console.error('❌ Orders sync failed:', error)
+    return {
+      success: false,
+      ordersSync,
+      ordersFailed,
+      errors: [error.message],
+      duration: Date.now() - startTime,
+    }
+  }
+}
+
+/**
+ * Sync orders and record in sync history
+ */
+export async function syncOrdersWithHistory(
+  userId: string,
+  connectionId: string,
+  refreshToken: string,
+  marketplaceIds: string[],
+  daysBack: number = 30
+): Promise<SyncOrdersResult & { historyId?: string }> {
+  const supabase = await createClient()
+
+  // Create sync history record
+  const { data: historyData, error: historyError } = await supabase
+    .from('amazon_sync_history')
+    .insert({
+      user_id: userId,
+      connection_id: connectionId,
+      sync_type: 'orders',
+      status: 'running',
+      started_at: new Date().toISOString(),
+    })
+    .select()
+    .single()
+
+  if (historyError) {
+    console.error('Failed to create sync history:', historyError)
+  }
+
+  const historyId = historyData?.id
+
+  // Run sync
+  const result = await syncOrders(userId, refreshToken, marketplaceIds, daysBack)
+
+  // Update sync history
+  if (historyId) {
+    await supabase
+      .from('amazon_sync_history')
+      .update({
+        status: result.success ? 'completed' : 'failed',
+        records_synced: result.ordersSync,
+        records_failed: result.ordersFailed,
+        duration_ms: result.duration,
+        error_message: result.errors.length > 0 ? result.errors.join(', ') : null,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', historyId)
+  }
+
+  return {
+    ...result,
+    historyId,
+  }
+}

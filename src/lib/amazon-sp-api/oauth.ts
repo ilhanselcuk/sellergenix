@@ -16,18 +16,28 @@ export interface AmazonOAuthParams {
  *
  * This URL should be used to redirect sellers for authorization
  *
+ * IMPORTANT: For SP-API OAuth consent URL, use the SP App ID (amzn1.sp.solution.*)
+ * NOT the LWA Client ID (amzn1.application-oa2-client.*)
+ *
+ * The LWA Client ID is only used for token exchange, not for the consent URL.
+ *
  * @param params - OAuth parameters
  * @returns Authorization URL
  */
 export function getAmazonAuthorizationUrl(params?: AmazonOAuthParams): string {
   const config = getAmazonSPAPIConfig()
-  const redirectUri = params?.redirectUri || process.env.AMAZON_OAUTH_REDIRECT_URI || 'http://localhost:3001/api/auth/amazon/callback'
+  const redirectUri = (params?.redirectUri || process.env.AMAZON_OAUTH_REDIRECT_URI || 'http://localhost:3001/api/auth/amazon/callback').trim()
   const state = params?.state || generateRandomState()
 
-  // For OAuth consent URL, use LWA Client ID (amzn1.application-oa2-client.*)
-  // Redirect URI must be registered in LWA Console Security Profile
-  const lwaClientId = process.env.AMAZON_LWA_CLIENT_ID
-  const applicationId = lwaClientId || config.clientId
+  // For OAuth consent URL, use SP App ID (amzn1.sp.solution.*)
+  // This is the Solution ID from Amazon Solution Provider Portal
+  // NOT the LWA Client ID which is used for token exchange
+  // IMPORTANT: Trim to remove any trailing newlines from env vars
+  const spAppId = process.env.AMAZON_SP_APP_ID?.trim()
+  const lwaClientId = process.env.AMAZON_LWA_CLIENT_ID?.trim()
+
+  // Priority: SP App ID > LWA Client ID > SP-API Client ID
+  const applicationId = (spAppId || lwaClientId || config.clientId).trim()
 
   // Amazon Seller Central authorization URL
   const authUrl = 'https://sellercentral.amazon.com/apps/authorize/consent'
@@ -39,15 +49,20 @@ export function getAmazonAuthorizationUrl(params?: AmazonOAuthParams): string {
 
   // Note: version=beta is required for draft apps (not yet published)
   // Once the app is fully published in Amazon Solution Provider Portal, set this to false
-  // "Ready For Publishing" status still requires version=beta until you click "Publish"
-  const isDraftApp = process.env.AMAZON_APP_IS_DRAFT !== 'false'
+  // IMPORTANT: Trim the env var value to handle any whitespace
+  const isDraftAppValue = process.env.AMAZON_APP_IS_DRAFT?.trim()?.toLowerCase()
+  const isDraftApp = isDraftAppValue !== 'false'
   if (isDraftApp) {
     url.searchParams.set('version', 'beta')
   }
 
   console.log('🔐 OAuth URL Generation:')
-  console.log('  Application ID:', applicationId)
+  console.log('  SP App ID:', spAppId || '(not set)')
+  console.log('  LWA Client ID:', lwaClientId || '(not set)')
+  console.log('  Using Application ID:', applicationId)
   console.log('  Redirect URI:', redirectUri)
+  console.log('  AMAZON_APP_IS_DRAFT raw:', JSON.stringify(process.env.AMAZON_APP_IS_DRAFT))
+  console.log('  Is Draft App:', isDraftApp)
   console.log('  Full URL:', url.toString())
 
   return url.toString()

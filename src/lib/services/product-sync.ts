@@ -139,12 +139,14 @@ function extractStatus(listingItem: ProductListingItem): string {
  * @param userId - User ID
  * @param refreshToken - Amazon refresh token
  * @param marketplaceId - Amazon marketplace ID
+ * @param sellerId - Amazon Seller ID (for Listings API)
  * @returns Sync result
  */
 export async function syncProducts(
   userId: string,
   refreshToken: string,
-  marketplaceId: string = 'ATVPDKIKX0DER'
+  marketplaceId: string = 'ATVPDKIKX0DER',
+  sellerId?: string
 ): Promise<SyncProductsResult> {
   const startTime = Date.now()
   let productsSync = 0
@@ -152,13 +154,15 @@ export async function syncProducts(
   const errors: string[] = []
 
   console.log('🚀 Starting product sync for user:', userId)
+  console.log('📋 Seller ID:', sellerId || '(not provided)')
+  console.log('🌍 Marketplace:', marketplaceId)
 
   try {
     const supabase = await createClient()
 
     // Step 1: Fetch product listings from Amazon
     console.log('📦 Step 1: Fetching product listings...')
-    const { items: listings } = await getProductListings(refreshToken, marketplaceId)
+    const { items: listings } = await getProductListings(refreshToken, marketplaceId, sellerId)
 
     if (!listings || listings.length === 0) {
       console.log('⚠️ No products found')
@@ -173,13 +177,19 @@ export async function syncProducts(
 
     console.log(`✅ Found ${listings.length} products`)
 
-    // Step 2: Fetch FBA inventory
+    // Step 2: Fetch FBA inventory (optional - don't fail if unavailable)
     console.log('📊 Step 2: Fetching FBA inventory...')
-    const fbaInventory = await getFBAInventory(refreshToken, marketplaceId)
-    const inventoryMap = new Map(
-      fbaInventory.map((item: any) => [item.asin, item.totalQuantity || 0])
-    )
-    console.log(`✅ FBA inventory fetched for ${fbaInventory.length} items`)
+    let inventoryMap = new Map<string, number>()
+    try {
+      const fbaInventory = await getFBAInventory(refreshToken, marketplaceId)
+      inventoryMap = new Map(
+        fbaInventory.map((item: any) => [item.asin, item.totalQuantity || 0])
+      )
+      console.log(`✅ FBA inventory fetched for ${fbaInventory.length} items`)
+    } catch (inventoryError: any) {
+      console.warn('⚠️ FBA inventory fetch failed (non-critical):', inventoryError.message)
+      console.log('📦 Continuing sync without FBA stock data...')
+    }
 
     // Step 3: Process each product
     console.log('⚙️ Step 3: Processing products...')
@@ -279,13 +289,15 @@ export async function syncProducts(
  * @param connectionId - Amazon connection ID
  * @param refreshToken - Amazon refresh token
  * @param marketplaceId - Amazon marketplace ID
+ * @param sellerId - Amazon Seller ID
  * @returns Sync result with history ID
  */
 export async function syncProductsWithHistory(
   userId: string,
   connectionId: string,
   refreshToken: string,
-  marketplaceId: string = 'ATVPDKIKX0DER'
+  marketplaceId: string = 'ATVPDKIKX0DER',
+  sellerId?: string
 ): Promise<SyncProductsResult & { historyId?: string }> {
   const supabase = await createClient()
 
@@ -308,8 +320,8 @@ export async function syncProductsWithHistory(
 
   const historyId = historyData?.id
 
-  // Run sync
-  const result = await syncProducts(userId, refreshToken, marketplaceId)
+  // Run sync with sellerId
+  const result = await syncProducts(userId, refreshToken, marketplaceId, sellerId)
 
   // Update sync history
   if (historyId) {
