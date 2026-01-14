@@ -97,7 +97,9 @@ export async function GET(request: NextRequest) {
           token_expires_at: tokenExpiresAt,
           seller_id: sellerId,
           marketplace_ids: marketplaceIds,
+          is_active: true,
           status: 'active',
+          connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         },
         {
