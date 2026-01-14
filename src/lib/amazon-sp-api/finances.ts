@@ -56,6 +56,10 @@ export async function listFinancialEventGroups(
   const client = createAmazonSPAPIClient(refreshToken)
 
   try {
+    // Amazon requires dates to be at least 2 minutes before current time
+    // Subtract 3 minutes to be safe
+    const safeEndDate = endDate ? new Date(endDate.getTime() - 3 * 60 * 1000) : undefined
+
     const params: Record<string, string | number> = {
       MaxResultsPerPage: 100,
     }
@@ -64,8 +68,8 @@ export async function listFinancialEventGroups(
       params.FinancialEventGroupStartedAfter = startDate.toISOString()
     }
 
-    if (endDate) {
-      params.FinancialEventGroupStartedBefore = endDate.toISOString()
+    if (safeEndDate) {
+      params.FinancialEventGroupStartedBefore = safeEndDate.toISOString()
     }
 
     const response = await client.callAPI({
@@ -105,13 +109,17 @@ export async function listFinancialEvents(
   const client = createAmazonSPAPIClient(refreshToken)
 
   try {
+    // Amazon requires PostedBefore to be at least 2 minutes before current time
+    // Subtract 3 minutes to be safe
+    const safeEndDate = endDate ? new Date(endDate.getTime() - 3 * 60 * 1000) : undefined
+
     const params: Record<string, string | number> = {
       MaxResultsPerPage: 100,
       PostedAfter: startDate.toISOString(),
     }
 
-    if (endDate) {
-      params.PostedBefore = endDate.toISOString()
+    if (safeEndDate) {
+      params.PostedBefore = safeEndDate.toISOString()
     }
 
     const response = await client.callAPI({
@@ -206,31 +214,40 @@ export function calculateProfitMetrics(financialEvents: Record<string, unknown[]
   let totalUnits = 0
 
   // Process shipment events (sales)
+  // Amazon API returns PascalCase field names, but our types use camelCase
   if (financialEvents.shipmentEvents) {
     for (const shipment of financialEvents.shipmentEvents as Record<string, unknown>[]) {
-      const items = (shipment.shipmentItemList as Record<string, unknown>[]) || []
+      // Handle both PascalCase and camelCase field names
+      const items = ((shipment.ShipmentItemList || shipment.shipmentItemList) as Record<string, unknown>[]) || []
 
       for (const item of items) {
-        // Sales amount
-        const principal = (item.itemChargeList as Record<string, unknown>[])?.find((c) => (c as Record<string, string>).chargeType === 'Principal') as Record<string, { currencyAmount?: number }> | undefined
+        // Sales amount - handle both cases
+        const chargeList = ((item.ItemChargeList || item.itemChargeList) as Record<string, unknown>[]) || []
+        const principal = chargeList.find((c) =>
+          (c as Record<string, string>).ChargeType === 'Principal' ||
+          (c as Record<string, string>).chargeType === 'Principal'
+        ) as Record<string, { CurrencyAmount?: number; currencyAmount?: number }> | undefined
         if (principal) {
-          totalSales += parseFloat(String(principal.chargeAmount?.currencyAmount || 0))
+          const chargeAmount = principal.ChargeAmount || principal.chargeAmount
+          totalSales += parseFloat(String(chargeAmount?.CurrencyAmount || chargeAmount?.currencyAmount || 0))
         }
 
-        // Fees
-        const fees = (item.itemFeeList as Array<{ feeAmount?: { currencyAmount?: number } }>) || []
-        for (const fee of fees) {
-          const feeAmount = fee?.feeAmount?.currencyAmount || 0
-          totalFees += Math.abs(parseFloat(String(feeAmount)))
+        // Fees - handle both cases
+        const feeList = ((item.ItemFeeList || item.itemFeeList) as Array<Record<string, unknown>>) || []
+        for (const fee of feeList) {
+          const feeAmountObj = (fee?.FeeAmount || fee?.feeAmount) as Record<string, number> | undefined
+          const amount = feeAmountObj?.CurrencyAmount || feeAmountObj?.currencyAmount || 0
+          totalFees += Math.abs(parseFloat(String(amount)))
         }
 
-        // Units sold
-        const quantity = Number(item.quantityShipped || 0)
+        // Units sold - handle both cases
+        const quantity = Number(item.QuantityShipped || item.quantityShipped || 0)
         totalUnits += quantity
 
-        // COGS (if provided)
-        if (productCosts && item.sellerSKU) {
-          const cogs = productCosts.get(String(item.sellerSKU)) || 0
+        // COGS (if provided) - handle both cases
+        const sellerSKU = item.SellerSKU || item.sellerSKU
+        if (productCosts && sellerSKU) {
+          const cogs = productCosts.get(String(sellerSKU)) || 0
           totalCOGS += cogs * quantity
         }
       }
@@ -238,14 +255,21 @@ export function calculateProfitMetrics(financialEvents: Record<string, unknown[]
   }
 
   // Process refund events
+  // Amazon API returns PascalCase field names, but our types use camelCase
   if (financialEvents.refundEvents) {
     for (const refund of financialEvents.refundEvents as Record<string, unknown>[]) {
-      const items = (refund.shipmentItemList as Record<string, unknown>[]) || []
+      // Handle both PascalCase and camelCase field names
+      const items = ((refund.ShipmentItemList || refund.shipmentItemList) as Record<string, unknown>[]) || []
 
       for (const item of items) {
-        const principal = (item.itemChargeList as Record<string, unknown>[])?.find((c) => (c as Record<string, string>).chargeType === 'Principal') as Record<string, { currencyAmount?: number }> | undefined
+        const chargeList = ((item.ItemChargeList || item.itemChargeList) as Record<string, unknown>[]) || []
+        const principal = chargeList.find((c) =>
+          (c as Record<string, string>).ChargeType === 'Principal' ||
+          (c as Record<string, string>).chargeType === 'Principal'
+        ) as Record<string, { CurrencyAmount?: number; currencyAmount?: number }> | undefined
         if (principal) {
-          totalRefunds += Math.abs(parseFloat(String(principal.chargeAmount?.currencyAmount || 0)))
+          const chargeAmount = principal.ChargeAmount || principal.chargeAmount
+          totalRefunds += Math.abs(parseFloat(String(chargeAmount?.CurrencyAmount || chargeAmount?.currencyAmount || 0)))
         }
       }
     }

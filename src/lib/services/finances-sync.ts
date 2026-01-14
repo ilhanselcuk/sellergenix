@@ -95,9 +95,12 @@ export async function syncFinances(
     }>()
 
     // Process shipment events (sales)
+    // Amazon API returns PascalCase field names, but our types use camelCase
     if (events.shipmentEvents) {
       for (const shipment of events.shipmentEvents as any[]) {
-        const postedDate = shipment.postedDate?.split('T')[0]
+        // Handle both PascalCase and camelCase field names
+        const postedDateRaw = shipment.PostedDate || shipment.postedDate
+        const postedDate = postedDateRaw?.split('T')[0]
         if (!postedDate) continue
 
         if (!dailySummaries.has(postedDate)) {
@@ -105,33 +108,41 @@ export async function syncFinances(
         }
 
         const summary = dailySummaries.get(postedDate)!
-        const items = shipment.shipmentItemList || []
+        const items = shipment.ShipmentItemList || shipment.shipmentItemList || []
 
         for (const item of items) {
-          // Sales
-          const principal = item.itemChargeList?.find((c: any) => c.chargeType === 'Principal')
-          if (principal?.chargeAmount?.currencyAmount) {
-            summary.sales += parseFloat(principal.chargeAmount.currencyAmount)
+          // Sales - handle both cases
+          const chargeList = item.ItemChargeList || item.itemChargeList || []
+          const principal = chargeList.find((c: any) =>
+            (c.ChargeType || c.chargeType) === 'Principal'
+          )
+          const chargeAmount = principal?.ChargeAmount || principal?.chargeAmount
+          if (chargeAmount?.CurrencyAmount || chargeAmount?.currencyAmount) {
+            summary.sales += parseFloat(chargeAmount.CurrencyAmount || chargeAmount.currencyAmount)
           }
 
-          // Fees
-          const fees = item.itemFeeList || []
-          for (const fee of fees) {
-            if (fee.feeAmount?.currencyAmount) {
-              summary.fees += Math.abs(parseFloat(fee.feeAmount.currencyAmount))
+          // Fees - handle both cases
+          const feeList = item.ItemFeeList || item.itemFeeList || []
+          for (const fee of feeList) {
+            const feeAmount = fee.FeeAmount || fee.feeAmount
+            if (feeAmount?.CurrencyAmount || feeAmount?.currencyAmount) {
+              summary.fees += Math.abs(parseFloat(feeAmount.CurrencyAmount || feeAmount.currencyAmount))
             }
           }
 
-          // Units
-          summary.units += item.quantityShipped || 0
+          // Units - handle both cases
+          summary.units += item.QuantityShipped || item.quantityShipped || 0
         }
       }
     }
 
     // Process refund events
+    // Amazon API returns PascalCase field names, but our types use camelCase
     if (events.refundEvents) {
       for (const refund of events.refundEvents as any[]) {
-        const postedDate = refund.postedDate?.split('T')[0]
+        // Handle both PascalCase and camelCase field names
+        const postedDateRaw = refund.PostedDate || refund.postedDate
+        const postedDate = postedDateRaw?.split('T')[0]
         if (!postedDate) continue
 
         if (!dailySummaries.has(postedDate)) {
@@ -139,12 +150,17 @@ export async function syncFinances(
         }
 
         const summary = dailySummaries.get(postedDate)!
-        const items = refund.shipmentItemList || []
+        const items = refund.ShipmentItemList || refund.shipmentItemList || []
 
         for (const item of items) {
-          const principal = item.itemChargeList?.find((c: any) => c.chargeType === 'Principal')
-          if (principal?.chargeAmount?.currencyAmount) {
-            summary.refunds += Math.abs(parseFloat(principal.chargeAmount.currencyAmount))
+          // Handle both PascalCase and camelCase
+          const chargeList = item.ItemChargeList || item.itemChargeList || []
+          const principal = chargeList.find((c: any) =>
+            (c.ChargeType || c.chargeType) === 'Principal'
+          )
+          const chargeAmount = principal?.ChargeAmount || principal?.chargeAmount
+          if (chargeAmount?.CurrencyAmount || chargeAmount?.currencyAmount) {
+            summary.refunds += Math.abs(parseFloat(chargeAmount.CurrencyAmount || chargeAmount.currencyAmount))
           }
         }
       }

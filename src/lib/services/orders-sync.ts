@@ -107,24 +107,44 @@ export async function syncOrders(
 
     for (const order of orders) {
       try {
-        const orderId = order.amazonOrderId
+        // Amazon API returns AmazonOrderId (PascalCase), but our type uses camelCase
+        const rawOrder = order as any
+        const orderId = rawOrder.AmazonOrderId || rawOrder.amazonOrderId || order.amazonOrderId
 
-        // Prepare order data
+        if (!orderId) {
+          console.error('  ❌ Order has no ID, raw order:', JSON.stringify(rawOrder).substring(0, 200))
+          ordersFailed++
+          errors.push('Order has no amazonOrderId')
+          continue
+        }
+
+        // Prepare order data - handle both PascalCase and camelCase field names from Amazon API
+        const purchaseDate = rawOrder.PurchaseDate || rawOrder.purchaseDate || order.purchaseDate
+        const orderStatus = rawOrder.OrderStatus || rawOrder.orderStatus || order.orderStatus
+        const fulfillmentChannel = rawOrder.FulfillmentChannel || rawOrder.fulfillmentChannel || order.fulfillmentChannel
+        const orderTotal = rawOrder.OrderTotal || rawOrder.orderTotal || order.orderTotal
+        const itemsShipped = rawOrder.NumberOfItemsShipped ?? rawOrder.numberOfItemsShipped ?? order.numberOfItemsShipped ?? 0
+        const itemsUnshipped = rawOrder.NumberOfItemsUnshipped ?? rawOrder.numberOfItemsUnshipped ?? order.numberOfItemsUnshipped ?? 0
+        const marketplaceId = rawOrder.MarketplaceId || rawOrder.marketplaceId || order.marketplaceId || marketplaceIds[0]
+        const isPrime = rawOrder.IsPrime ?? rawOrder.isPrime ?? order.isPrime ?? false
+        const isBusinessOrder = rawOrder.IsBusinessOrder ?? rawOrder.isBusinessOrder ?? order.isBusinessOrder ?? false
+        const shippingAddress = rawOrder.ShippingAddress || rawOrder.shippingAddress || order.shippingAddress
+
         const orderData: OrderSyncData = {
           amazon_order_id: orderId,
-          purchase_date: order.purchaseDate,
-          order_status: order.orderStatus,
-          fulfillment_channel: order.fulfillmentChannel,
-          order_total: order.orderTotal ? parseFloat(order.orderTotal.amount) : 0,
-          currency_code: order.orderTotal?.currencyCode || 'USD',
-          items_shipped: order.numberOfItemsShipped || 0,
-          items_unshipped: order.numberOfItemsUnshipped || 0,
-          marketplace_id: order.marketplaceId || marketplaceIds[0],
-          is_prime: order.isPrime || false,
-          is_business_order: order.isBusinessOrder || false,
-          ship_city: order.shippingAddress?.city,
-          ship_state: order.shippingAddress?.stateOrRegion,
-          ship_country: order.shippingAddress?.countryCode,
+          purchase_date: purchaseDate,
+          order_status: orderStatus,
+          fulfillment_channel: fulfillmentChannel,
+          order_total: orderTotal ? parseFloat(orderTotal.Amount || orderTotal.amount || '0') : 0,
+          currency_code: orderTotal?.CurrencyCode || orderTotal?.currencyCode || 'USD',
+          items_shipped: itemsShipped,
+          items_unshipped: itemsUnshipped,
+          marketplace_id: marketplaceId,
+          is_prime: isPrime,
+          is_business_order: isBusinessOrder,
+          ship_city: shippingAddress?.City || shippingAddress?.city,
+          ship_state: shippingAddress?.StateOrRegion || shippingAddress?.stateOrRegion,
+          ship_country: shippingAddress?.CountryCode || shippingAddress?.countryCode,
         }
 
         // Upsert order to database
