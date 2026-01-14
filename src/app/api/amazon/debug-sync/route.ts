@@ -59,11 +59,15 @@ export async function GET(request: NextRequest) {
       const thirtyDaysAgo = new Date()
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
+      // Amazon requires endDate to be at least 2 minutes before current time
+      const endDate = new Date()
+      endDate.setMinutes(endDate.getMinutes() - 5) // 5 minutes ago to be safe
+
       const ordersResult = await getOrders(
         connection.refresh_token,
         [US_MARKETPLACE],
         thirtyDaysAgo,
-        new Date()
+        endDate
       )
 
       apiTestResult = {

@@ -111,14 +111,18 @@ export async function getOrders(
   const client = createAmazonSPAPIClient(refreshToken)
 
   try {
+    // Amazon requires CreatedBefore to be at least 2 minutes before current time
+    // Subtract 3 minutes to be safe
+    const safeCreatedBefore = createdBefore ? new Date(createdBefore.getTime() - 3 * 60 * 1000) : undefined
+
     const params: Record<string, any> = {
       MarketplaceIds: marketplaceIds,
       CreatedAfter: createdAfter.toISOString(),
       MaxResultsPerPage: 100,
     }
 
-    if (createdBefore) {
-      params.CreatedBefore = createdBefore.toISOString()
+    if (safeCreatedBefore) {
+      params.CreatedBefore = safeCreatedBefore.toISOString()
     }
 
     if (orderStatuses && orderStatuses.length > 0) {
