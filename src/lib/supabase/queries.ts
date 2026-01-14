@@ -414,6 +414,6 @@ export async function getDashboardData(userId: string) {
     })),
     dailyMetrics: metrics,
     recentOrders: recentOrders || [],
-    hasRealData: metrics.length > 0 || (recentOrders && recentOrders.length > 0)
+    hasRealData: !!(metrics.length > 0 || (recentOrders && recentOrders.length > 0))
   }
 }
