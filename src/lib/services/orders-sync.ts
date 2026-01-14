@@ -105,6 +105,12 @@ export async function syncOrders(
     // Step 2: Process each order
     console.log('⚙️ Step 2: Processing orders...')
 
+    // Log first order to debug field names
+    if (orders.length > 0) {
+      console.log('🔍 DEBUG: First order raw data:', JSON.stringify(orders[0]).substring(0, 500))
+      console.log('🔍 DEBUG: First order keys:', Object.keys(orders[0] as any))
+    }
+
     for (const order of orders) {
       try {
         // Amazon API returns AmazonOrderId (PascalCase), but our type uses camelCase
@@ -112,7 +118,8 @@ export async function syncOrders(
         const orderId = rawOrder.AmazonOrderId || rawOrder.amazonOrderId || order.amazonOrderId
 
         if (!orderId) {
-          console.error('  ❌ Order has no ID, raw order:', JSON.stringify(rawOrder).substring(0, 200))
+          console.error('  ❌ Order has no ID, raw order:', JSON.stringify(rawOrder).substring(0, 500))
+          console.error('  ❌ Order keys:', Object.keys(rawOrder))
           ordersFailed++
           errors.push('Order has no amazonOrderId')
           continue
