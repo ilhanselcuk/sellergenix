@@ -360,11 +360,13 @@ export async function getDashboardData(userId: string) {
     console.error('Error fetching recent orders:', ordersError)
   }
 
-  // Calculate period summaries from daily metrics
+  // Calculate period summaries from daily metrics OR orders
   const metrics = dailyMetrics || []
+  const orders = recentOrders || []
 
-  const aggregateMetrics = (filteredMetrics: DailyMetric[]) => {
-    if (filteredMetrics.length === 0) {
+  // Helper to aggregate from orders when daily_metrics is empty
+  const aggregateFromOrders = (filteredOrders: Order[]) => {
+    if (filteredOrders.length === 0) {
       return {
         sales: 0,
         units: 0,
@@ -379,41 +381,79 @@ export async function getDashboardData(userId: string) {
       }
     }
 
-    const totals = filteredMetrics.reduce((acc, m) => ({
-      sales: acc.sales + (m.sales || 0),
-      units: acc.units + (m.units_sold || 0),
-      refunds: acc.refunds + (m.refunds || 0),
-      adSpend: acc.adSpend + (m.ad_spend || 0),
-      amazonFees: acc.amazonFees + (m.amazon_fees || 0),
-      grossProfit: acc.grossProfit + (m.gross_profit || 0),
-      netProfit: acc.netProfit + (m.net_profit || 0),
-    }), { sales: 0, units: 0, refunds: 0, adSpend: 0, amazonFees: 0, grossProfit: 0, netProfit: 0 })
+    const totalSales = filteredOrders.reduce((sum, o) => sum + (o.order_total || 0), 0)
+    const totalUnits = filteredOrders.reduce((sum, o) => sum + (o.items_shipped || 0) + (o.items_unshipped || 0), 0)
+
+    // Estimate fees and profit (Amazon fees ~15%, estimate margin ~25%)
+    const estimatedFees = totalSales * 0.15
+    const estimatedGrossProfit = totalSales * 0.35 // After COGS ~50%
+    const estimatedNetProfit = totalSales * 0.20 // After ads ~5%
 
     return {
-      ...totals,
-      orders: recentOrders?.filter(o => {
-        const orderDate = new Date(o.purchase_date).toISOString().split('T')[0]
-        return filteredMetrics.some(m => m.date === orderDate)
-      }).length || 0,
-      margin: totals.sales > 0 ? (totals.netProfit / totals.sales) * 100 : 0,
-      roi: totals.adSpend > 0 ? ((totals.netProfit / totals.adSpend) * 100) : 0
+      sales: totalSales,
+      units: totalUnits,
+      orders: filteredOrders.length,
+      refunds: 0, // Not available from orders
+      adSpend: totalSales * 0.05, // Estimate 5%
+      amazonFees: estimatedFees,
+      grossProfit: estimatedGrossProfit,
+      netProfit: estimatedNetProfit,
+      margin: 20, // Estimate
+      roi: 100 // Estimate
     }
   }
+
+  const aggregateMetrics = (filteredMetrics: DailyMetric[], startDate: Date, endDate: Date) => {
+    // If we have daily_metrics data, use it
+    if (filteredMetrics.length > 0) {
+      const totals = filteredMetrics.reduce((acc, m) => ({
+        sales: acc.sales + (m.sales || 0),
+        units: acc.units + (m.units_sold || 0),
+        refunds: acc.refunds + (m.refunds || 0),
+        adSpend: acc.adSpend + (m.ad_spend || 0),
+        amazonFees: acc.amazonFees + (m.amazon_fees || 0),
+        grossProfit: acc.grossProfit + (m.gross_profit || 0),
+        netProfit: acc.netProfit + (m.net_profit || 0),
+      }), { sales: 0, units: 0, refunds: 0, adSpend: 0, amazonFees: 0, grossProfit: 0, netProfit: 0 })
+
+      return {
+        ...totals,
+        orders: orders.filter(o => {
+          const orderDate = new Date(o.purchase_date)
+          return orderDate >= startDate && orderDate <= endDate
+        }).length,
+        margin: totals.sales > 0 ? (totals.netProfit / totals.sales) * 100 : 0,
+        roi: totals.adSpend > 0 ? ((totals.netProfit / totals.adSpend) * 100) : 0
+      }
+    }
+
+    // Fallback: Calculate from orders data
+    const filteredOrders = orders.filter(o => {
+      const orderDate = new Date(o.purchase_date)
+      return orderDate >= startDate && orderDate <= endDate
+    })
+    return aggregateFromOrders(filteredOrders)
+  }
+
+  const todayEnd = new Date(today)
+  todayEnd.setHours(23, 59, 59, 999)
+  const yesterdayEnd = new Date(yesterday)
+  yesterdayEnd.setHours(23, 59, 59, 999)
 
   const todayStr = today.toISOString().split('T')[0]
   const yesterdayStr = yesterday.toISOString().split('T')[0]
 
   return {
-    today: aggregateMetrics(metrics.filter(m => m.date === todayStr)),
-    yesterday: aggregateMetrics(metrics.filter(m => m.date === yesterdayStr)),
-    last7Days: aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days)),
-    last30Days: aggregateMetrics(metrics),
+    today: aggregateMetrics(metrics.filter(m => m.date === todayStr), today, todayEnd),
+    yesterday: aggregateMetrics(metrics.filter(m => m.date === yesterdayStr), yesterday, yesterdayEnd),
+    last7Days: aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days), last7Days, now),
+    last30Days: aggregateMetrics(metrics, last30Days, now),
     lastMonth: aggregateMetrics(metrics.filter(m => {
       const date = new Date(m.date)
       return date >= lastMonthStart && date <= lastMonthEnd
-    })),
+    }), lastMonthStart, lastMonthEnd),
     dailyMetrics: metrics,
-    recentOrders: recentOrders || [],
-    hasRealData: !!(metrics.length > 0 || (recentOrders && recentOrders.length > 0))
+    recentOrders: orders,
+    hasRealData: !!(metrics.length > 0 || orders.length > 0)
   }
 }
