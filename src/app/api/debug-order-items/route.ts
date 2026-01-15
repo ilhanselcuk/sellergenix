@@ -47,8 +47,8 @@ export async function GET() {
       success: result.success,
       orderId,
       error: result.error,
-      itemCount: result.items?.length || 0,
-      items: result.items?.map((item: any) => ({
+      itemCount: result.orderItems?.length || 0,
+      items: result.orderItems?.map((item: any) => ({
         ASIN: item.ASIN,
         SellerSKU: item.SellerSKU,
         Title: item.Title?.substring(0, 50),
