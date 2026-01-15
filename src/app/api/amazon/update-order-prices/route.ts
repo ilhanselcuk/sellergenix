@@ -74,10 +74,13 @@ export async function GET() {
         let itemsShipped = 0
 
         for (const item of result.orderItems) {
-          const price = parseFloat(item.ItemPrice?.Amount || '0')
-          const qty = item.QuantityOrdered || 1
+          // Handle both PascalCase (raw API) and camelCase (typed)
+          const rawItem = item as any
+          const itemPrice = rawItem.ItemPrice || rawItem.itemPrice
+          const price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
+          const qty = rawItem.QuantityOrdered || rawItem.quantityOrdered || 1
           orderTotal += price
-          itemsShipped += item.QuantityShipped || 0
+          itemsShipped += rawItem.QuantityShipped || rawItem.quantityShipped || 0
         }
 
         // Update order in database
