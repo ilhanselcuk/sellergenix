@@ -27,7 +27,23 @@ export async function GET() {
     // Get dashboard data
     const dashboardData = await getDashboardData(user.id)
 
+    // Calculate PST time for debugging
+    const getPSTDate = (): Date => {
+      const now = new Date()
+      const pstOffsetMinutes = -8 * 60
+      const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000)
+      return new Date(utcTime + (pstOffsetMinutes * 60000))
+    }
+    const pstNow = getPSTDate()
+    const pstToday = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate())
+
     return NextResponse.json({
+      timezone: {
+        serverUTC: new Date().toISOString(),
+        pstNow: pstNow.toISOString(),
+        pstToday: pstToday.toISOString().split('T')[0],
+        pstYesterday: new Date(pstToday.getTime() - 86400000).toISOString().split('T')[0]
+      },
       userId: user.id,
       rawOrdersCount: rawOrders?.length || 0,
       rawOrdersSample: rawOrders?.slice(0, 3).map(o => ({

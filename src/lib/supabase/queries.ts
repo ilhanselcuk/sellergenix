@@ -322,18 +322,34 @@ export async function getFinancialSummary(
  */
 export async function getDashboardData(userId: string) {
   const supabase = await createClient()
-  const now = new Date()
 
-  // Define date ranges
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  // ========================================
+  // TIMEZONE: Amazon US uses PST (UTC-8)
+  // All date calculations should be in PST
+  // ========================================
+  const getPSTDate = (): Date => {
+    const now = new Date()
+    // PST = UTC-8 (Pacific Standard Time)
+    // Note: PDT (Daylight) is UTC-7, but we use PST for consistency
+    const pstOffsetMinutes = -8 * 60
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000)
+    return new Date(utcTime + (pstOffsetMinutes * 60000))
+  }
+
+  const pstNow = getPSTDate()
+
+  // Define date ranges in PST
+  const today = new Date(pstNow.getFullYear(), pstNow.getMonth(), pstNow.getDate())
   const yesterday = new Date(today)
   yesterday.setDate(yesterday.getDate() - 1)
   const last7Days = new Date(today)
   last7Days.setDate(last7Days.getDate() - 7)
   const last30Days = new Date(today)
   last30Days.setDate(last30Days.getDate() - 30)
-  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+  const lastMonthStart = new Date(pstNow.getFullYear(), pstNow.getMonth() - 1, 1)
+  const lastMonthEnd = new Date(pstNow.getFullYear(), pstNow.getMonth(), 0)
+
+  console.log(`📅 Dashboard dates (PST): Today=${today.toISOString().split('T')[0]}, Yesterday=${yesterday.toISOString().split('T')[0]}`)
 
   // Fetch daily metrics for last 30 days (covers all periods)
   const { data: dailyMetrics, error: metricsError } = await supabase
@@ -446,8 +462,8 @@ export async function getDashboardData(userId: string) {
   return {
     today: aggregateMetrics(metrics.filter(m => m.date === todayStr), today, todayEnd),
     yesterday: aggregateMetrics(metrics.filter(m => m.date === yesterdayStr), yesterday, yesterdayEnd),
-    last7Days: aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days), last7Days, now),
-    last30Days: aggregateMetrics(metrics, last30Days, now),
+    last7Days: aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days), last7Days, pstNow),
+    last30Days: aggregateMetrics(metrics, last30Days, pstNow),
     lastMonth: aggregateMetrics(metrics.filter(m => {
       const date = new Date(m.date)
       return date >= lastMonthStart && date <= lastMonthEnd
