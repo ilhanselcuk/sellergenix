@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch order items
-    const result = await getOrderItems(connection.refresh_token, orderId)
+    const result = await getOrderItems(connection.refresh_token, orderId as string)
 
     return NextResponse.json({
       success: result.success,
