@@ -38,7 +38,7 @@ export async function GET() {
       .select('id, amazon_order_id, order_total')
       .eq('user_id', user.id)
       .eq('order_total', 0)
-      .limit(20) // Process 20 at a time to avoid timeout
+      .limit(100) // Process 100 at a time
 
     if (ordersError) {
       return NextResponse.json({ error: ordersError.message }, { status: 500 })
@@ -102,7 +102,7 @@ export async function GET() {
         }
 
         // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 200))
+        await new Promise(resolve => setTimeout(resolve, 100))
 
       } catch (err: any) {
         errors.push(`${order.amazon_order_id}: ${err.message}`)
