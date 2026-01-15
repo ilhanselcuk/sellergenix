@@ -28,10 +28,10 @@ export async function GET() {
       return NextResponse.json({ error: 'No Amazon connection' }, { status: 404 })
     }
 
-    // Fetch financial events from Amazon (last 7 days)
+    // Fetch financial events from Amazon (last 30 days)
     const endDate = new Date()
     const startDate = new Date()
-    startDate.setDate(startDate.getDate() - 7)
+    startDate.setDate(startDate.getDate() - 30)
 
     const result = await listFinancialEvents(
       connection.refresh_token,
