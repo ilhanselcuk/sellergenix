@@ -49,14 +49,14 @@ export async function GET(request: NextRequest) {
     // Run syncs in parallel
     const syncPromises = []
 
-    // 1. Orders Sync
+    // 1. Orders Sync - Only 7 days to avoid timeout
     syncPromises.push(
       syncOrdersWithHistory(
         user.id,
         connection.id,
         refreshToken,
         marketplaceIds,
-        30 // Last 30 days
+        7 // Last 7 days (reduced from 30 to avoid timeout)
       ).then(result => ({
         type: 'orders',
         ...result
@@ -67,13 +67,13 @@ export async function GET(request: NextRequest) {
       }))
     )
 
-    // 2. Finances Sync
+    // 2. Finances Sync - Only 7 days to avoid timeout
     syncPromises.push(
       syncFinancesWithHistory(
         user.id,
         connection.id,
         refreshToken,
-        30 // Last 30 days
+        7 // Last 7 days (reduced from 30 to avoid timeout)
       ).then(result => ({
         type: 'finances',
         ...result

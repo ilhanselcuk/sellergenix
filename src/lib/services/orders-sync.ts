@@ -175,49 +175,19 @@ export async function syncOrders(
           continue
         }
 
-        // Fetch and save order items
-        try {
-          const itemsResult = await getOrderItems(refreshToken, orderId)
-
-          if (itemsResult.success && itemsResult.orderItems) {
-            for (const item of itemsResult.orderItems) {
-              const { error: itemError } = await supabase
-                .from('order_items')
-                .upsert(
-                  {
-                    user_id: userId,
-                    amazon_order_id: orderId,
-                    order_item_id: item.orderItemId,
-                    asin: item.asin,
-                    seller_sku: item.sellerSKU,
-                    title: item.title,
-                    quantity_ordered: item.quantityOrdered,
-                    quantity_shipped: item.quantityShipped,
-                    item_price: item.itemPrice ? parseFloat(item.itemPrice.amount) : 0,
-                    item_tax: item.itemTax ? parseFloat(item.itemTax.amount) : 0,
-                    shipping_price: item.shippingPrice ? parseFloat(item.shippingPrice.amount) : 0,
-                    promotion_discount: item.promotionDiscount ? parseFloat(item.promotionDiscount.amount) : 0,
-                    updated_at: new Date().toISOString(),
-                  },
-                  {
-                    onConflict: 'user_id,order_item_id',
-                  }
-                )
-
-              if (itemError) {
-                console.warn(`  ⚠️ Failed to save order item:`, itemError.message)
-              }
-            }
-          }
-        } catch (itemsError: any) {
-          console.warn(`  ⚠️ Failed to fetch order items for ${orderId}:`, itemsError.message)
-        }
+        // Skip order items fetch for now to avoid timeout
+        // TODO: Implement background job for order items sync
+        // try {
+        //   const itemsResult = await getOrderItems(refreshToken, orderId)
+        //   ...
+        // } catch (itemsError: any) {
+        //   console.warn(`  ⚠️ Failed to fetch order items for ${orderId}:`, itemsError.message)
+        // }
 
         console.log(`  ✅ Saved order ${orderId}`)
         ordersSync++
 
-        // Add small delay to avoid rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 100))
+        // Removed delay to speed up sync
       } catch (error: any) {
         console.error(`  ❌ Error processing order:`, error.message)
         ordersFailed++
