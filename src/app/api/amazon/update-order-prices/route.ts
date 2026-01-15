@@ -77,8 +77,28 @@ export async function GET() {
           // Handle both PascalCase (raw API) and camelCase (typed)
           const rawItem = item as any
           const itemPrice = rawItem.ItemPrice || rawItem.itemPrice
-          const price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
+          let price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
           const qty = rawItem.QuantityOrdered || rawItem.quantityOrdered || 1
+
+          // If ItemPrice is 0 or missing (pending orders), try to get price from products table
+          if (price === 0) {
+            const asin = rawItem.ASIN || rawItem.asin
+            const sku = rawItem.SellerSKU || rawItem.sellerSKU
+
+            // Try to find product price in database
+            const { data: product } = await supabase
+              .from('products')
+              .select('price')
+              .eq('user_id', user.id)
+              .or(`asin.eq.${asin},sku.eq.${sku}`)
+              .single()
+
+            if (product?.price) {
+              price = product.price * qty
+              console.log(`  📦 Using catalog price for ${asin}: $${price}`)
+            }
+          }
+
           orderTotal += price
           itemsShipped += rawItem.QuantityShipped || rawItem.quantityShipped || 0
         }
