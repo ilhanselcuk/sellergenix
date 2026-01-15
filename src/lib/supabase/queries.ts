@@ -376,9 +376,97 @@ export async function getDashboardData(userId: string) {
     console.error('Error fetching recent orders:', ordersError)
   }
 
+  // Fetch products with stats from order_items
+  const { data: productsData, error: productsError } = await supabase
+    .from('products')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('updated_at', { ascending: false })
+
+  if (productsError) {
+    console.error('Error fetching products:', productsError)
+  }
+
+  // Calculate product stats from order items
+  const products = productsData || []
+  const orders = recentOrders || []
+
+  // Get order IDs from recent orders (last 30 days)
+  const orderIds = orders.map(o => o.amazon_order_id)
+
+  // Fetch order_items for these orders
+  let orderItems: any[] = []
+  if (orderIds.length > 0) {
+    const { data: orderItemsData, error: orderItemsError } = await supabase
+      .from('order_items')
+      .select('*')
+      .eq('user_id', userId)
+      .in('amazon_order_id', orderIds)
+
+    if (orderItemsError) {
+      console.error('Error fetching order items:', orderItemsError)
+    } else {
+      orderItems = orderItemsData || []
+    }
+  }
+
+  // Group order items by ASIN
+  const itemsByAsin: { [asin: string]: typeof orderItems } = {}
+  orderItems.forEach(item => {
+    const asin = item.asin
+    if (!itemsByAsin[asin]) {
+      itemsByAsin[asin] = []
+    }
+    itemsByAsin[asin].push(item)
+  })
+
+  // Calculate stats for each product
+  const productsWithStats = products.map(product => {
+    const productItems = itemsByAsin[product.asin] || []
+
+    // Calculate from order items
+    const unitsSold = productItems.reduce((sum: number, item: any) => sum + (item.quantity_ordered || 0), 0)
+    const sales = productItems.reduce((sum: number, item: any) => sum + (item.item_price || 0), 0)
+    const productOrders = new Set(productItems.map((item: any) => item.order_id)).size
+
+    // Calculate estimated metrics
+    const cogs = product.cogs || 0
+    const totalCogs = cogs * unitsSold
+    const estimatedFees = sales * 0.15 // ~15% Amazon fees
+    const estimatedAdSpend = sales * 0.08 // ~8% ad spend
+    const grossProfit = sales - totalCogs - estimatedFees
+    const netProfit = grossProfit - estimatedAdSpend
+    const margin = sales > 0 ? (netProfit / sales) * 100 : 0
+    const roi = totalCogs > 0 ? ((netProfit / totalCogs) * 100) : 0
+    const acos = sales > 0 ? ((estimatedAdSpend / sales) * 100) : 0
+
+    return {
+      ...product,
+      // Rename for dashboard consistency
+      name: product.title || `Product ${product.asin}`,
+      imageUrl: product.image_url,
+      image: product.image_url,
+      unitsSold,
+      units: unitsSold,
+      orders: productOrders,
+      sales,
+      profit: netProfit,
+      refunds: Math.floor(unitsSold * 0.05),
+      adSpend: estimatedAdSpend,
+      grossProfit,
+      netProfit,
+      margin: parseFloat(margin.toFixed(1)),
+      roi: parseFloat(roi.toFixed(0)),
+      acos: parseFloat(acos.toFixed(1)),
+      sellableReturns: 85,
+      bsr: null
+    }
+  }).sort((a, b) => b.sales - a.sales) // Sort by sales descending
+
   // Calculate period summaries from daily metrics OR orders
   const metrics = dailyMetrics || []
-  const orders = recentOrders || []
+  // orders is already defined above
 
   // Helper to aggregate from orders when daily_metrics is empty
   const aggregateFromOrders = (filteredOrders: Order[]) => {
@@ -486,6 +574,171 @@ export async function getDashboardData(userId: string) {
     }), lastMonthStart, lastMonthEnd),
     dailyMetrics: metrics,
     recentOrders: orders,
-    hasRealData: !!(metrics.length > 0 || orders.length > 0)
+    products: productsWithStats,
+    hasRealData: !!(metrics.length > 0 || orders.length > 0 || products.length > 0)
   }
+}
+
+// =============================================
+// PRODUCTS QUERIES
+// =============================================
+
+export interface Product {
+  id: string
+  user_id: string
+  asin: string
+  sku: string | null
+  title: string | null
+  image_url: string | null
+  price: number | null
+  currency: string
+  marketplace: string
+  fba_stock: number
+  fbm_stock: number
+  reserved_quantity: number
+  cogs: number | null
+  cogs_type: string
+  weight_lbs: number | null
+  length_inches: number | null
+  width_inches: number | null
+  height_inches: number | null
+  product_category: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductWithStats extends Product {
+  // Calculated from order_items
+  unitsSold: number
+  orders: number
+  sales: number
+  refunds: number
+  // Calculated metrics
+  adSpend: number
+  grossProfit: number
+  netProfit: number
+  margin: number
+  roi: number
+  acos: number
+  sellableReturns: number
+  bsr: number | null
+}
+
+/**
+ * Get all products for a user
+ */
+export async function getProducts(userId: string): Promise<Product[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('products')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('updated_at', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching products:', error)
+    return []
+  }
+
+  return data || []
+}
+
+/**
+ * Get products with performance stats calculated from order_items
+ * This joins products with order data to calculate actual performance
+ */
+export async function getProductsWithStats(
+  userId: string,
+  days: number = 30
+): Promise<ProductWithStats[]> {
+  const supabase = await createClient()
+
+  const startDate = new Date()
+  startDate.setDate(startDate.getDate() - days)
+
+  // Get all products
+  const { data: products, error: productsError } = await supabase
+    .from('products')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+
+  if (productsError) {
+    console.error('Error fetching products:', productsError)
+    return []
+  }
+
+  if (!products || products.length === 0) {
+    return []
+  }
+
+  // Get order items for these products in the date range
+  const { data: orderItems, error: orderItemsError } = await supabase
+    .from('order_items')
+    .select(`
+      *,
+      orders!inner (
+        purchase_date,
+        user_id
+      )
+    `)
+    .eq('orders.user_id', userId)
+    .gte('orders.purchase_date', startDate.toISOString())
+
+  if (orderItemsError) {
+    console.error('Error fetching order items:', orderItemsError)
+    // Continue with products without stats
+  }
+
+  const items = orderItems || []
+
+  // Group order items by ASIN
+  const itemsByAsin: { [asin: string]: typeof items } = {}
+  items.forEach(item => {
+    const asin = item.asin
+    if (!itemsByAsin[asin]) {
+      itemsByAsin[asin] = []
+    }
+    itemsByAsin[asin].push(item)
+  })
+
+  // Calculate stats for each product
+  return products.map(product => {
+    const productItems = itemsByAsin[product.asin] || []
+
+    // Calculate from order items
+    const unitsSold = productItems.reduce((sum, item) => sum + (item.quantity_ordered || 0), 0)
+    const sales = productItems.reduce((sum, item) => sum + (item.item_price || 0), 0)
+    const orders = new Set(productItems.map(item => item.order_id)).size
+
+    // Calculate estimated metrics
+    const cogs = product.cogs || 0
+    const totalCogs = cogs * unitsSold
+    const estimatedFees = sales * 0.15 // ~15% Amazon fees
+    const estimatedAdSpend = sales * 0.08 // ~8% ad spend
+    const grossProfit = sales - totalCogs - estimatedFees
+    const netProfit = grossProfit - estimatedAdSpend
+    const margin = sales > 0 ? (netProfit / sales) * 100 : 0
+    const roi = totalCogs > 0 ? ((netProfit / totalCogs) * 100) : 0
+    const acos = sales > 0 ? ((estimatedAdSpend / sales) * 100) : 0
+
+    return {
+      ...product,
+      unitsSold,
+      orders,
+      sales,
+      refunds: Math.floor(unitsSold * 0.05), // Estimate 5% refund rate
+      adSpend: estimatedAdSpend,
+      grossProfit,
+      netProfit,
+      margin: parseFloat(margin.toFixed(1)),
+      roi: parseFloat(roi.toFixed(0)),
+      acos: parseFloat(acos.toFixed(1)),
+      sellableReturns: 85, // Default estimate
+      bsr: null // Not available from orders
+    }
+  }).sort((a, b) => b.sales - a.sales) // Sort by sales descending
 }

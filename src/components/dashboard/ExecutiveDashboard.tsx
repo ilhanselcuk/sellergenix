@@ -71,6 +71,34 @@ interface PeriodMetrics {
   roi: number
 }
 
+interface ProductData {
+  id: string
+  asin: string
+  sku: string | null
+  name: string
+  title: string | null
+  imageUrl: string | null
+  image: string | null
+  marketplace: string
+  price: number | null
+  fba_stock: number
+  unitsSold: number
+  units: number
+  orders: number
+  sales: number
+  profit: number
+  refunds: number
+  adSpend: number
+  grossProfit: number
+  netProfit: number
+  margin: number
+  roi: number
+  acos: number
+  sellableReturns: number
+  bsr: number | null
+  cogs: number | null
+}
+
 interface DashboardData {
   today: PeriodMetrics
   yesterday: PeriodMetrics
@@ -79,6 +107,7 @@ interface DashboardData {
   lastMonth: PeriodMetrics
   dailyMetrics: any[]
   recentOrders: any[]
+  products: ProductData[]
   hasRealData: boolean
 }
 
@@ -1614,7 +1643,49 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
     // Get marketplace multiplier for product data
     const mpMult = getMarketplaceMultiplier(selectedMarketplaces)
 
-    // Base product catalog (for 7-day period baseline)
+    // 🔥 USE REAL PRODUCTS FROM DATABASE IF AVAILABLE
+    if (dashboardData?.products && dashboardData.products.length > 0) {
+      // Convert real products to display format
+      const realProducts = dashboardData.products.map((product) => {
+        // Scale the values based on period
+        const scaledUnits = Math.round(product.unitsSold * scaleFactor * mpMult.sales)
+        const scaledSales = Math.round(product.sales * scaleFactor * mpMult.sales)
+        const scaledAdSpend = Math.round(product.adSpend * scaleFactor * mpMult.acos)
+        const scaledCogs = Math.round((product.cogs || 0) * scaledUnits)
+        const amazonFees = Math.round(scaledSales * 0.15) // ~15% Amazon fees
+        const gross = scaledSales - amazonFees - scaledCogs
+        const net = gross - scaledAdSpend
+        const margin = scaledSales > 0 ? (net / scaledSales) * 100 : 0
+        const roi = scaledCogs > 0 ? (net / scaledCogs) * 100 : 0
+
+        return {
+          parentAsin: product.asin,
+          asin: product.asin,
+          sku: product.sku || '',
+          name: product.name || product.title || `Product ${product.asin}`,
+          image: product.imageUrl || product.image || '📦',
+          isParent: false,
+          price: product.price || (scaledUnits > 0 ? scaledSales / scaledUnits : 0),
+          units: scaledUnits,
+          refunds: Math.round(product.refunds * scaleFactor * mpMult.sales),
+          sales: scaledSales,
+          adSpend: scaledAdSpend,
+          amazonFees: amazonFees,
+          cogs: scaledCogs,
+          gross: gross,
+          net: net,
+          margin: parseFloat(margin.toFixed(1)),
+          roi: parseFloat(roi.toFixed(0)),
+          bsr: product.bsr || null,
+          stock: product.fba_stock || 0,
+          children: undefined
+        }
+      }).sort((a, b) => b.sales - a.sales) // Sort by sales
+
+      return realProducts
+    }
+
+    // FALLBACK: Base product catalog (for 7-day period baseline) - MOCK DATA
     const baseProducts = [
       {
         parentAsin: 'B08XYZ1234',
@@ -1812,7 +1883,7 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
     })
 
     return scaledProducts
-  }, [comparisonData.periods, selectedMarketplaces])
+  }, [comparisonData.periods, selectedMarketplaces, dashboardData?.products])
 
   // Top Products Leaderboard Data
   const leaderboardProducts = useMemo(() => {
