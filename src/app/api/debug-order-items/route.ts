@@ -1,13 +1,14 @@
 /**
  * Debug Order Items API - Get actual prices from order items
- * GET /api/debug-order-items
+ * GET /api/debug-order-items?orderId=XXX (optional)
  */
 
 import { NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOrderItems } from '@/lib/amazon-sp-api'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -28,19 +29,25 @@ export async function GET() {
       return NextResponse.json({ error: 'No Amazon connection' }, { status: 404 })
     }
 
-    // Get a sample order from database
-    const { data: orders } = await supabase
-      .from('orders')
-      .select('amazon_order_id')
-      .eq('user_id', user.id)
-      .limit(3)
+    // Get orderId from query param or use first order from database
+    const searchParams = request.nextUrl.searchParams
+    let orderId = searchParams.get('orderId')
 
-    if (!orders || orders.length === 0) {
-      return NextResponse.json({ error: 'No orders found' }, { status: 404 })
+    if (!orderId) {
+      // Get a sample order from database
+      const { data: orders } = await supabase
+        .from('orders')
+        .select('amazon_order_id')
+        .eq('user_id', user.id)
+        .limit(3)
+
+      if (!orders || orders.length === 0) {
+        return NextResponse.json({ error: 'No orders found' }, { status: 404 })
+      }
+      orderId = orders[0].amazon_order_id
     }
 
-    // Fetch order items for first order
-    const orderId = orders[0].amazon_order_id
+    // Fetch order items
     const result = await getOrderItems(connection.refresh_token, orderId)
 
     return NextResponse.json({
