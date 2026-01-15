@@ -14,6 +14,8 @@ import {
   getSellerProfile
 } from '@/lib/amazon-sp-api'
 import { syncProductsWithHistory } from '@/lib/services/product-sync'
+import { syncOrdersWithHistory } from '@/lib/services/orders-sync'
+import { extractProductsFromOrders } from '@/lib/services/products-from-orders'
 
 // ============================================================================
 // TYPES
@@ -231,6 +233,39 @@ export async function connectWithManualTokenAction(
         error: 'Failed to save connection to database'
       }
     }
+
+    // ========================================
+    // AUTO-SYNC: Full 2-year historical sync on connection
+    // ========================================
+    console.log('🚀 Starting FULL historical sync (2 years)...')
+
+    // Run sync in background (don't await - let it complete async)
+    // This prevents timeout on the connection action
+    // Chain: Full orders sync (2 years) → Product extraction
+    syncOrdersWithHistory(
+      userId,
+      connection.id,
+      refreshToken,
+      marketplaceIds.length > 0 ? marketplaceIds : ['ATVPDKIKX0DER'],
+      730 // 2 YEARS of data - no more manual full sync needed!
+    ).then(async (result) => {
+      console.log(`✅ Full historical sync: ${result.ordersSync} orders synced (2 years)`)
+
+      // After orders are synced, extract ALL products from order items
+      console.log('📦 Starting product extraction from all orders...')
+      try {
+        const productResult = await extractProductsFromOrders(
+          userId,
+          refreshToken,
+          500 // Process up to 500 orders for complete product extraction
+        )
+        console.log(`✅ Product extraction: ${productResult.productsAdded} products added`)
+      } catch (err: any) {
+        console.error('❌ Product extraction failed:', err.message)
+      }
+    }).catch(err => {
+      console.error('❌ Full historical sync failed:', err.message)
+    })
 
     revalidatePath('/dashboard/amazon')
 

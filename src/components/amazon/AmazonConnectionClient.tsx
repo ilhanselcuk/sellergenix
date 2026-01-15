@@ -47,11 +47,60 @@ export function AmazonConnectionClient({ userId }: AmazonConnectionClientProps) 
   const [disconnecting, setDisconnecting] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  const [initialSyncInProgress, setInitialSyncInProgress] = useState(false)
+  const [syncProgress, setSyncProgress] = useState({ orders: 0, products: 0 })
 
   useEffect(() => {
     loadConnection()
     loadSyncHistory()
   }, [userId])
+
+  // Check if initial sync is still in progress
+  useEffect(() => {
+    if (!connection) return
+
+    // If connection is new (no last_sync_at or very recent), check sync status
+    const checkSyncStatus = async () => {
+      try {
+        const response = await fetch('/api/amazon/full-sync')
+        const data = await response.json()
+
+        if (data.hasData) {
+          setSyncProgress({ orders: data.orderCount, products: 0 })
+
+          // If we have data, check if sync is still running
+          const historyResult = await getSyncHistoryAction(userId, 1)
+          if (historyResult.success && historyResult.history && historyResult.history.length > 0) {
+            const latestSync = historyResult.history[0]
+            if (latestSync.status === 'running') {
+              setInitialSyncInProgress(true)
+            } else {
+              setInitialSyncInProgress(false)
+            }
+          }
+        } else {
+          // No data yet, sync is probably just starting
+          if (!connection.last_sync_at) {
+            setInitialSyncInProgress(true)
+          }
+        }
+      } catch (error) {
+        console.error('Error checking sync status:', error)
+      }
+    }
+
+    checkSyncStatus()
+
+    // Poll every 10 seconds while sync is in progress
+    const interval = setInterval(() => {
+      if (initialSyncInProgress) {
+        checkSyncStatus()
+        loadSyncHistory()
+      }
+    }, 10000)
+
+    return () => clearInterval(interval)
+  }, [connection, userId, initialSyncInProgress])
 
   const loadConnection = async () => {
     setLoading(true)
@@ -155,6 +204,36 @@ export function AmazonConnectionClient({ userId }: AmazonConnectionClientProps) 
       }
     } catch (error: any) {
       console.error('Error syncing sales:', error)
+      setSyncMessage(`❌ Error: ${error.message}`)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const handleFullSync = async () => {
+    if (!confirm('This will sync ALL your Amazon data from the past 2 years. This may take several minutes. Continue?')) return
+
+    setSyncing(true)
+    setSyncMessage('🔄 Starting full historical sync (up to 2 years)... This may take a few minutes.')
+
+    try {
+      const response = await fetch('/api/amazon/full-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ months: 24 }) // 2 years
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setSyncMessage(`✅ Full sync complete! Synced ${result.totalOrders} orders and ${result.totalProducts} products from the last 2 years.`)
+        await loadSyncHistory()
+        await loadConnection()
+      } else {
+        setSyncMessage(`❌ Full sync failed: ${result.error}`)
+      }
+    } catch (error: any) {
+      console.error('Error in full sync:', error)
       setSyncMessage(`❌ Error: ${error.message}`)
     } finally {
       setSyncing(false)
@@ -449,74 +528,121 @@ export function AmazonConnectionClient({ userId }: AmazonConnectionClientProps) 
 
           {/* Right Column - Quick Actions */}
           <div className="space-y-6">
+            {/* Initial Sync Progress Banner */}
+            <AnimatePresence>
+              {initialSyncInProgress && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="bg-gradient-to-r from-[#4285f4] to-[#34a853] rounded-3xl p-6 text-white"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-black mb-1">Importing Your Data...</h3>
+                      <p className="text-sm text-white/80">
+                        We're syncing up to 2 years of your Amazon data. This may take a few minutes.
+                      </p>
+                      {syncProgress.orders > 0 && (
+                        <p className="text-sm font-semibold mt-2">
+                          ✓ {syncProgress.orders.toLocaleString()} orders imported so far
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-4 bg-white/20 rounded-full h-2 overflow-hidden">
+                    <motion.div
+                      className="h-full bg-white"
+                      initial={{ width: '0%' }}
+                      animate={{ width: '100%' }}
+                      transition={{ duration: 120, ease: 'linear' }}
+                    />
+                  </div>
+                  <p className="text-xs text-white/60 mt-2 text-center">
+                    You can leave this page - sync will continue in the background
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.2 }}
               className="bg-white rounded-3xl border-2 border-[#e5e7eb] p-6"
             >
-              <h3 className="text-lg font-black text-[#343a40] mb-4">Quick Actions</h3>
+              <h3 className="text-lg font-black text-[#343a40] mb-4">Sync Status</h3>
 
-              {syncMessage && (
-                <div className="mb-4 p-3 bg-[#f8f9fa] rounded-xl">
-                  <p className="text-sm font-semibold text-[#343a40]">{syncMessage}</p>
+              {/* Auto-Sync Status - No manual buttons needed! */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-[#34a853]/10 to-[#34a853]/5 rounded-xl">
+                  <div className="w-10 h-10 bg-gradient-to-r from-[#34a853] to-[#137333] rounded-full flex items-center justify-center">
+                    <Zap className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-[#343a40]">Automatic Sync Active</p>
+                    <p className="text-xs text-[#6c757d]">Your data syncs every 15 minutes</p>
+                  </div>
                 </div>
-              )}
 
-              <div className="space-y-3">
-                <button
-                  onClick={handleSyncProducts}
-                  disabled={syncing}
-                  className="w-full px-4 py-3 bg-gradient-to-r from-[#4285f4] to-[#3367d6] text-white rounded-xl font-bold hover:shadow-xl transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
-                >
-                  {syncing ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <Package className="w-5 h-5" />
-                  )}
-                  <span>{syncing ? 'Syncing...' : 'Sync Products'}</span>
-                </button>
+                <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-[#4285f4]/10 to-[#4285f4]/5 rounded-xl">
+                  <div className="w-10 h-10 bg-gradient-to-r from-[#4285f4] to-[#3367d6] rounded-full flex items-center justify-center">
+                    <Package className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-[#343a40]">Products & Orders</p>
+                    <p className="text-xs text-[#6c757d]">Up to 2 years of historical data</p>
+                  </div>
+                </div>
 
-                <button className="w-full px-4 py-3 bg-gradient-to-r from-[#34a853] to-[#137333] text-white rounded-xl font-bold hover:shadow-xl transition-all hover:scale-105 inline-flex items-center justify-center gap-2">
-                  <ShoppingCart className="w-5 h-5" />
-                  <span>Sync Orders</span>
-                </button>
-
-                <button
-                  onClick={handleSyncSales}
-                  disabled={syncing}
-                  className="w-full px-4 py-3 bg-gradient-to-r from-[#fbbc05] to-[#f29900] text-white rounded-xl font-bold hover:shadow-xl transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
-                >
-                  {syncing ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <DollarSign className="w-5 h-5" />
-                  )}
-                  <span>{syncing ? 'Syncing...' : 'Sync Sales Data'}</span>
-                </button>
-
-                <button className="w-full px-4 py-3 bg-gradient-to-r from-[#ea4335] to-[#c5221f] text-white rounded-xl font-bold hover:shadow-xl transition-all hover:scale-105 inline-flex items-center justify-center gap-2">
-                  <RefreshCw className="w-5 h-5" />
-                  <span>Full Sync</span>
-                </button>
+                <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-[#fbbc05]/10 to-[#fbbc05]/5 rounded-xl">
+                  <div className="w-10 h-10 bg-gradient-to-r from-[#fbbc05] to-[#f29900] rounded-full flex items-center justify-center">
+                    <DollarSign className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-[#343a40]">Sales & Finances</p>
+                    <p className="text-xs text-[#6c757d]">Real-time profit tracking</p>
+                  </div>
+                </div>
               </div>
             </motion.div>
 
-            {/* Info Card */}
+            {/* Connection Info Card */}
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.3 }}
               className="bg-gradient-to-br from-[#4285f4]/10 to-[#34a853]/10 rounded-3xl border-2 border-[#4285f4]/20 p-6"
             >
-              <h3 className="text-lg font-black text-[#343a40] mb-3">Auto-Sync</h3>
-              <p className="text-sm text-[#6c757d] mb-4">
-                Your products sync automatically every 15 minutes. Last sync was {connection.last_sync_at ?
-                  new Date(connection.last_sync_at).toLocaleTimeString() : 'never'}.
-              </p>
-              <div className="flex items-center gap-2 text-sm text-[#4285f4] font-semibold">
-                <Zap className="w-4 h-4" />
-                <span>Connected & Syncing</span>
+              <h3 className="text-lg font-black text-[#343a40] mb-4">Connection Status</h3>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[#6c757d]">Last Sync</span>
+                  <span className="text-sm font-semibold text-[#343a40]">
+                    {connection.last_sync_at ? new Date(connection.last_sync_at).toLocaleString() : 'Syncing...'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[#6c757d]">Next Sync</span>
+                  <span className="text-sm font-semibold text-[#343a40]">In ~15 minutes</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[#6c757d]">Marketplaces</span>
+                  <span className="text-sm font-semibold text-[#343a40]">
+                    {connection.marketplace_ids?.length || 0} connected
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-[#e5e7eb]">
+                <div className="flex items-center gap-2 text-sm text-[#34a853] font-semibold">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>All systems operational</span>
+                </div>
               </div>
             </motion.div>
           </div>
