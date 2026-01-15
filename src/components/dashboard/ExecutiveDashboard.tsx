@@ -1004,8 +1004,94 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
     return { ...totals, margin, acos, avgOrderValue }
   }
 
+  // Convert dashboardData period to comparisonData format
+  const convertPeriodToComparisonFormat = (period: PeriodMetrics | undefined, label: string) => {
+    if (!period) return null
+    const avgOrderValue = period.orders > 0 ? period.sales / period.orders : 0
+    const acos = period.sales > 0 ? (period.adSpend / period.sales) * 100 : 0
+    return {
+      sales: period.sales,
+      units: period.units,
+      orders: period.orders,
+      adSpend: period.adSpend,
+      netProfit: period.netProfit,
+      amazonFees: period.amazonFees,
+      cogs: period.sales * 0.30, // Estimated
+      refunds: period.refunds,
+      storage: period.sales * 0.01, // Estimated
+      margin: period.margin,
+      acos,
+      avgOrderValue,
+      label,
+      data: [] // No daily data for real periods
+    }
+  }
+
   // Get comparison periods based on selected period option
   const comparisonData = useMemo(() => {
+    // ✅ USE REAL DATA if available and period matches
+    if (dashboardData?.hasRealData) {
+      const getRealPeriods = () => {
+        switch (selectedPeriod) {
+          case 'today-yesterday':
+            return [
+              convertPeriodToComparisonFormat(dashboardData.today, 'Today'),
+              convertPeriodToComparisonFormat(dashboardData.yesterday, 'Yesterday')
+            ].filter(Boolean)
+          case 'today-7dago':
+            return [
+              convertPeriodToComparisonFormat(dashboardData.today, 'Today'),
+              convertPeriodToComparisonFormat(dashboardData.last7Days, 'Last 7 Days')
+            ].filter(Boolean)
+          case 'last7-30days':
+            return [
+              convertPeriodToComparisonFormat(dashboardData.last7Days, 'Last 7 Days'),
+              convertPeriodToComparisonFormat(dashboardData.last30Days, 'Last 30 Days')
+            ].filter(Boolean)
+          default:
+            // For other periods, fall back to demo data
+            return null
+        }
+      }
+
+      const realPeriods = getRealPeriods()
+      if (realPeriods && realPeriods.length > 0) {
+        const changes: Record<string, number> = {}
+        if (realPeriods.length >= 2) {
+          const current = realPeriods[0]!
+          const previous = realPeriods[1]!
+          changes.sales = previous.sales ? ((current.sales - previous.sales) / previous.sales) * 100 : 0
+          changes.units = previous.units ? ((current.units - previous.units) / previous.units) * 100 : 0
+          changes.orders = previous.orders ? ((current.orders - previous.orders) / previous.orders) * 100 : 0
+          changes.netProfit = previous.netProfit ? ((current.netProfit - previous.netProfit) / previous.netProfit) * 100 : 0
+          changes.adSpend = previous.adSpend ? ((current.adSpend - previous.adSpend) / previous.adSpend) * 100 : 0
+          changes.margin = current.margin - previous.margin
+          changes.acos = current.acos - previous.acos
+          changes.avgOrderValue = previous.avgOrderValue ? ((current.avgOrderValue - previous.avgOrderValue) / previous.avgOrderValue) * 100 : 0
+        }
+
+        // Use dailyMetrics for chart if available
+        const chartData = dashboardData.dailyMetrics?.map((dm: any, idx: number) => ({
+          index: idx,
+          date: new Date(dm.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          fullDate: new Date(dm.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
+          dateObj: new Date(dm.date),
+          sales: dm.sales || 0,
+          units: dm.units_sold || 0,
+          orders: Math.ceil((dm.units_sold || 0) * 0.85),
+          adSpend: dm.ad_spend || 0,
+          amazonFees: dm.amazon_fees || 0,
+          cogs: (dm.sales || 0) * 0.30,
+          refunds: dm.refunds || 0,
+          netProfit: dm.net_profit || 0,
+          margin: dm.margin || 0
+        })) || []
+
+        return { periods: realPeriods, changes, chartData }
+      }
+    }
+
+    // ⚠️ DEMO DATA - Only used when no real data available
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -1134,7 +1220,7 @@ export function ExecutiveDashboard({ profileName, email, hasAmazonConnection = f
     const chartData = periods[0]?.data || []
 
     return { periods, changes, chartData }
-  }, [selectedPeriod, customStartDate, customEndDate, selectedMarketplaces])
+  }, [selectedPeriod, customStartDate, customEndDate, selectedMarketplaces, dashboardData])
 
   // Main metrics (from first comparison period)
   const metrics = useMemo(() => {
