@@ -451,17 +451,33 @@ export async function getDashboardData(userId: string) {
     return aggregateFromOrders(filteredOrders)
   }
 
-  const todayEnd = new Date(today)
-  todayEnd.setHours(23, 59, 59, 999)
-  const yesterdayEnd = new Date(yesterday)
-  yesterdayEnd.setHours(23, 59, 59, 999)
+  // ========================================
+  // PST to UTC conversion for date filtering
+  // PST is UTC-8, so PST midnight = UTC 08:00
+  // ========================================
+
+  // Today in PST = UTC range [today 08:00 UTC, tomorrow 08:00 UTC)
+  const todayStartUTC = new Date(today)
+  todayStartUTC.setUTCHours(8, 0, 0, 0) // PST midnight = UTC 08:00
+  const todayEndUTC = new Date(today)
+  todayEndUTC.setDate(todayEndUTC.getDate() + 1)
+  todayEndUTC.setUTCHours(7, 59, 59, 999) // PST 23:59:59 = UTC 07:59:59 next day
+
+  // Yesterday in PST
+  const yesterdayStartUTC = new Date(yesterday)
+  yesterdayStartUTC.setUTCHours(8, 0, 0, 0)
+  const yesterdayEndUTC = new Date(yesterday)
+  yesterdayEndUTC.setDate(yesterdayEndUTC.getDate() + 1)
+  yesterdayEndUTC.setUTCHours(7, 59, 59, 999)
 
   const todayStr = today.toISOString().split('T')[0]
   const yesterdayStr = yesterday.toISOString().split('T')[0]
 
+  console.log(`📅 Today PST: ${todayStr}, UTC range: ${todayStartUTC.toISOString()} - ${todayEndUTC.toISOString()}`)
+
   return {
-    today: aggregateMetrics(metrics.filter(m => m.date === todayStr), today, todayEnd),
-    yesterday: aggregateMetrics(metrics.filter(m => m.date === yesterdayStr), yesterday, yesterdayEnd),
+    today: aggregateMetrics(metrics.filter(m => m.date === todayStr), todayStartUTC, todayEndUTC),
+    yesterday: aggregateMetrics(metrics.filter(m => m.date === yesterdayStr), yesterdayStartUTC, yesterdayEndUTC),
     last7Days: aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days), last7Days, pstNow),
     last30Days: aggregateMetrics(metrics, last30Days, pstNow),
     lastMonth: aggregateMetrics(metrics.filter(m => {
