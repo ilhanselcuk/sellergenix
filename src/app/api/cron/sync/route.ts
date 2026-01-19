@@ -120,20 +120,70 @@ export async function GET(request: NextRequest) {
               let orderTotalAmount = orderTotal ? parseFloat(orderTotal.Amount || orderTotal.amount || '0') : 0
 
               // For Pending orders with $0, try to get price from order items
+              // AND estimate fees using products.avg_fee_per_unit (Sellerboard approach)
               if (orderTotalAmount === 0 && (orderStatus === 'Pending' || orderStatus === 'Unshipped')) {
                 try {
                   const itemsResult = await getOrderItems(connection.refresh_token, orderId)
                   if (itemsResult.success && itemsResult.orderItems) {
                     let itemsTotal = 0
+                    let totalEstimatedFee = 0
+
+                    // Get products with avg_fee_per_unit for fee lookup
+                    const asins = itemsResult.orderItems.map((item: any) => item.ASIN || item.asin).filter(Boolean)
+                    const { data: productsWithFees } = await supabase
+                      .from('products')
+                      .select('asin, sku, avg_fee_per_unit')
+                      .eq('user_id', connection.user_id)
+                      .in('asin', asins)
+
+                    // Create fee lookup map
+                    const feeMap = new Map<string, number>()
+                    for (const p of productsWithFees || []) {
+                      if (p.avg_fee_per_unit && p.avg_fee_per_unit > 0) {
+                        if (p.asin) feeMap.set(p.asin, p.avg_fee_per_unit)
+                        if (p.sku) feeMap.set(p.sku, p.avg_fee_per_unit)
+                      }
+                    }
+
                     for (const item of itemsResult.orderItems) {
                       const rawItem = item as any
+                      const asin = rawItem.ASIN || rawItem.asin
+                      const sku = rawItem.SellerSKU || rawItem.sellerSKU
+                      const orderItemId = rawItem.OrderItemId || rawItem.orderItemId
                       const itemPrice = rawItem.ItemPrice || rawItem.itemPrice
                       const price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
+                      const quantity = rawItem.QuantityOrdered || rawItem.quantityOrdered || 1
                       itemsTotal += price
+
+                      // Get estimated fee from products.avg_fee_per_unit
+                      const feePerUnit = feeMap.get(asin) || feeMap.get(sku) || 0
+                      const estimatedFee = feePerUnit * quantity
+                      totalEstimatedFee += estimatedFee
+
+                      // Save order item with estimated fee
+                      if (orderItemId && asin) {
+                        await supabase
+                          .from('order_items')
+                          .upsert({
+                            user_id: connection.user_id,
+                            amazon_order_id: orderId,
+                            order_item_id: orderItemId,
+                            asin: asin,
+                            seller_sku: sku,
+                            title: rawItem.Title || rawItem.title || null,
+                            quantity_ordered: quantity,
+                            item_price: price,
+                            estimated_amazon_fee: estimatedFee > 0 ? estimatedFee : null,
+                            updated_at: new Date().toISOString(),
+                          }, {
+                            onConflict: 'user_id,order_item_id',
+                          })
+                      }
                     }
+
                     if (itemsTotal > 0) {
                       orderTotalAmount = itemsTotal
-                      log(`    📦 Got price $${itemsTotal.toFixed(2)} from order items for Pending order ${orderId}`)
+                      log(`    📦 Pending order ${orderId}: $${itemsTotal.toFixed(2)} (est. fee: $${totalEstimatedFee.toFixed(2)})`)
                     }
                   }
                 } catch (itemErr: any) {

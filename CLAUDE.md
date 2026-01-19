@@ -71,6 +71,68 @@
 - ✅ Metric info popups (22 metrik)
 - ✅ Export functionality (CSV, PNG, PDF)
 
+---
+
+### 🚨🚨🚨 PENDING vs SHIPPED SİPARİŞ VERİ MANTIĞI 🚨🚨🚨
+
+**⚠️ BU BÖLÜMÜ MUTLAKA OKU - AYNI HATAYI TEKRARLAMA!**
+
+#### Pending Sipariş için Veri Nereden Gelir?
+
+| Veri | API | Pending | Shipped |
+|------|-----|---------|---------|
+| Sipariş Fiyatı | Orders API | ❌ $0 döner | ✅ Gerçek fiyat |
+| Item Fiyatı | **Order Items API** | ✅ **BURADAN AL** | ✅ Var |
+| Amazon Fees | Finances API | ❌ Veri yok (henüz ship edilmedi) | ✅ Gerçek fee breakdown |
+
+#### DOĞRU YAKLAŞIM (Sellerboard böyle yapıyor):
+
+**1. Pending Sipariş:**
+```
+Fiyat = Order Items API'den ItemPrice al
+Fee = AYNI ÜRÜNÜN (ASIN/SKU) daha önce SHIPPED olan siparişlerindeki fee'leri kullan
+```
+
+**2. Shipped Sipariş:**
+```
+Fiyat = Finances API'den Principal charge
+Fee = Finances API'den ItemFeeList (FBA fee, Referral fee, Storage fee, etc.)
+```
+
+#### ❌ YANLIŞ YAKLAŞIMLAR (YAPMA!):
+- ❌ Pending sipariş için fee tahmin etme (boyut/ağırlık hesabı)
+- ❌ Pending sipariş fiyatı için Orders API'ye güvenme ($0 döner)
+- ❌ Canceled siparişleri sync etme (skip et, DB'den sil)
+
+#### ✅ DOĞRU YAKLAŞIM:
+1. **Order Items API** → Pending sipariş fiyatını al
+2. **products tablosundaki avg_fee_per_unit** → Aynı ürünün geçmiş fee ortalamasını kullan
+3. **Finances API** → Shipped olunca gerçek fee'yi al ve güncelle
+
+#### Fee Lookup Mantığı (products tablosu):
+```sql
+-- Her ürün için ortalama fee saklanıyor
+products.avg_fee_per_unit = Shipped siparişlerdeki ortalama Amazon fee per unit
+
+-- Pending sipariş için fee hesabı:
+estimated_fee = products.avg_fee_per_unit * quantity
+```
+
+#### Kod Örneği:
+```typescript
+// Pending sipariş için fee lookup
+const product = await getProductByASIN(item.asin)
+const estimatedFee = product.avg_fee_per_unit * item.quantity
+
+// Shipped olunca Finances API'den gerçek fee al ve products tablosunu güncelle
+const realFee = financesAPI.getFeeForOrder(orderId)
+await updateProductAvgFee(item.asin, realFee)
+```
+
+**⚠️ BU MANTIĞI DEĞİŞTİRME! Sellerboard'ın çalışma prensibi bu.**
+
+---
+
 #### 6️⃣ docs/ KLASÖRÜNDEKİ TÜM MD DOSYALARI
 ```
 docs/
@@ -105,28 +167,33 @@ Her yeni Claude instance şu adımları takip etsin:
 
 ---
 
-## 📋 GÜNCEL TODO LİSTESİ (Son Güncelleme: 17 Ocak 2026)
+## 📋 GÜNCEL TODO LİSTESİ (Son Güncelleme: 19 Ocak 2026)
 
 ### ✅ TAMAMLANAN
 - [x] Dashboard 7 view (Tiles, Chart, P&L, Map, Trends, Heatmap, Comparison)
 - [x] Amazon SP-API OAuth flow
 - [x] Manual token connection (draft app workaround)
 - [x] Orders API entegrasyonu
-- [x] Finances API entegrasyonu
+- [x] Finances API entegrasyonu (daily aggregate)
 - [x] 17 MD dosyası docs/ klasörüne taşındı
 - [x] Premium UI/UX (Minimalist Design System)
 - [x] Metric info popups (22 metrik)
+- [x] SKU bazlı fee lookup (avg_fee_per_unit)
+- [x] Cron job: Yeni sipariş sync (her 15 dk)
+- [x] Canceled siparişleri skip et
 
-### ⏳ DEVAM EDEN
+### ⏳ DEVAM EDEN (19 Ocak 2026)
+- [ ] **Pending sipariş fiyatı Order Items API'den al**
+- [ ] **Pending sipariş fee'si için products.avg_fee_per_unit kullan**
 - [ ] Amazon rol onayı bekleniyor (Product Listing, Amazon Fulfillment)
-- [ ] Listings API entegrasyonu (rol onayı gerekli)
-- [ ] FBA Inventory API entegrasyonu (rol onayı gerekli)
 
 ### 📋 SIRADA
+- [ ] Finances API: Sipariş bazlı fee breakdown (FBA, Referral, Storage ayrı)
+- [ ] Shipped sipariş gelince products.avg_fee_per_unit güncelle
 - [ ] AI Chat implementasyonu (Haiku + Opus routing)
 - [ ] WhatsApp bildirimleri (Twilio entegrasyonu)
 - [ ] Oxylabs scraping (BSR, reviews, competitor prices)
-- [ ] Real-time sync (15 dakikada bir)
+- [ ] Amazon Advertising API (rol onayı gerekebilir)
 
 ---
 
