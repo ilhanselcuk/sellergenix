@@ -368,3 +368,224 @@ export async function getTodayFinancials(refreshToken: string) {
     }
   }
 }
+
+// =============================================
+// ORDER-LEVEL FEE FUNCTIONS
+// =============================================
+
+/**
+ * Fee breakdown for a single order item
+ */
+export interface OrderItemFees {
+  orderItemId: string
+  asin?: string
+  sellerSku?: string
+  quantity: number
+  // Fee components
+  fbaFulfillmentFee: number      // FBA per-unit fulfillment fee
+  referralFee: number            // Amazon commission (8-15%)
+  storageFee: number             // FBA storage fee
+  variableClosingFee: number     // Variable closing fee (media)
+  otherFees: number              // Other misc fees
+  totalFee: number               // Total of all fees
+  // Revenue components
+  principalAmount: number        // Sale price
+  promotionDiscount: number      // Promotion/coupon discount
+}
+
+/**
+ * Fee breakdown for an entire order
+ */
+export interface OrderFees {
+  amazonOrderId: string
+  postedDate?: string
+  items: OrderItemFees[]
+  totalFees: number
+  totalFbaFees: number
+  totalReferralFees: number
+  totalOtherFees: number
+}
+
+/**
+ * List Financial Events by Order ID
+ *
+ * Fetches detailed financial events for a specific Amazon order.
+ * Use this to get ACTUAL fees after an order has shipped.
+ *
+ * @param refreshToken - Amazon refresh token
+ * @param amazonOrderId - Amazon order ID (e.g., "113-1234567-1234567")
+ */
+export async function listFinancialEventsByOrderId(
+  refreshToken: string,
+  amazonOrderId: string
+): Promise<{ success: boolean; data?: OrderFees; error?: string }> {
+  const client = createAmazonSPAPIClient(refreshToken)
+
+  try {
+    console.log(`📊 Fetching financial events for order: ${amazonOrderId}`)
+
+    const response = await client.callAPI({
+      operation: 'listFinancialEventsByOrderId',
+      endpoint: 'finances',
+      path: {
+        orderId: amazonOrderId,
+      },
+      query: {
+        MaxResultsPerPage: 100,
+      },
+    })
+
+    // API returns FinancialEvents directly
+    const payload = response.FinancialEvents || response.payload?.FinancialEvents || {}
+    const shipmentEvents = payload.ShipmentEventList || []
+
+    if (shipmentEvents.length === 0) {
+      console.log(`⚠️ No financial events found for order: ${amazonOrderId}`)
+      return {
+        success: false,
+        error: 'No financial events found - order may not be shipped yet',
+      }
+    }
+
+    // Parse the first shipment event (most orders have one)
+    const shipment = shipmentEvents[0]
+    const orderFees = extractOrderFees(amazonOrderId, shipment)
+
+    console.log(`✅ Found fees for order ${amazonOrderId}: $${orderFees.totalFees.toFixed(2)}`)
+
+    return {
+      success: true,
+      data: orderFees,
+    }
+  } catch (error) {
+    console.error(`❌ Failed to fetch financial events for order ${amazonOrderId}:`, error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+/**
+ * Extract fee breakdown from a shipment event
+ *
+ * Parses the complex Amazon financial event structure into a clean fee breakdown.
+ */
+export function extractOrderFees(amazonOrderId: string, shipmentEvent: Record<string, unknown>): OrderFees {
+  const items: OrderItemFees[] = []
+  let totalFees = 0
+  let totalFbaFees = 0
+  let totalReferralFees = 0
+  let totalOtherFees = 0
+
+  // Get the shipment item list
+  const shipmentItems = (shipmentEvent.ShipmentItemList || shipmentEvent.shipmentItemList || []) as Record<string, unknown>[]
+
+  for (const item of shipmentItems) {
+    const orderItemId = String(item.OrderItemId || item.orderItemId || '')
+    const asin = item.ASIN || item.asin
+    const sellerSku = item.SellerSKU || item.sellerSKU
+    const quantity = Number(item.QuantityShipped || item.quantityShipped || 0)
+
+    // Initialize fee components
+    let fbaFulfillmentFee = 0
+    let referralFee = 0
+    let storageFee = 0
+    let variableClosingFee = 0
+    let otherFees = 0
+    let principalAmount = 0
+    let promotionDiscount = 0
+
+    // Parse ItemFeeList (fees are negative amounts)
+    const feeList = (item.ItemFeeList || item.itemFeeList || []) as Array<Record<string, unknown>>
+    for (const fee of feeList) {
+      const feeType = String(fee.FeeType || fee.feeType || '')
+      const feeAmountObj = (fee.FeeAmount || fee.feeAmount) as Record<string, number> | undefined
+      const amount = Math.abs(feeAmountObj?.CurrencyAmount || feeAmountObj?.currencyAmount || 0)
+
+      switch (feeType) {
+        case 'FBAPerUnitFulfillmentFee':
+          fbaFulfillmentFee += amount
+          totalFbaFees += amount
+          break
+        case 'Commission':
+        case 'ReferralFee':
+          referralFee += amount
+          totalReferralFees += amount
+          break
+        case 'FBAStorageFee':
+        case 'StorageFee':
+          storageFee += amount
+          totalOtherFees += amount
+          break
+        case 'VariableClosingFee':
+          variableClosingFee += amount
+          totalOtherFees += amount
+          break
+        default:
+          otherFees += amount
+          totalOtherFees += amount
+      }
+    }
+
+    // Parse ItemChargeList (revenue components)
+    const chargeList = (item.ItemChargeList || item.itemChargeList || []) as Array<Record<string, unknown>>
+    for (const charge of chargeList) {
+      const chargeType = String(charge.ChargeType || charge.chargeType || '')
+      const chargeAmountObj = (charge.ChargeAmount || charge.chargeAmount) as Record<string, number> | undefined
+      const amount = chargeAmountObj?.CurrencyAmount || chargeAmountObj?.currencyAmount || 0
+
+      if (chargeType === 'Principal') {
+        principalAmount += amount
+      }
+    }
+
+    // Parse PromotionList
+    const promotionList = (item.PromotionList || item.promotionList || []) as Array<Record<string, unknown>>
+    for (const promo of promotionList) {
+      const promoAmountObj = (promo.PromotionAmount || promo.promotionAmount) as Record<string, number> | undefined
+      const amount = Math.abs(promoAmountObj?.CurrencyAmount || promoAmountObj?.currencyAmount || 0)
+      promotionDiscount += amount
+    }
+
+    const itemTotalFee = fbaFulfillmentFee + referralFee + storageFee + variableClosingFee + otherFees
+    totalFees += itemTotalFee
+
+    items.push({
+      orderItemId,
+      asin: asin as string | undefined,
+      sellerSku: sellerSku as string | undefined,
+      quantity,
+      fbaFulfillmentFee,
+      referralFee,
+      storageFee,
+      variableClosingFee,
+      otherFees,
+      totalFee: itemTotalFee,
+      principalAmount,
+      promotionDiscount,
+    })
+  }
+
+  return {
+    amazonOrderId,
+    postedDate: String(shipmentEvent.PostedDate || shipmentEvent.postedDate || ''),
+    items,
+    totalFees,
+    totalFbaFees,
+    totalReferralFees,
+    totalOtherFees,
+  }
+}
+
+/**
+ * Get fee per unit for a specific ASIN from order fees
+ */
+export function getFeePerUnit(orderFees: OrderFees, asin: string): number | null {
+  for (const item of orderFees.items) {
+    if (item.asin === asin && item.quantity > 0) {
+      return item.totalFee / item.quantity
+    }
+  }
+  return null
+}

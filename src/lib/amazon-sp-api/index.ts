@@ -39,7 +39,24 @@ export {
   calculateProfitMetrics,
   getLast30DaysFinancials,
   getTodayFinancials,
+  // Order-level fee functions
+  listFinancialEventsByOrderId,
+  extractOrderFees,
+  getFeePerUnit,
 } from './finances'
+export type { OrderItemFees, OrderFees } from './finances'
+
+// Fee Service (Shipped & Pending Order Fees)
+export {
+  syncShippedOrderFees,
+  estimatePendingOrderFees,
+  getProductFeeAverage,
+  updateProductFeeAverages,
+  syncRecentlyShippedOrderFees,
+  estimateAllPendingOrderFees,
+  refreshAllProductFeeAverages,
+} from './fee-service'
+export type { ProductFeeAverages, FeeUpdateResult } from './fee-service'
 
 // Catalog
 export {

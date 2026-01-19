@@ -167,7 +167,7 @@ Her yeni Claude instance şu adımları takip etsin:
 
 ---
 
-## 📋 GÜNCEL TODO LİSTESİ (Son Güncelleme: 19 Ocak 2026)
+## 📋 GÜNCEL TODO LİSTESİ (Son Güncelleme: 20 Ocak 2026)
 
 ### ✅ TAMAMLANAN
 - [x] Dashboard 7 view (Tiles, Chart, P&L, Map, Trends, Heatmap, Comparison)
@@ -181,15 +181,18 @@ Her yeni Claude instance şu adımları takip etsin:
 - [x] SKU bazlı fee lookup (avg_fee_per_unit)
 - [x] Cron job: Yeni sipariş sync (her 15 dk)
 - [x] Canceled siparişleri skip et
+- [x] **Finances API: Sipariş bazlı fee breakdown** (listFinancialEventsByOrderId)
+- [x] **Fee Service: Shipped sipariş gerçek fee çekme** (syncShippedOrderFees)
+- [x] **Fee Service: Pending sipariş fee tahmini** (estimatePendingOrderFees)
+- [x] **Fee Service: Ürün ortalama fee güncelleme** (updateProductFeeAverages)
+- [x] **Fee API Endpoint** (/api/sync/fees)
 
-### ⏳ DEVAM EDEN (19 Ocak 2026)
-- [ ] **Pending sipariş fiyatı Order Items API'den al**
-- [ ] **Pending sipariş fee'si için products.avg_fee_per_unit kullan**
+### ⏳ DEVAM EDEN (20 Ocak 2026)
 - [ ] Amazon rol onayı bekleniyor (Product Listing, Amazon Fulfillment)
+- [ ] Dashboard'u gerçek fee'lerle güncelle (şu an %15 estimate)
 
 ### 📋 SIRADA
-- [ ] Finances API: Sipariş bazlı fee breakdown (FBA, Referral, Storage ayrı)
-- [ ] Shipped sipariş gelince products.avg_fee_per_unit güncelle
+- [ ] Order Items API'den pending sipariş fiyatı çek
 - [ ] AI Chat implementasyonu (Haiku + Opus routing)
 - [ ] WhatsApp bildirimleri (Twilio entegrasyonu)
 - [ ] Oxylabs scraping (BSR, reviews, competitor prices)
@@ -346,6 +349,176 @@ const selectedMarketplace = userSelection || 'US'
 const marketplaceId = MARKETPLACES[selectedMarketplace]
 const result = await getAllPeriodSalesMetrics(refreshToken, [marketplaceId])
 ```
+
+---
+
+## 💰 AMAZON FEE SİSTEMİ - IMPLEMENTATION (20 Ocak 2026)
+
+### 🎯 Amaç
+Amazon fee'lerini doğru hesaplamak:
+1. **Shipped siparişler:** Finances API'den GERÇEK fee'leri çek
+2. **Pending siparişler:** Aynı ürünün son 14 günlük shipped siparişlerinden ortalama fee kullan
+3. **Sipariş ship olduğunda:** Gerçek fee ile güncelle
+
+### 📁 Dosya Yapısı
+
+```
+src/lib/amazon-sp-api/
+├── finances.ts          # Finances API fonksiyonları
+│   ├── listFinancialEventsByOrderId()  # Sipariş bazlı fee çek
+│   ├── extractOrderFees()               # Fee breakdown parse et
+│   └── getFeePerUnit()                  # ASIN bazlı fee per unit
+│
+├── fee-service.ts       # Fee yönetim servisi
+│   ├── syncShippedOrderFees()           # Shipped sipariş fee sync
+│   ├── estimatePendingOrderFees()       # Pending sipariş fee tahmin
+│   ├── getProductFeeAverage()           # Ürün ortalama fee al
+│   ├── updateProductFeeAverages()       # Ürün ortalama fee güncelle
+│   ├── syncRecentlyShippedOrderFees()   # Batch: Shipped fee sync
+│   ├── estimateAllPendingOrderFees()    # Batch: Pending fee tahmin
+│   └── refreshAllProductFeeAverages()   # Batch: Ürün fee güncelle
+│
+└── index.ts             # Export'lar
+```
+
+### 🔗 API Endpoint
+
+**Endpoint:** `/api/sync/fees`
+
+**POST - Fee sync tetikle:**
+```
+POST /api/sync/fees?userId=xxx&type=all&hours=24
+
+type options:
+- 'shipped': Sadece shipped sipariş fee'lerini sync et
+- 'pending': Sadece pending sipariş fee'lerini tahmin et
+- 'all': İkisini de yap + ürün ortalamalarını güncelle
+
+hours: Kaç saat geriye git (default: 24)
+```
+
+**GET - Fee durumu:**
+```
+GET /api/sync/fees?userId=xxx
+
+Response:
+{
+  "success": true,
+  "stats": {
+    "itemsWithFees": 156,
+    "totalFees": "4523.45",
+    "productsWithAverages": 23
+  }
+}
+```
+
+### 📊 Database Şeması
+
+**products tablosu (fee ortalamaları):**
+```sql
+avg_fee_per_unit          -- Ortalama toplam fee per unit
+avg_fba_fee_per_unit      -- Ortalama FBA fee per unit
+avg_referral_fee_per_unit -- Ortalama referral fee per unit
+fee_data_updated_at       -- Son güncelleme zamanı
+```
+
+**order_items tablosu:**
+```sql
+estimated_amazon_fee      -- Tahmini veya gerçek fee per unit
+```
+
+### 🔄 Fee Flow
+
+```
+1. YENİ SİPARİŞ (Pending)
+   │
+   ├─ Order Items API'den fiyat al
+   │
+   └─ products.avg_fee_per_unit kullanarak fee tahmin et
+      │
+      └─ order_items.estimated_amazon_fee = avg_fee_per_unit
+
+2. SİPARİŞ SHIP OLDU
+   │
+   ├─ Finances API'den gerçek fee çek
+   │   └─ listFinancialEventsByOrderId(orderId)
+   │
+   ├─ order_items.estimated_amazon_fee = gerçek fee
+   │
+   └─ products.avg_fee_per_unit'i güncelle
+      └─ updateProductFeeAverages(asin)
+```
+
+### 📦 Fee Breakdown (Finances API Response)
+
+```typescript
+interface OrderItemFees {
+  orderItemId: string
+  asin?: string
+  quantity: number
+
+  // Fee components
+  fbaFulfillmentFee: number      // FBA per-unit fulfillment fee
+  referralFee: number            // Amazon commission (8-15%)
+  storageFee: number             // FBA storage fee
+  variableClosingFee: number     // Variable closing fee (media)
+  otherFees: number              // Other misc fees
+  totalFee: number               // Total of all fees
+
+  // Revenue
+  principalAmount: number        // Sale price
+  promotionDiscount: number      // Promotion/coupon discount
+}
+```
+
+### 💡 Kullanım Örnekleri
+
+**1. Shipped sipariş fee sync:**
+```typescript
+import { syncShippedOrderFees } from '@/lib/amazon-sp-api'
+
+const result = await syncShippedOrderFees(
+  userId,
+  'ORDER-123-456',
+  refreshToken
+)
+// result = { success: true, itemsUpdated: 2, totalFeesApplied: 8.50, source: 'finances_api' }
+```
+
+**2. Pending sipariş fee tahmini:**
+```typescript
+import { estimatePendingOrderFees } from '@/lib/amazon-sp-api'
+
+const result = await estimatePendingOrderFees(userId, 'ORDER-789-012')
+// result = { success: true, itemsUpdated: 1, totalFeesApplied: 4.25, source: 'product_average' }
+```
+
+**3. Batch fee sync (cron job):**
+```typescript
+import { syncRecentlyShippedOrderFees, estimateAllPendingOrderFees } from '@/lib/amazon-sp-api'
+
+// Her 15 dakikada çalıştır
+await syncRecentlyShippedOrderFees(userId, refreshToken, 24) // Son 24 saat
+await estimateAllPendingOrderFees(userId)
+```
+
+### ⚠️ Önemli Notlar
+
+1. **Finances API sadece SHIPPED siparişler için veri döner**
+   - Pending sipariş için `listFinancialEventsByOrderId` boş döner
+   - Bu yüzden pending için product average kullanıyoruz
+
+2. **Fee ortalaması 14 günlük window ile hesaplanır**
+   - Sezonsal fiyat değişikliklerini yakalar
+   - Çok eski veriyi kullanmaz
+
+3. **Fallback mekanizması var**
+   - Ürün için geçmiş veri yoksa %15 tahmin kullanılır
+   - Bu sadece geçici - shipped olunca gerçek fee ile güncellenir
+
+4. **Rate limiting dikkat!**
+   - Batch işlemlerde 200ms delay var
+   - Amazon API rate limit'lerine uyum için
 
 **NOT:** Şimdilik sadece US çalışıyor. Faz 2'de tüm marketplace'ler desteklenecek.
 

@@ -1,8 +1,8 @@
 /**
- * Dashboard Metrics API - Uses Amazon Sales API for ACCURATE data
+ * Dashboard Metrics API - Uses Amazon Sales API + Real Fees from Database
  *
  * This endpoint returns real-time aggregate metrics directly from Amazon's Sales API
- * Much more accurate than calculating from individual orders!
+ * Combined with REAL Amazon fees from Finances API (stored in database)
  *
  * Returns: Today, Yesterday, This Month, Last Month metrics
  */
@@ -22,19 +22,133 @@ interface PeriodMetrics {
   units: number
   orders: number
   avgOrderValue: number
-  // These will be calculated/estimated for now
   netProfit: number
   margin: number
   adSpend: number
   amazonFees: number
   grossProfit: number
   roi: number
+  // New: fee source indicator
+  feeSource: 'real' | 'estimated' | 'mixed'
+}
+
+interface RealFeeData {
+  totalFees: number
+  totalCogs: number
+  orderCount: number
+  feeSource: 'real' | 'estimated' | 'mixed'
+}
+
+/**
+ * Get real fee data from database for a date range
+ * Uses order_items.estimated_amazon_fee (which contains REAL fees for shipped orders)
+ */
+async function getRealFeesForPeriod(
+  userId: string,
+  startDate: Date,
+  endDate: Date
+): Promise<RealFeeData> {
+  try {
+    // Query orders and their items in the date range
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select(`
+        amazon_order_id,
+        order_status,
+        order_items (
+          estimated_amazon_fee,
+          quantity_shipped,
+          asin
+        )
+      `)
+      .eq('user_id', userId)
+      .gte('purchase_date', startDate.toISOString())
+      .lte('purchase_date', endDate.toISOString())
+
+    if (error || !orders) {
+      console.log('⚠️ Could not fetch orders for fee calculation:', error?.message)
+      return { totalFees: 0, totalCogs: 0, orderCount: 0, feeSource: 'estimated' }
+    }
+
+    let totalFees = 0
+    let totalCogs = 0
+    let ordersWithRealFees = 0
+    let ordersWithEstimatedFees = 0
+
+    for (const order of orders) {
+      const items = (order as any).order_items || []
+      let orderHasRealFees = false
+
+      for (const item of items) {
+        if (item.estimated_amazon_fee && item.quantity_shipped) {
+          totalFees += item.estimated_amazon_fee * item.quantity_shipped
+          orderHasRealFees = true
+        }
+      }
+
+      if (orderHasRealFees) {
+        ordersWithRealFees++
+      } else {
+        ordersWithEstimatedFees++
+      }
+    }
+
+    // Get COGS from products table
+    const { data: products } = await supabase
+      .from('products')
+      .select('asin, cogs')
+      .eq('user_id', userId)
+      .not('cogs', 'is', null)
+
+    // Create COGS lookup map
+    const cogsMap = new Map<string, number>()
+    if (products) {
+      for (const p of products) {
+        if (p.cogs) cogsMap.set(p.asin, p.cogs)
+      }
+    }
+
+    // Calculate total COGS
+    for (const order of orders) {
+      const items = (order as any).order_items || []
+      for (const item of items) {
+        if (item.asin && item.quantity_shipped && cogsMap.has(item.asin)) {
+          totalCogs += cogsMap.get(item.asin)! * item.quantity_shipped
+        }
+      }
+    }
+
+    // Determine fee source
+    let feeSource: 'real' | 'estimated' | 'mixed' = 'estimated'
+    if (ordersWithRealFees > 0 && ordersWithEstimatedFees === 0) {
+      feeSource = 'real'
+    } else if (ordersWithRealFees > 0 && ordersWithEstimatedFees > 0) {
+      feeSource = 'mixed'
+    }
+
+    console.log(`📊 Fee data for period: $${totalFees.toFixed(2)} fees, $${totalCogs.toFixed(2)} COGS, source: ${feeSource}`)
+
+    return {
+      totalFees,
+      totalCogs,
+      orderCount: orders.length,
+      feeSource
+    }
+  } catch (error) {
+    console.error('Error fetching real fees:', error)
+    return { totalFees: 0, totalCogs: 0, orderCount: 0, feeSource: 'estimated' }
+  }
 }
 
 /**
  * Format Sales API metrics into dashboard format
+ * Now uses REAL fees from database when available
  */
-function formatMetrics(metrics: any, adSpendEstimate: number = 0): PeriodMetrics {
+function formatMetrics(
+  metrics: any,
+  realFeeData?: RealFeeData,
+  adSpendEstimate: number = 0
+): PeriodMetrics {
   if (!metrics) {
     return {
       sales: 0,
@@ -46,7 +160,8 @@ function formatMetrics(metrics: any, adSpendEstimate: number = 0): PeriodMetrics
       adSpend: 0,
       amazonFees: 0,
       grossProfit: 0,
-      roi: 0
+      roi: 0,
+      feeSource: 'estimated'
     }
   }
 
@@ -55,14 +170,29 @@ function formatMetrics(metrics: any, adSpendEstimate: number = 0): PeriodMetrics
   const orders = metrics.orderCount || 0
   const avgOrderValue = parseFloat(metrics.averageUnitPrice?.amount || '0')
 
-  // Estimate costs (these will be refined with Advertising & Finances API later)
-  // Amazon fees: ~15% of sales (referral + FBA)
-  const amazonFees = sales * 0.15
+  // Use REAL fees from database if available, otherwise estimate
+  let amazonFees: number
+  let feeSource: 'real' | 'estimated' | 'mixed'
 
-  // COGS estimate: ~30% of sales (will be replaced with real COGS from products)
-  const estimatedCogs = sales * 0.30
+  if (realFeeData && realFeeData.totalFees > 0) {
+    // Use real fees from Finances API (stored in database)
+    amazonFees = realFeeData.totalFees
+    feeSource = realFeeData.feeSource
+    console.log(`💰 Using REAL Amazon fees: $${amazonFees.toFixed(2)} (source: ${feeSource})`)
+  } else {
+    // Fallback: Estimate fees at 15% of sales
+    amazonFees = sales * 0.15
+    feeSource = 'estimated'
+    console.log(`💰 Using ESTIMATED Amazon fees: $${amazonFees.toFixed(2)} (15% of sales)`)
+  }
+
+  // Use REAL COGS if available, otherwise estimate at 30%
+  const estimatedCogs = realFeeData && realFeeData.totalCogs > 0
+    ? realFeeData.totalCogs
+    : sales * 0.30
 
   // Ad spend: Use passed estimate or default to 8% of sales
+  // TODO: Get real ad spend from Advertising API
   const adSpend = adSpendEstimate > 0 ? adSpendEstimate : sales * 0.08
 
   // Calculate profits
@@ -83,7 +213,8 @@ function formatMetrics(metrics: any, adSpendEstimate: number = 0): PeriodMetrics
     adSpend,
     amazonFees,
     grossProfit,
-    roi
+    roi,
+    feeSource
   }
 }
 
@@ -143,15 +274,57 @@ export async function GET(request: Request) {
     console.log('📦 This Month raw:', JSON.stringify(result.thisMonth, null, 2))
     console.log('📦 Last Month raw:', JSON.stringify(result.lastMonth, null, 2))
 
+    // =============================================
+    // FETCH REAL FEES FROM DATABASE
+    // =============================================
+    console.log('💰 Fetching real Amazon fees from database...')
+
+    // Calculate date ranges for each period
+    const now = new Date()
+
+    // Today
+    const todayStart = new Date(now)
+    todayStart.setHours(0, 0, 0, 0)
+    const todayEnd = new Date(now)
+
+    // Yesterday
+    const yesterdayStart = new Date(now)
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+    yesterdayStart.setHours(0, 0, 0, 0)
+    const yesterdayEnd = new Date(yesterdayStart)
+    yesterdayEnd.setHours(23, 59, 59, 999)
+
+    // This Month
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const thisMonthEnd = new Date(now)
+
+    // Last Month
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+
+    // Fetch real fees for each period in parallel
+    const [todayFees, yesterdayFees, thisMonthFees, lastMonthFees] = await Promise.all([
+      getRealFeesForPeriod(userId, todayStart, todayEnd),
+      getRealFeesForPeriod(userId, yesterdayStart, yesterdayEnd),
+      getRealFeesForPeriod(userId, thisMonthStart, thisMonthEnd),
+      getRealFeesForPeriod(userId, lastMonthStart, lastMonthEnd),
+    ])
+
+    console.log('💰 Fee data retrieved:')
+    console.log(`   Today: $${todayFees.totalFees.toFixed(2)} (${todayFees.feeSource})`)
+    console.log(`   Yesterday: $${yesterdayFees.totalFees.toFixed(2)} (${yesterdayFees.feeSource})`)
+    console.log(`   This Month: $${thisMonthFees.totalFees.toFixed(2)} (${thisMonthFees.feeSource})`)
+    console.log(`   Last Month: $${lastMonthFees.totalFees.toFixed(2)} (${lastMonthFees.feeSource})`)
+
     // TODO: Fetch real ad spend from Advertising API
     // For now, we'll estimate based on sales
 
-    // Format metrics for dashboard
+    // Format metrics for dashboard with REAL fees
     const dashboardMetrics = {
-      today: formatMetrics(result.today),
-      yesterday: formatMetrics(result.yesterday),
-      thisMonth: formatMetrics(result.thisMonth),
-      lastMonth: formatMetrics(result.lastMonth),
+      today: formatMetrics(result.today, todayFees),
+      yesterday: formatMetrics(result.yesterday, yesterdayFees),
+      thisMonth: formatMetrics(result.thisMonth, thisMonthFees),
+      lastMonth: formatMetrics(result.lastMonth, lastMonthFees),
 
       // Raw data for debugging
       _raw: {
@@ -159,6 +332,14 @@ export async function GET(request: Request) {
         yesterday: result.yesterday,
         thisMonth: result.thisMonth,
         lastMonth: result.lastMonth
+      },
+
+      // Fee source summary
+      _feeInfo: {
+        today: { fees: todayFees.totalFees, source: todayFees.feeSource, orders: todayFees.orderCount },
+        yesterday: { fees: yesterdayFees.totalFees, source: yesterdayFees.feeSource, orders: yesterdayFees.orderCount },
+        thisMonth: { fees: thisMonthFees.totalFees, source: thisMonthFees.feeSource, orders: thisMonthFees.orderCount },
+        lastMonth: { fees: lastMonthFees.totalFees, source: lastMonthFees.feeSource, orders: lastMonthFees.orderCount },
       }
     }
 
