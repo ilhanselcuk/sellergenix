@@ -648,7 +648,7 @@ export async function getDashboardData(userId: string) {
       totalFees += calculateFBAFeeForItem(asin, itemPrice, quantity)
 
       // COGS from product data
-      const dims = productDimensionsMap.get(asin)
+      const dims = productDataMap.get(asin)
       if (dims?.cogs) {
         totalCogs += dims.cogs * quantity
       }
