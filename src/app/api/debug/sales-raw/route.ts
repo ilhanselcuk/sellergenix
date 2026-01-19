@@ -55,6 +55,10 @@ export async function GET() {
       },
     })
 
+    // Also test getAllPeriodSalesMetrics
+    const { getAllPeriodSalesMetrics } = await import('@/lib/amazon-sp-api')
+    const allPeriods = await getAllPeriodSalesMetrics(connection.refresh_token, ['ATVPDKIKX0DER'])
+
     return NextResponse.json({
       success: true,
       marketplaceIds,
@@ -62,8 +66,12 @@ export async function GET() {
       rawResponse: response,
       responseType: typeof response,
       responseKeys: response ? Object.keys(response) : null,
-      payload: response?.payload,
-      payloadType: typeof response?.payload,
+      // All periods test
+      allPeriodsResult: allPeriods,
+      todayMetrics: allPeriods.today,
+      yesterdayMetrics: allPeriods.yesterday,
+      thisMonthMetrics: allPeriods.thisMonth,
+      lastMonthMetrics: allPeriods.lastMonth,
     })
   } catch (error: any) {
     console.error('❌ Sales API error:', error)
