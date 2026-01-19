@@ -53,8 +53,10 @@ export async function POST(request: Request) {
     // Find all active connections
     const { data: allConnections, error: listError } = await adminSupabase
       .from('amazon_connections')
-      .select('id, user_id, seller_id, seller_name, is_active, created_at')
+      .select('id, user_id, seller_id, is_active, created_at')
       .eq('is_active', true)
+
+    console.log('📋 Query result:', { allConnections, listError })
 
     if (listError) {
       return NextResponse.json({
@@ -160,9 +162,9 @@ export async function GET(request: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     // Get all connections
-    const { data: allConnections } = await adminSupabase
+    const { data: allConnections, error: connError } = await adminSupabase
       .from('amazon_connections')
-      .select('id, user_id, seller_id, seller_name, is_active, created_at')
+      .select('id, user_id, seller_id, is_active, created_at')
 
     // Get all users
     const { data: allUsers } = await adminSupabase
@@ -184,6 +186,7 @@ export async function GET(request: Request) {
       },
       userHasConnection,
       allConnections,
+      connectionQueryError: connError,
       allUsers,
       orphanedConnections,
       fixInstructions: !userHasConnection ? 'Send a POST request to this endpoint to link the connection to your account' : null
