@@ -111,17 +111,40 @@ export async function extractProductsFromOrders(
 
           if (!asin) continue
 
-          // Skip if we already have this product
-          if (existingAsins.has(asin)) continue
-
-          // Skip if we already processed this ASIN in this batch
-          if (productMap.has(asin)) continue
-
           const sku = rawItem.SellerSKU || rawItem.sellerSKU || null
           const title = rawItem.Title || rawItem.title || null
           const itemPrice = rawItem.ItemPrice || rawItem.itemPrice
           const price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
           const quantity = rawItem.QuantityOrdered || rawItem.quantityOrdered || 1
+          const orderItemId = rawItem.OrderItemId || rawItem.orderItemId
+
+          // CRITICAL: Save order item to database (for accurate sales calculation)
+          try {
+            await supabase
+              .from('order_items')
+              .upsert({
+                user_id: userId,
+                amazon_order_id: order.amazon_order_id,
+                order_item_id: orderItemId,
+                asin: asin,
+                seller_sku: sku,
+                title: title,
+                quantity_ordered: quantity,
+                item_price: price,
+                currency_code: itemPrice?.CurrencyCode || itemPrice?.currencyCode || 'USD',
+                updated_at: new Date().toISOString(),
+              }, {
+                onConflict: 'user_id,amazon_order_id,order_item_id',
+              })
+          } catch (saveErr: any) {
+            console.warn(`  ⚠️ Failed to save order item: ${saveErr.message}`)
+          }
+
+          // Skip product creation if we already have this product
+          if (existingAsins.has(asin)) continue
+
+          // Skip if we already processed this ASIN in this batch
+          if (productMap.has(asin)) continue
 
           productMap.set(asin, {
             asin,

@@ -468,8 +468,8 @@ export async function getDashboardData(userId: string) {
   const metrics = dailyMetrics || []
   // orders is already defined above
 
-  // Helper to aggregate from orders when daily_metrics is empty
-  const aggregateFromOrders = (filteredOrders: Order[]) => {
+  // Helper to aggregate from order_items for accurate sales calculation
+  const aggregateFromOrderItems = (filteredOrders: Order[], allOrderItems: any[]) => {
     if (filteredOrders.length === 0) {
       return {
         sales: 0,
@@ -485,8 +485,15 @@ export async function getDashboardData(userId: string) {
       }
     }
 
-    const totalSales = filteredOrders.reduce((sum, o) => sum + (o.order_total || 0), 0)
-    const totalUnits = filteredOrders.reduce((sum, o) => sum + (o.items_shipped || 0) + (o.items_unshipped || 0), 0)
+    // Get order IDs from filtered orders
+    const orderIds = new Set(filteredOrders.map(o => o.amazon_order_id))
+
+    // Filter order items that belong to these orders
+    const relevantItems = allOrderItems.filter(item => orderIds.has(item.amazon_order_id))
+
+    // Calculate sales from order_items (more accurate than order_total)
+    const totalSales = relevantItems.reduce((sum, item) => sum + (item.item_price || 0), 0)
+    const totalUnits = relevantItems.reduce((sum, item) => sum + (item.quantity_ordered || 0), 0)
 
     // Estimate fees and profit (Amazon fees ~15%, estimate margin ~25%)
     const estimatedFees = totalSales * 0.15
@@ -507,7 +514,7 @@ export async function getDashboardData(userId: string) {
     }
   }
 
-  const aggregateMetrics = (filteredMetrics: DailyMetric[], startDate: Date, endDate: Date) => {
+  const aggregateMetrics = (filteredMetrics: DailyMetric[], startDate: Date, endDate: Date, allOrderItems: any[]) => {
     // If we have daily_metrics data, use it
     if (filteredMetrics.length > 0) {
       const totals = filteredMetrics.reduce((acc, m) => ({
@@ -531,12 +538,12 @@ export async function getDashboardData(userId: string) {
       }
     }
 
-    // Fallback: Calculate from orders data
+    // Fallback: Calculate from order_items data (more accurate than orders.order_total)
     const filteredOrders = orders.filter(o => {
       const orderDate = new Date(o.purchase_date)
       return orderDate >= startDate && orderDate <= endDate
     })
-    return aggregateFromOrders(filteredOrders)
+    return aggregateFromOrderItems(filteredOrders, allOrderItems)
   }
 
   // ========================================
@@ -564,16 +571,17 @@ export async function getDashboardData(userId: string) {
   console.log(`📅 Today PST: ${todayStr}, UTC range: ${todayStartUTC.toISOString()} - ${todayEndUTC.toISOString()}`)
 
   return {
-    today: aggregateMetrics(metrics.filter(m => m.date === todayStr), todayStartUTC, todayEndUTC),
-    yesterday: aggregateMetrics(metrics.filter(m => m.date === yesterdayStr), yesterdayStartUTC, yesterdayEndUTC),
-    last7Days: aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days), last7Days, pstNow),
-    last30Days: aggregateMetrics(metrics, last30Days, pstNow),
+    today: aggregateMetrics(metrics.filter(m => m.date === todayStr), todayStartUTC, todayEndUTC, orderItems),
+    yesterday: aggregateMetrics(metrics.filter(m => m.date === yesterdayStr), yesterdayStartUTC, yesterdayEndUTC, orderItems),
+    last7Days: aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days), last7Days, pstNow, orderItems),
+    last30Days: aggregateMetrics(metrics, last30Days, pstNow, orderItems),
     lastMonth: aggregateMetrics(metrics.filter(m => {
       const date = new Date(m.date)
       return date >= lastMonthStart && date <= lastMonthEnd
-    }), lastMonthStart, lastMonthEnd),
+    }), lastMonthStart, lastMonthEnd, orderItems),
     dailyMetrics: metrics,
     recentOrders: orders,
+    orderItems: orderItems,
     products: productsWithStats,
     hasRealData: !!(metrics.length > 0 || orders.length > 0 || products.length > 0)
   }
