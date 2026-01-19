@@ -500,6 +500,85 @@ export async function getDashboardData(userId: string) {
   const metrics = dailyMetrics || []
   // orders is already defined above
 
+  // Create product lookup map for dimensions
+  const productDimensionsMap = new Map<string, {
+    weight: number | null
+    length: number | null
+    width: number | null
+    height: number | null
+    cogs: number | null
+  }>()
+  for (const p of products) {
+    if (p.asin) {
+      productDimensionsMap.set(p.asin, {
+        weight: p.weight_lbs,
+        length: p.length_inches,
+        width: p.width_inches,
+        height: p.height_inches,
+        cogs: p.cogs
+      })
+    }
+  }
+
+  // Helper to calculate FBA fee based on dimensions
+  const calculateFBAFeeForItem = (asin: string, itemPrice: number, quantity: number): number => {
+    const dims = productDimensionsMap.get(asin)
+
+    // If we have dimensions, calculate accurate fee
+    if (dims?.weight && dims.length && dims.width && dims.height) {
+      const weight = dims.weight
+      const length = dims.length
+      const width = dims.width
+      const height = dims.height
+
+      // Sort dimensions
+      const sortedDims = [length, width, height].sort((a, b) => b - a)
+      const longest = sortedDims[0]
+      const median = sortedDims[1]
+      const shortest = sortedDims[2]
+
+      // Determine size tier and base fee (2024 rates)
+      let fbaFeePerUnit = 0
+
+      // Small Standard: max 15" x 12" x 0.75", max 1 lb
+      if (longest <= 15 && median <= 12 && shortest <= 0.75 && weight <= 1) {
+        if (weight <= 0.25) fbaFeePerUnit = 3.22
+        else if (weight <= 0.5) fbaFeePerUnit = 3.40
+        else if (weight <= 0.75) fbaFeePerUnit = 3.58
+        else fbaFeePerUnit = 4.21
+      }
+      // Large Standard: max 18" x 14" x 8", max 20 lbs
+      else if (longest <= 18 && median <= 14 && shortest <= 8 && weight <= 20) {
+        if (weight <= 0.25) fbaFeePerUnit = 4.09
+        else if (weight <= 0.5) fbaFeePerUnit = 4.25
+        else if (weight <= 1) fbaFeePerUnit = 4.95
+        else if (weight <= 2) fbaFeePerUnit = 5.40
+        else if (weight <= 3) fbaFeePerUnit = 6.10
+        else fbaFeePerUnit = 6.92 + Math.max(0, weight - 3) * 0.16
+      }
+      // Small Oversize
+      else if (longest <= 60 && weight <= 70) {
+        fbaFeePerUnit = 9.73 + Math.max(0, weight - 1) * 0.42
+      }
+      // Medium Oversize
+      else if (longest <= 108 && weight <= 150) {
+        fbaFeePerUnit = 19.05 + Math.max(0, weight - 1) * 0.42
+      }
+      // Large/Special Oversize
+      else {
+        fbaFeePerUnit = 89.98 + Math.max(0, weight - 90) * 0.83
+      }
+
+      // Referral fee (~15% of item price)
+      const referralFee = itemPrice * 0.15
+
+      return (fbaFeePerUnit * quantity) + referralFee
+    }
+
+    // Fallback: Estimate based on item price (~15% total fees)
+    return itemPrice * 0.15
+  }
+
   // Helper to aggregate from order_items for accurate sales calculation
   const aggregateFromOrderItems = (filteredOrders: Order[], allOrderItems: any[]) => {
     if (filteredOrders.length === 0) {
@@ -527,22 +606,44 @@ export async function getDashboardData(userId: string) {
     const totalSales = relevantItems.reduce((sum, item) => sum + (item.item_price || 0), 0)
     const totalUnits = relevantItems.reduce((sum, item) => sum + (item.quantity_ordered || 0), 0)
 
-    // Estimate fees and profit (Amazon fees ~15%, estimate margin ~25%)
-    const estimatedFees = totalSales * 0.15
-    const estimatedGrossProfit = totalSales * 0.35 // After COGS ~50%
-    const estimatedNetProfit = totalSales * 0.20 // After ads ~5%
+    // Calculate Amazon fees based on product dimensions (more accurate!)
+    let totalFees = 0
+    let totalCogs = 0
+    for (const item of relevantItems) {
+      const asin = item.asin
+      const itemPrice = item.item_price || 0
+      const quantity = item.quantity_ordered || 1
+
+      // FBA + Referral fees
+      totalFees += calculateFBAFeeForItem(asin, itemPrice, quantity)
+
+      // COGS from product data
+      const dims = productDimensionsMap.get(asin)
+      if (dims?.cogs) {
+        totalCogs += dims.cogs * quantity
+      }
+    }
+
+    // If no COGS data, estimate at 30% of sales
+    if (totalCogs === 0) {
+      totalCogs = totalSales * 0.30
+    }
+
+    const grossProfit = totalSales - totalCogs - totalFees
+    const estimatedAdSpend = totalSales * 0.05 // Estimate 5%
+    const netProfit = grossProfit - estimatedAdSpend
 
     return {
       sales: totalSales,
       units: totalUnits,
       orders: filteredOrders.length,
       refunds: 0, // Not available from orders
-      adSpend: totalSales * 0.05, // Estimate 5%
-      amazonFees: estimatedFees,
-      grossProfit: estimatedGrossProfit,
-      netProfit: estimatedNetProfit,
-      margin: 20, // Estimate
-      roi: 100 // Estimate
+      adSpend: estimatedAdSpend,
+      amazonFees: totalFees,
+      grossProfit: grossProfit,
+      netProfit: netProfit,
+      margin: totalSales > 0 ? (netProfit / totalSales) * 100 : 0,
+      roi: totalCogs > 0 ? (netProfit / totalCogs) * 100 : 0
     }
   }
 
