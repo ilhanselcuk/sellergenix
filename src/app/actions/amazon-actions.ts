@@ -785,3 +785,92 @@ export async function syncSalesDataAction(
     }
   }
 }
+
+// ============================================================================
+// SYNC ORDERS & EXTRACT PRODUCTS (Workaround for missing Product Listing role)
+// ============================================================================
+
+/**
+ * Sync orders and extract products from order items
+ * This is a workaround when Product Listing API role is not approved
+ */
+export async function syncOrdersAndExtractProductsAction(
+  userId: string
+): Promise<{
+  success: boolean
+  ordersSynced?: number
+  productsExtracted?: number
+  error?: string
+}> {
+  try {
+    const supabase = await createClient()
+
+    // Get connection
+    const { data: connection, error: fetchError } = await supabase
+      .from('amazon_connections')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+
+    if (fetchError || !connection) {
+      return {
+        success: false,
+        error: 'No Amazon connection found. Please connect your Amazon account first.'
+      }
+    }
+
+    if (connection.status !== 'active') {
+      return {
+        success: false,
+        error: `Amazon connection is ${connection.status}. Please reconnect your account.`
+      }
+    }
+
+    const marketplaceIds = connection.marketplace_ids || ['ATVPDKIKX0DER']
+
+    console.log('🚀 Starting Orders + Products sync for user:', userId)
+
+    // Step 1: Sync orders (last 90 days)
+    const ordersResult = await syncOrdersWithHistory(
+      userId,
+      connection.id,
+      connection.refresh_token,
+      marketplaceIds,
+      90 // Last 90 days
+    )
+
+    console.log(`✅ Orders synced: ${ordersResult.ordersSync}`)
+
+    // Step 2: Extract products from order items
+    const productsResult = await extractProductsFromOrders(
+      userId,
+      connection.refresh_token,
+      200 // Process up to 200 orders
+    )
+
+    console.log(`✅ Products extracted: ${productsResult.productsAdded}`)
+
+    // Update last sync time
+    await supabase
+      .from('amazon_connections')
+      .update({
+        last_sync_at: new Date().toISOString()
+      })
+      .eq('user_id', userId)
+
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/settings')
+
+    return {
+      success: true,
+      ordersSynced: ordersResult.ordersSync,
+      productsExtracted: productsResult.productsAdded + productsResult.productsUpdated
+    }
+  } catch (error) {
+    console.error('❌ Sync orders & products error:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    }
+  }
+}

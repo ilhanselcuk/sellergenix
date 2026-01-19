@@ -42,7 +42,8 @@ import {
   getAmazonConnectionAction,
   disconnectAmazonAction,
   testAmazonConnectionAction,
-  syncProductsAction
+  syncProductsAction,
+  syncOrdersAndExtractProductsAction
 } from '@/app/actions/amazon-actions'
 
 interface Profile {
@@ -171,6 +172,20 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
     const result = await syncProductsAction(userId)
     if (result.success) {
       setAmazonSuccess(`Synced ${result.productsSync || 0} products successfully!`)
+    } else {
+      setAmazonError(result.error || 'Sync failed')
+    }
+    setIsSyncing(false)
+  }
+
+  const handleSyncOrdersAndProducts = async () => {
+    setIsSyncing(true)
+    setAmazonError(null)
+    setAmazonSuccess(null)
+    const result = await syncOrdersAndExtractProductsAction(userId)
+    if (result.success) {
+      setAmazonSuccess(`Synced ${result.ordersSynced || 0} orders and extracted ${result.productsExtracted || 0} products!`)
+      loadAmazonConnection() // Refresh connection data
     } else {
       setAmazonError(result.error || 'Sync failed')
     }
@@ -578,12 +593,12 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                         Test Connection
                       </button>
                       <button
-                        onClick={handleSyncProducts}
+                        onClick={handleSyncOrdersAndProducts}
                         disabled={isSyncing}
                         className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white hover:bg-orange-600 font-semibold rounded-lg transition-colors disabled:opacity-50"
                       >
                         {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                        Sync Products
+                        Sync Orders & Products
                       </button>
                       <button
                         onClick={handleDisconnectAmazon}
