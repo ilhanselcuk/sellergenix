@@ -339,6 +339,7 @@ export async function POST(request: NextRequest) {
           .upsert({
             user_id: connection.user_id,
             sku: sku,
+            asin: sku, // Use SKU as ASIN placeholder (will be updated when Listings API is available)
             title: `Product ${sku}`, // Placeholder title
             is_active: true,
             avg_fee_per_unit: avgFeePerUnit,
