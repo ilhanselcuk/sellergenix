@@ -197,6 +197,118 @@ Her yeni Claude instance şu adımları takip etsin:
 
 ---
 
+## 🐛 AMAZON SALES API - BULUNAN VE DÜZELTILEN HATALAR (20 Ocak 2026)
+
+### ⚠️ Bu bölümü oku ki aynı hataları tekrarlama!
+
+### 🔴 HATA 1: marketplaceIds Format Hatası
+
+**Semptom:**
+```json
+{
+  "code": "InvalidInput",
+  "message": "Request has missing or invalid parameters and cannot be parsed.",
+  "details": "Failure decrypting token"
+}
+```
+
+**Sebep:** marketplaceIds parametresi virgülle ayrılmış string olarak gönderiliyordu.
+
+**❌ YANLIŞ:**
+```typescript
+query: {
+  marketplaceIds: marketplaceIds.join(','), // "ATVPDKIKX0DER,A1AM78C64UM0Y8"
+}
+```
+
+**✅ DOĞRU:**
+```typescript
+query: {
+  marketplaceIds: [primaryMarketplace], // Array format: ["ATVPDKIKX0DER"]
+}
+```
+
+**Dosya:** `/src/lib/amazon-sp-api/sales.ts:65-66`
+
+---
+
+### 🔴 HATA 2: Sales API Response Parsing Hatası
+
+**Semptom:** API başarılı döner ama metrics undefined veya boş array gelir.
+
+**Sebep:** Amazon Sales API direkt array döner, `{ payload: [...] }` şeklinde değil!
+
+**❌ YANLIŞ:**
+```typescript
+const metrics = response.payload || response
+```
+
+**✅ DOĞRU:**
+```typescript
+// Response is directly an array of metrics (no payload wrapper)
+const metrics = Array.isArray(response) ? response : (response.payload || [response])
+```
+
+**Dosya:** `/src/lib/amazon-sp-api/sales.ts:103`
+
+---
+
+### 🔴 HATA 3: Dashboard user_id Eşleşmeme Hatası
+
+**Semptom:** Debug endpoint doğru veri döner ama Dashboard $0.00 gösterir.
+
+**Sebep:** `amazon_connections` tablosundaki `user_id` login olan kullanıcıyla eşleşmiyor.
+
+**Debug Endpoint'ler:**
+- `/api/debug/sales-raw` → user_id filter OLMADAN connection bulur ve API çağırır ✅
+- `/api/dashboard/metrics?userId=xxx` → user_id filter İLE connection arar ❌
+
+**Fix Endpoint:** `/api/amazon/fix-connection`
+- GET → Mevcut durumu gösterir (user_id eşleşiyor mu?)
+- POST → Orphan connection'ı login olan kullanıcıya bağlar
+
+**Dosya:** `/src/app/api/amazon/fix-connection/route.ts`
+
+---
+
+### 📊 Sales API Doğru Kullanım Özeti
+
+```typescript
+import { getAllPeriodSalesMetrics } from '@/lib/amazon-sp-api'
+
+// 1. marketplaceIds her zaman ARRAY olmalı
+const marketplaceIds = ['ATVPDKIKX0DER'] // US only
+
+// 2. Sadece BİR marketplace kullan (multi-marketplace "decrypting token" hatası verir)
+const result = await getAllPeriodSalesMetrics(refreshToken, marketplaceIds)
+
+// 3. Response formatı
+result = {
+  success: true,
+  today: { totalSales: { amount: "9.99" }, orderCount: 1, unitCount: 1 },
+  yesterday: { totalSales: { amount: "79.93" }, orderCount: 6, unitCount: 8 },
+  thisMonth: { totalSales: { amount: "1288.44" }, orderCount: 102, unitCount: 105 },
+  lastMonth: { totalSales: { amount: "1373.63" }, orderCount: 108, unitCount: 138 }
+}
+
+// 4. Amount string olarak gelir, parse etmeyi unutma!
+const sales = parseFloat(result.today?.totalSales?.amount || '0')
+```
+
+---
+
+### 🔗 İlgili Dosyalar
+
+| Dosya | Amaç |
+|-------|------|
+| `/src/lib/amazon-sp-api/sales.ts` | Sales API entegrasyonu |
+| `/src/app/api/dashboard/metrics/route.ts` | Dashboard API endpoint |
+| `/src/app/api/debug/sales-raw/route.ts` | Raw API test endpoint |
+| `/src/app/api/debug/dashboard-metrics/route.ts` | User connection debug |
+| `/src/app/api/amazon/fix-connection/route.ts` | User-connection fix endpoint |
+
+---
+
 ## 🚨 CRITICAL: LANGUAGE RULES
 **⚠️ ALL WEBSITE TEXT MUST BE IN ENGLISH!**
 - The website/application is for an international audience
