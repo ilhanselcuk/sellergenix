@@ -524,6 +524,99 @@ await estimateAllPendingOrderFees(userId)
 
 ---
 
+### ✅ DASHBOARD FEE ENTEGRASYONU (19 Ocak 2026 - WORKING!)
+
+**Durum:** ✅ **PRODUCTION'DA ÇALIŞIYOR**
+
+Dashboard artık gerçek Amazon fee'lerini gösteriyor:
+
+| Dönem | Source | Açıklama |
+|-------|--------|----------|
+| Today | `estimated` | Bugünkü siparişler henüz ship edilmedi |
+| Yesterday | `mixed` | Bazı siparişler ship olmuş, gerçek fee'ler var |
+| This Month | `mixed` | Shipped siparişlerde gerçek, pending'lerde estimated |
+| Last Month | `real/mixed` | Çoğu sipariş ship olmuş, gerçek fee'ler |
+
+**Endpoint:** `GET /api/dashboard/metrics?userId=xxx`
+
+**Response'da yeni alanlar:**
+```json
+{
+  "metrics": {
+    "today": {
+      "amazonFees": 3.75,
+      "feeSource": "estimated"  // 'real' | 'estimated' | 'mixed'
+    },
+    "thisMonth": {
+      "amazonFees": 432.12,
+      "feeSource": "mixed"
+    },
+    "_feeInfo": {
+      "today": { "fees": 0, "source": "estimated", "orders": 1 },
+      "thisMonth": { "fees": 432.12, "source": "mixed", "orders": 107 }
+    }
+  }
+}
+```
+
+#### 🐛 Bug Fixes (19 Ocak 2026)
+
+**1. Supabase Join Issue:**
+```typescript
+// ❌ ÇALIŞMAZ - Foreign key yok
+const { data } = await supabase
+  .from('orders')
+  .select('*, order_items(*)')  // İç içe join
+
+// ✅ ÇALIŞIR - İki ayrı sorgu
+const { data: orders } = await supabase
+  .from('orders')
+  .select('amazon_order_id')
+  .gte('purchase_date', startDate.toISOString())
+
+const orderIds = orders.map(o => o.amazon_order_id)
+
+const { data: items } = await supabase
+  .from('order_items')
+  .in('amazon_order_id', orderIds)
+```
+
+**2. Quantity Fallback:**
+```typescript
+// ❌ YANLIŞ - quantity_shipped null olabilir
+if (item.estimated_amazon_fee && item.quantity_shipped) {
+  totalFees += item.estimated_amazon_fee * item.quantity_shipped
+}
+
+// ✅ DOĞRU - quantity_ordered fallback
+const quantity = item.quantity_shipped || item.quantity_ordered || 1
+if (item.estimated_amazon_fee) {
+  totalFees += item.estimated_amazon_fee * quantity
+}
+```
+
+#### 📊 Production Test Sonuçları
+
+```
+📅 YESTERDAY:
+   Sales:        $79.93
+   Amazon Fees:  $24.93 (mixed - REAL)
+   Gross Profit: $31.02
+   Margin:       30.8%
+
+📅 THIS MONTH:
+   Sales:        $1,303.43
+   Amazon Fees:  $432.12 (mixed - REAL)
+   Gross Profit: $480.28
+   Margin:       28.8%
+```
+
+**Gerçek fee = Finances API'den çekilen**
+**Estimated = 15% tahmin (pending siparişler için)**
+**Mixed = Bazı siparişlerde gerçek, bazılarında tahmin**
+
+---
+
 ### 🔗 İlgili Dosyalar
 
 | Dosya | Amaç |
