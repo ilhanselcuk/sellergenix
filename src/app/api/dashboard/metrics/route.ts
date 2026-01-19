@@ -119,7 +119,9 @@ export async function GET(request: Request) {
     console.log('📊 Fetching Sales API metrics for dashboard...')
 
     // Fetch metrics from Amazon Sales API
+    console.log('🚀 Calling getAllPeriodSalesMetrics...')
     const result = await getAllPeriodSalesMetrics(connection.refresh_token, marketplaceIds)
+    console.log('📊 Sales API Result:', JSON.stringify(result, null, 2))
 
     if (!result.success) {
       console.error('Sales API failed:', result.error)
@@ -130,6 +132,12 @@ export async function GET(request: Request) {
         fallbackToDatabase: true
       })
     }
+
+    // Debug: Log raw metrics from API
+    console.log('📦 Today raw:', JSON.stringify(result.today, null, 2))
+    console.log('📦 Yesterday raw:', JSON.stringify(result.yesterday, null, 2))
+    console.log('📦 This Month raw:', JSON.stringify(result.thisMonth, null, 2))
+    console.log('📦 Last Month raw:', JSON.stringify(result.lastMonth, null, 2))
 
     // TODO: Fetch real ad spend from Advertising API
     // For now, we'll estimate based on sales

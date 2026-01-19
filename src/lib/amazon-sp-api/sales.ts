@@ -94,9 +94,15 @@ export async function getOrderMetrics(
       query,
     })
 
+    // Debug: Log the raw response structure
+    console.log('📦 Raw Sales API response:', JSON.stringify(response, null, 2))
+
     const metrics = response.payload || response || []
 
-    console.log(`✅ Fetched ${metrics.length} metric intervals`)
+    console.log(`✅ Fetched ${Array.isArray(metrics) ? metrics.length : 'N/A'} metric intervals`)
+    if (Array.isArray(metrics) && metrics.length > 0) {
+      console.log('📊 First metric:', JSON.stringify(metrics[0], null, 2))
+    }
 
     return {
       success: true,
