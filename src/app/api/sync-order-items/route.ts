@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
           const price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
           const quantity = rawItem.QuantityOrdered || rawItem.quantityOrdered || 1
 
-          // Save to database
+          // Save to database (without currency_code - column doesn't exist)
           const { error: insertError } = await supabase
             .from('order_items')
             .upsert({
@@ -107,7 +107,6 @@ export async function GET(request: NextRequest) {
               title: title,
               quantity_ordered: quantity,
               item_price: price,
-              currency_code: itemPrice?.CurrencyCode || itemPrice?.currencyCode || 'USD',
               updated_at: new Date().toISOString(),
             }, {
               onConflict: 'user_id,amazon_order_id,order_item_id',

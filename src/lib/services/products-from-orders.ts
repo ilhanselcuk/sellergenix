@@ -131,7 +131,6 @@ export async function extractProductsFromOrders(
                 title: title,
                 quantity_ordered: quantity,
                 item_price: price,
-                currency_code: itemPrice?.CurrencyCode || itemPrice?.currencyCode || 'USD',
                 updated_at: new Date().toISOString(),
               }, {
                 onConflict: 'user_id,amazon_order_id,order_item_id',
