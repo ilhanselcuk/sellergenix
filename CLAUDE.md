@@ -1,5 +1,135 @@
 # SellerGenix - AI-Powered Amazon Analytics Platform
 
+---
+
+## 🚨🚨🚨 VAZGEÇİLMEZ KURALLAR - HER CLAUDE INSTANCE'I MUTLAKA OKUMALI! 🚨🚨🚨
+
+### 📍 OTURUM SÜREKLİLİĞİ (Session Continuity)
+
+**⚠️ BU BÖLÜM EN ÖNCELİKLİ KURALLARI İÇERİR - SAKIN ATLAMA!**
+
+#### 1️⃣ DİL KURALI
+- **Kullanıcı ile HER ZAMAN TÜRKÇE konuş!**
+- Kod dosyalarındaki UI metinleri İngilizce olmalı
+- Ama kullanıcıyla iletişim SADECE Türkçe
+
+#### 2️⃣ PROJE DURUMUNU BİL
+**Mevcut Faz:** FAZ 1 - Amazon Kuzey Amerika + AI Chat + WhatsApp + Oxylabs
+
+**Faz Detayları:**
+- **Faz 1:** Amazon NA (ABD, Kanada, Meksika) + AI Chat + WhatsApp Bildirimleri + Oxylabs
+- **Faz 2:** Amazon Ads API + Amazon EU/Global (Tüm marketplace'ler)
+- **Faz 3:** Shopify Full Entegrasyonu
+- **Faz 4+:** Walmart, Etsy, eBay, TikTok Shop
+
+#### 3️⃣ İLGİLİ MD DOSYALARINI OKU
+**Hangi fazda isek o faza ait MD dosyalarını oku:**
+
+**Faz 1 için OKU:**
+- `/docs/AMAZON_SP_API.md` - Amazon SP-API entegrasyonu
+- `/docs/AI_CHAT.md` - Haiku + Opus AI stratejisi
+- `/docs/WHATSAPP_TEMPLATES.md` - 11 WhatsApp şablonu
+- `/docs/OXYLABS.md` - Web scraping (BSR, reviews, prices)
+- `/docs/PROJECT_ROADMAP.md` - Master yol haritası
+
+**Faz 2 için OKU:**
+- `/docs/AMAZON_ADS_API.md` - Amazon Advertising API
+
+**Faz 3 için OKU:**
+- `/docs/SHOPIFY_API.md` - Shopify Admin API
+
+**Faz 4+ için OKU:**
+- `/docs/WALMART_API.md` - Walmart Marketplace API
+- `/docs/ETSY_API.md` - Etsy Open API
+- `/docs/EBAY_API.md` - eBay Browse/Sell APIs
+
+#### 4️⃣ TODO LİSTESİNİ SÜREKLİ GÜNCELLE
+**Her iş bittiğinde veya yarım kaldığında:**
+- `TodoWrite` tool'unu kullan
+- Tamamlanan işleri "completed" olarak işaretle
+- Devam eden işleri "in_progress" olarak işaretle
+- Yeni işleri "pending" olarak ekle
+- **SAKIN** batch update yapma - her iş bitince hemen güncelle!
+
+#### 5️⃣ NEREDE KALDIĞIMIZI BİL
+**Amazon SP-API Durumu (16 Ocak 2026):**
+- ✅ Finance and Accounting - ONAYLI
+- ✅ Selling Partner Insights - ONAYLI
+- ✅ Inventory and Order Tracking - ONAYLI
+- ✅ Brand Analytics - ONAYLI
+- ⏳ Product Listing - ONAY BEKLİYOR (15 Ocak gönderildi)
+- ⏳ Amazon Fulfillment - ONAY BEKLİYOR (15 Ocak gönderildi)
+
+**⚠️ Product Listing ve Amazon Fulfillment rolleri onaylanmadan:**
+- Listings API çalışmaz (403 hatası)
+- FBA Inventory API çalışmaz (403 hatası)
+- Ürün sync yapılamaz
+
+**Dashboard Durumu:**
+- ✅ 7/7 Dashboard view tamamlandı (Tiles, Chart, P&L, Map, Trends, Heatmap, Comparison)
+- ✅ Premium UI/UX (Minimalist Design System)
+- ✅ Metric info popups (22 metrik)
+- ✅ Export functionality (CSV, PNG, PDF)
+
+#### 6️⃣ docs/ KLASÖRÜNDEKİ TÜM MD DOSYALARI
+```
+docs/
+├── PROJECT_ROADMAP.md (11KB) - Master yol haritası
+├── AMAZON_SP_API.md (24KB) - Amazon SP-API
+├── AMAZON_ADS_API.md (17KB) - Amazon Advertising
+├── SHOPIFY_API.md (22KB) - Shopify
+├── WHATSAPP_TEMPLATES.md (16KB) - WhatsApp şablonları
+├── AI_CHAT.md (26KB) - AI stratejisi
+├── WALMART_API.md (10KB) - Walmart
+├── ETSY_API.md (17KB) - Etsy
+├── EBAY_API.md (19KB) - eBay
+├── OXYLABS.md (18KB) - Web scraping
+├── SELLERGENIX_MASTER_PROJECT.md (106KB) - Ana proje dokümanı
+├── SELLERGENIX_MASTER_PLAN.md (30KB) - İş planı
+├── MULTI_PLATFORM_STRATEGY.md (25KB) - Çoklu platform stratejisi
+├── AMAZON_SELLER_ANALYTICS_RESEARCH_REPORT.md (62KB) - Araştırma
+├── AMAZON_SP_API_DATA_SHARING_POLICY.md (8KB) - Veri politikası
+├── COMPETITOR_RESEARCH_REPORT.md (25KB) - Rakip analizi
+└── DASHBOARD_DOCUMENTATION.md (22KB) - Dashboard dökümantasyonu
+```
+
+#### 7️⃣ YENİ OTURUM BAŞLANGIÇ PROTOKOLÜ
+Her yeni Claude instance şu adımları takip etsin:
+
+1. **Bu CLAUDE.md dosyasının başını oku** (şu an okuyorsun ✅)
+2. **Mevcut fazı belirle** (şu an: Faz 1)
+3. **İlgili MD dosyalarını oku** (Faz 1: AMAZON_SP_API.md, AI_CHAT.md, WHATSAPP_TEMPLATES.md, OXYLABS.md)
+4. **Son yapılan işleri kontrol et** (git log veya TODO list)
+5. **Kullanıcıya Türkçe "Merhaba" de ve durumu özetle**
+6. **Devam edilecek işi sor veya öner**
+
+---
+
+## 📋 GÜNCEL TODO LİSTESİ (Son Güncelleme: 17 Ocak 2026)
+
+### ✅ TAMAMLANAN
+- [x] Dashboard 7 view (Tiles, Chart, P&L, Map, Trends, Heatmap, Comparison)
+- [x] Amazon SP-API OAuth flow
+- [x] Manual token connection (draft app workaround)
+- [x] Orders API entegrasyonu
+- [x] Finances API entegrasyonu
+- [x] 17 MD dosyası docs/ klasörüne taşındı
+- [x] Premium UI/UX (Minimalist Design System)
+- [x] Metric info popups (22 metrik)
+
+### ⏳ DEVAM EDEN
+- [ ] Amazon rol onayı bekleniyor (Product Listing, Amazon Fulfillment)
+- [ ] Listings API entegrasyonu (rol onayı gerekli)
+- [ ] FBA Inventory API entegrasyonu (rol onayı gerekli)
+
+### 📋 SIRADA
+- [ ] AI Chat implementasyonu (Haiku + Opus routing)
+- [ ] WhatsApp bildirimleri (Twilio entegrasyonu)
+- [ ] Oxylabs scraping (BSR, reviews, competitor prices)
+- [ ] Real-time sync (15 dakikada bir)
+
+---
+
 ## 🚨 CRITICAL: LANGUAGE RULES
 **⚠️ ALL WEBSITE TEXT MUST BE IN ENGLISH!**
 - The website/application is for an international audience
@@ -5187,3 +5317,101 @@ const color = isImprovement ? 'green' : 'red'
 - ✅ All views have proper tooltips, hover effects, and interactivity
 - ✅ Color coding is based on actual data, not random values
 
+---
+
+## 🚨 AMAZON SP-API ROL ONAY DURUMU (Ocak 16, 2026 - KRİTİK!)
+
+### ⚠️ YENİ CLAUDE INSTANCES İÇİN ÖNEMLİ - ÖNCE BUNU OKU!
+
+**Son Güncelleme:** 16 Ocak 2026
+**Durum:** 2 rol Amazon onayı bekliyor (15 Ocak 2026 tarihinde gönderildi)
+
+---
+
+### 📋 MEVCUT ROL DURUMU
+
+| Rol | Durum | Ne İçin Gerekli | API'ler |
+|-----|-------|-----------------|---------|
+| ✅ Finance and Accounting | **ONAYLI** | Fee'ler, payout'lar, finansal veriler | Finances API |
+| ✅ Selling Partner Insights | **ONAYLI** | Hesap performansı | Seller API |
+| ✅ Inventory and Order Tracking | **ONAYLI** | Siparişler, temel envanter | Orders API |
+| ✅ Brand Analytics | **ONAYLI** | Arama terimleri, market share | Brand Analytics API |
+| ⏳ **Product Listing** | **ONAY BEKLİYOR** | Ürün detayları, listeler | Listings Items API |
+| ⏳ **Amazon Fulfillment** | **ONAY BEKLİYOR** | FBA stok seviyeleri | FBA Inventory API |
+
+---
+
+### 🔴 NEDEN 403 HATASI ALIYORUZ?
+
+```
+Listings Items API çağrısı → Product Listing rolü YOK → 403 Forbidden!
+FBA Inventory API çağrısı → Amazon Fulfillment rolü YOK → 403 Forbidden!
+```
+
+**Bu iki rol onaylanmadan:**
+- ❌ Ürün detayları çekilemez (ASIN, title, image, price)
+- ❌ FBA stok seviyeleri çekilemez
+- ❌ Dashboard'da gerçek ürün verileri gösterilemez
+- ❌ "Sync Products" butonu çalışmaz
+
+---
+
+### ⏳ ONAY SÜRECİ
+
+**Gönderim Tarihi:** 15 Ocak 2026
+**Beklenen Onay:** 2-5 iş günü (Amazon SLA)
+**Tahmini Onay Tarihi:** 17-22 Ocak 2026
+
+**Onay geldiğinde yapılacaklar:**
+1. Solution Provider Portal'dan onayı kontrol et
+2. ZYRA TASTE (veya bağlı seller) hesabından SellerGenix'i **tekrar authorize** et
+3. Yeni izinleri onaylaması için consent akışını tamamla
+4. "Sync Products" butonuna tıkla
+5. Dashboard'da gerçek veriler görünecek!
+
+---
+
+### 📊 ŞU AN ÇALIŞAN vs ÇALIŞMAYAN API'LER
+
+**✅ ÇALIŞAN (Onaylı rollerle):**
+- Orders API → Siparişler çekiliyor ✅
+- Finances API → Fee'ler, payout'lar çekiliyor ✅
+- Seller API → Hesap bilgisi çekiliyor ✅
+
+**❌ ÇALIŞMAYAN (Onay bekleyen rollerle):**
+- Listings Items API → 403 Forbidden
+- FBA Inventory API → 403 Forbidden
+- Catalog Items API → 403 Forbidden (Product Listing rolü gerekli)
+
+---
+
+### 🎯 ONAY GELİNCE YAPILACAKLAR
+
+1. **Seller'ı tekrar authorize et** (yeni izinler için)
+2. **products-sync.ts** servisini aktifleştir
+3. **Order Items API**'yi batch işleme ile aktifleştir
+4. **Reports API** entegrasyonunu tamamla
+5. Dashboard'u gerçek verilerle doldur
+
+---
+
+### ⚠️ YENİ CLAUDE INSTANCE'LARA NOT
+
+- **SAKIN** "neden ürünler çekilmiyor" diye araştırma yapma - CEVAP: ROL ONAYI BEKLİYORUZ
+- **SAKIN** Listings API veya FBA Inventory API kodunu debug etme - ÇALIŞMAYACAK, ROL YOK
+- **ÖNCE** kullanıcıya "Amazon rol onayı geldi mi?" diye sor
+- **EĞER** onay geldiyse, yukarıdaki adımları takip et
+
+---
+
+**Last Updated:** 16 Ocak 2026
+**Status:** ⏳ Amazon onayı bekleniyor (Product Listing + Amazon Fulfillment rolleri)
+**ETA:** 17-22 Ocak 2026
+
+OXYLABS
+Whatsapp için Twillio
+  Scrapper için Oxylabs
+
+  üyeliklerimiz var.
+
+  

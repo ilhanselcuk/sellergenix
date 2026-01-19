@@ -3,6 +3,7 @@
 /**
  * SettingsClient Component - SellerGenix
  * Client-side settings management with tabs for Account, Company, and Billing
+ * Clean Light Theme
  */
 
 import React, { useState } from 'react'
@@ -185,10 +186,10 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
 
   const getCardIcon = (type: string) => {
     switch (type) {
-      case 'visa': return '💳 Visa'
-      case 'mastercard': return '💳 Mastercard'
-      case 'amex': return '💳 Amex'
-      default: return '💳 Card'
+      case 'visa': return 'Visa'
+      case 'mastercard': return 'Mastercard'
+      case 'amex': return 'Amex'
+      default: return 'Card'
     }
   }
 
@@ -205,11 +206,11 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-black text-white flex items-center gap-3">
-            <Settings className="w-8 h-8 text-purple-400" />
+          <h1 className="text-3xl font-black text-gray-900 flex items-center gap-3">
+            <Settings className="w-8 h-8 text-blue-600" />
             Settings
           </h1>
-          <p className="text-slate-400 mt-1">Manage your account, company info, and billing</p>
+          <p className="text-gray-500 mt-1">Manage your account, company info, and billing</p>
         </div>
 
         {/* Save Status */}
@@ -219,31 +220,31 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 border border-emerald-500/50 rounded-lg"
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-lg"
             >
-              <CheckCircle className="w-5 h-5 text-emerald-400" />
-              <span className="text-emerald-400 font-semibold">Changes saved!</span>
+              <CheckCircle className="w-5 h-5 text-emerald-600" />
+              <span className="text-emerald-700 font-semibold">Changes saved!</span>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-2 p-1 bg-slate-800/50 rounded-xl border border-slate-700">
+      <div className="flex flex-wrap gap-2 p-1 bg-gray-100 rounded-xl border border-gray-200">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-3 px-6 py-3 rounded-lg font-semibold transition-all ${
               activeTab === tab.id
-                ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg'
-                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
             }`}
           >
             <tab.icon className="w-5 h-5" />
             <div className="text-left">
               <div className="text-sm font-bold">{tab.label}</div>
-              <div className={`text-xs ${activeTab === tab.id ? 'text-white/70' : 'text-slate-500'}`}>
+              <div className={`text-xs ${activeTab === tab.id ? 'text-gray-500' : 'text-gray-400'}`}>
                 {tab.description}
               </div>
             </div>
@@ -252,7 +253,7 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
       </div>
 
       {/* Tab Content */}
-      <div className="bg-slate-800/30 rounded-2xl border border-slate-700 overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <AnimatePresence mode="wait">
           {/* Account Tab */}
           {activeTab === 'account' && (
@@ -266,34 +267,34 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
             >
               {/* Profile Section */}
               <div>
-                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                  <User className="w-5 h-5 text-purple-400" />
+                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <User className="w-5 h-5 text-blue-600" />
                   Profile Information
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-400 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       Full Name
                     </label>
                     <input
                       type="text"
                       value={accountForm.fullName}
                       onChange={(e) => setAccountForm({ ...accountForm, fullName: e.target.value })}
-                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                       placeholder="John Doe"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-400 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       Email Address
                     </label>
                     <div className="relative">
-                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                       <input
                         type="email"
                         value={accountForm.email}
                         onChange={(e) => setAccountForm({ ...accountForm, email: e.target.value })}
-                        className="w-full pl-12 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                        className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                         placeholder="john@example.com"
                       />
                     </div>
@@ -302,14 +303,14 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
               </div>
 
               {/* Password Section */}
-              <div className="pt-6 border-t border-slate-700">
-                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                  <Lock className="w-5 h-5 text-purple-400" />
+              <div className="pt-6 border-t border-gray-200">
+                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <Lock className="w-5 h-5 text-blue-600" />
                   Change Password
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-400 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       Current Password
                     </label>
                     <div className="relative">
@@ -317,20 +318,20 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                         type={showCurrentPassword ? 'text' : 'password'}
                         value={accountForm.currentPassword}
                         onChange={(e) => setAccountForm({ ...accountForm, currentPassword: e.target.value })}
-                        className="w-full px-4 py-3 pr-12 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
-                        placeholder="••••••••"
+                        className="w-full px-4 py-3 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
+                        placeholder="********"
                       />
                       <button
                         type="button"
                         onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                       >
                         {showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                       </button>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-400 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       New Password
                     </label>
                     <div className="relative">
@@ -338,28 +339,28 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                         type={showNewPassword ? 'text' : 'password'}
                         value={accountForm.newPassword}
                         onChange={(e) => setAccountForm({ ...accountForm, newPassword: e.target.value })}
-                        className="w-full px-4 py-3 pr-12 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
-                        placeholder="••••••••"
+                        className="w-full px-4 py-3 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
+                        placeholder="********"
                       />
                       <button
                         type="button"
                         onClick={() => setShowNewPassword(!showNewPassword)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                       >
                         {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                       </button>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-400 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       Confirm New Password
                     </label>
                     <input
                       type="password"
                       value={accountForm.confirmPassword}
                       onChange={(e) => setAccountForm({ ...accountForm, confirmPassword: e.target.value })}
-                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
-                      placeholder="••••••••"
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
+                      placeholder="********"
                     />
                   </div>
                 </div>
@@ -370,7 +371,7 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                 <button
                   onClick={handleSave}
                   disabled={isSaving}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl hover:from-purple-500 hover:to-blue-500 transition-all shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-6 py-3 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSaving ? (
                     <>
@@ -398,109 +399,109 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
               transition={{ duration: 0.2 }}
               className="p-6 space-y-6"
             >
-              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-purple-400" />
+              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-blue-600" />
                 Company Information
               </h3>
-              <p className="text-slate-400 text-sm mb-6">
+              <p className="text-gray-500 text-sm mb-6">
                 This information will appear on your invoices and billing documents.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-slate-400 mb-2">
+                  <label className="block text-sm font-semibold text-gray-600 mb-2">
                     Company / Business Name
                   </label>
                   <input
                     type="text"
                     value={companyForm.companyName}
                     onChange={(e) => setCompanyForm({ ...companyForm, companyName: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                     placeholder="Acme Corporation"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-400 mb-2">
+                  <label className="block text-sm font-semibold text-gray-600 mb-2">
                     Tax ID / EIN
                   </label>
                   <input
                     type="text"
                     value={companyForm.taxId}
                     onChange={(e) => setCompanyForm({ ...companyForm, taxId: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                     placeholder="XX-XXXXXXX"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-400 mb-2">
+                  <label className="block text-sm font-semibold text-gray-600 mb-2">
                     Phone Number
                   </label>
                   <input
                     type="tel"
                     value={companyForm.phone}
                     onChange={(e) => setCompanyForm({ ...companyForm, phone: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                     placeholder="+1 (555) 123-4567"
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-slate-400 mb-2">
+                  <label className="block text-sm font-semibold text-gray-600 mb-2">
                     Street Address
                   </label>
                   <input
                     type="text"
                     value={companyForm.address}
                     onChange={(e) => setCompanyForm({ ...companyForm, address: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                     placeholder="123 Main Street, Suite 100"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-400 mb-2">
+                  <label className="block text-sm font-semibold text-gray-600 mb-2">
                     City
                   </label>
                   <input
                     type="text"
                     value={companyForm.city}
                     onChange={(e) => setCompanyForm({ ...companyForm, city: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                     placeholder="New York"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-400 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       State
                     </label>
                     <input
                       type="text"
                       value={companyForm.state}
                       onChange={(e) => setCompanyForm({ ...companyForm, state: e.target.value })}
-                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                       placeholder="NY"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-400 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       ZIP Code
                     </label>
                     <input
                       type="text"
                       value={companyForm.zipCode}
                       onChange={(e) => setCompanyForm({ ...companyForm, zipCode: e.target.value })}
-                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                       placeholder="10001"
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-400 mb-2">
+                  <label className="block text-sm font-semibold text-gray-600 mb-2">
                     Country
                   </label>
                   <select
                     value={companyForm.country}
                     onChange={(e) => setCompanyForm({ ...companyForm, country: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                   >
                     <option value="United States">United States</option>
                     <option value="Canada">Canada</option>
@@ -517,7 +518,7 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                 <button
                   onClick={handleSave}
                   disabled={isSaving}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl hover:from-purple-500 hover:to-blue-500 transition-all shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-6 py-3 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSaving ? (
                     <>
@@ -547,44 +548,44 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
             >
               {/* Current Plan */}
               <div>
-                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                  <Crown className="w-5 h-5 text-amber-400" />
+                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <Crown className="w-5 h-5 text-amber-500" />
                   Current Plan
                 </h3>
-                <div className="bg-gradient-to-br from-purple-600/20 to-blue-600/20 border border-purple-500/30 rounded-xl p-6">
+                <div className="bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-200 rounded-xl p-6">
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-3 mb-2">
-                        <span className="text-2xl font-black text-white capitalize">{currentPlan}</span>
-                        <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 text-xs font-bold rounded-full">
+                        <span className="text-2xl font-black text-gray-900 capitalize">{currentPlan}</span>
+                        <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
                           ACTIVE
                         </span>
                       </div>
-                      <p className="text-slate-400 text-sm mb-4">
+                      <p className="text-gray-500 text-sm mb-4">
                         Your subscription renews on January 1, 2025
                       </p>
                       <ul className="space-y-2">
                         {(planFeatures[currentPlan as keyof typeof planFeatures] || planFeatures.professional).map((feature, idx) => (
-                          <li key={idx} className="flex items-center gap-2 text-sm text-slate-300">
-                            <CheckCircle className="w-4 h-4 text-emerald-400" />
+                          <li key={idx} className="flex items-center gap-2 text-sm text-gray-600">
+                            <CheckCircle className="w-4 h-4 text-emerald-500" />
                             {feature}
                           </li>
                         ))}
                       </ul>
                     </div>
                     <div className="text-right">
-                      <div className="text-3xl font-black text-white">
+                      <div className="text-3xl font-black text-gray-900">
                         ${currentPlan === 'starter' ? 19 : currentPlan === 'professional' ? 39 : currentPlan === 'business' ? 79 : 199}
                       </div>
-                      <div className="text-slate-400 text-sm">per month</div>
+                      <div className="text-gray-500 text-sm">per month</div>
                     </div>
                   </div>
-                  <div className="flex gap-3 mt-6 pt-6 border-t border-slate-700">
-                    <button className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg transition-colors">
+                  <div className="flex gap-3 mt-6 pt-6 border-t border-blue-200">
+                    <button className="flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white font-semibold rounded-lg transition-colors">
                       <Crown className="w-4 h-4" />
                       Upgrade Plan
                     </button>
-                    <button className="flex items-center gap-2 px-4 py-2 border border-slate-600 text-slate-400 hover:text-white hover:border-slate-500 font-semibold rounded-lg transition-colors">
+                    <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-600 hover:text-gray-900 hover:border-gray-400 font-semibold rounded-lg transition-colors">
                       Manage Subscription
                     </button>
                   </div>
@@ -594,13 +595,13 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
               {/* Payment Methods */}
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <CreditCard className="w-5 h-5 text-purple-400" />
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <CreditCard className="w-5 h-5 text-blue-600" />
                     Payment Methods
                   </h3>
                   <button
                     onClick={() => setShowAddPaymentModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white font-semibold rounded-lg transition-colors"
                   >
                     <span className="text-lg">+</span>
                     Add Payment Method
@@ -611,8 +612,8 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                   {paymentMethods.map((pm) => (
                     <div
                       key={pm.id}
-                      className={`bg-slate-800/50 border rounded-xl p-4 flex items-center justify-between ${
-                        pm.isDefault ? 'border-purple-500/50' : 'border-slate-700'
+                      className={`bg-gray-50 border rounded-xl p-4 flex items-center justify-between ${
+                        pm.isDefault ? 'border-blue-300' : 'border-gray-200'
                       }`}
                     >
                       <div className="flex items-center gap-4">
@@ -620,34 +621,34 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                           pm.type === 'visa' ? 'bg-gradient-to-br from-blue-600 to-blue-800' :
                           pm.type === 'mastercard' ? 'bg-gradient-to-br from-red-600 to-orange-600' :
                           pm.type === 'amex' ? 'bg-gradient-to-br from-cyan-600 to-blue-600' :
-                          'bg-gradient-to-br from-slate-600 to-slate-700'
+                          'bg-gradient-to-br from-gray-600 to-gray-700'
                         }`}>
                           <span className="text-white text-xs font-bold uppercase">{pm.type}</span>
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <p className="text-white font-semibold">•••• •••• •••• {pm.last4}</p>
+                            <p className="text-gray-900 font-semibold">**** **** **** {pm.last4}</p>
                             {pm.isDefault && (
-                              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs font-bold rounded-full">
+                              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
                                 DEFAULT
                               </span>
                             )}
                           </div>
-                          <p className="text-slate-500 text-sm">Expires {pm.expMonth}/{pm.expYear}</p>
+                          <p className="text-gray-500 text-sm">Expires {pm.expMonth}/{pm.expYear}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         {!pm.isDefault && (
                           <button
                             onClick={() => handleSetDefaultCard(pm.id)}
-                            className="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                            className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                           >
                             Set Default
                           </button>
                         )}
                         <button
                           onClick={() => handleDeleteCard(pm.id)}
-                          className="px-3 py-1.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
+                          className="px-3 py-1.5 text-sm text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           Remove
                         </button>
@@ -656,12 +657,12 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                   ))}
 
                   {paymentMethods.length === 0 && (
-                    <div className="bg-slate-800/50 border border-dashed border-slate-600 rounded-xl p-8 text-center">
-                      <CreditCard className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                      <p className="text-slate-400 mb-3">No payment methods added yet</p>
+                    <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-8 text-center">
+                      <CreditCard className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                      <p className="text-gray-500 mb-3">No payment methods added yet</p>
                       <button
                         onClick={() => setShowAddPaymentModal(true)}
-                        className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg transition-colors"
+                        className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white font-semibold rounded-lg transition-colors"
                       >
                         Add Your First Card
                       </button>
@@ -672,30 +673,30 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
 
               {/* Billing History */}
               <div>
-                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                  <Receipt className="w-5 h-5 text-purple-400" />
+                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-blue-600" />
                   Billing History
                 </h3>
-                <div className="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-slate-700 bg-slate-800/80">
-                        <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase">Invoice</th>
-                        <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase">Date</th>
-                        <th className="text-left py-3 px-4 text-xs font-bold text-slate-400 uppercase">Plan</th>
-                        <th className="text-right py-3 px-4 text-xs font-bold text-slate-400 uppercase">Amount</th>
-                        <th className="text-center py-3 px-4 text-xs font-bold text-slate-400 uppercase">Status</th>
-                        <th className="text-right py-3 px-4 text-xs font-bold text-slate-400 uppercase">Action</th>
+                      <tr className="border-b border-gray-200 bg-gray-50">
+                        <th className="text-left py-3 px-4 text-xs font-bold text-gray-500 uppercase">Invoice</th>
+                        <th className="text-left py-3 px-4 text-xs font-bold text-gray-500 uppercase">Date</th>
+                        <th className="text-left py-3 px-4 text-xs font-bold text-gray-500 uppercase">Plan</th>
+                        <th className="text-right py-3 px-4 text-xs font-bold text-gray-500 uppercase">Amount</th>
+                        <th className="text-center py-3 px-4 text-xs font-bold text-gray-500 uppercase">Status</th>
+                        <th className="text-right py-3 px-4 text-xs font-bold text-gray-500 uppercase">Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {mockInvoices.map((invoice) => (
-                        <tr key={invoice.id} className="border-b border-slate-700/50 hover:bg-slate-800/30 transition-colors">
+                        <tr key={invoice.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                           <td className="py-3 px-4">
-                            <span className="text-white font-mono text-sm">{invoice.id}</span>
+                            <span className="text-gray-900 font-mono text-sm">{invoice.id}</span>
                           </td>
                           <td className="py-3 px-4">
-                            <span className="text-slate-400 text-sm">
+                            <span className="text-gray-500 text-sm">
                               {new Date(invoice.date).toLocaleDateString('en-US', {
                                 year: 'numeric',
                                 month: 'short',
@@ -704,16 +705,16 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                             </span>
                           </td>
                           <td className="py-3 px-4">
-                            <span className="text-slate-300 text-sm">{invoice.plan}</span>
+                            <span className="text-gray-600 text-sm">{invoice.plan}</span>
                           </td>
                           <td className="py-3 px-4 text-right">
-                            <span className="text-white font-semibold">${invoice.amount}.00</span>
+                            <span className="text-gray-900 font-semibold">${invoice.amount}.00</span>
                           </td>
                           <td className="py-3 px-4 text-center">
                             <span className={`px-2 py-1 text-xs font-bold rounded-full ${
                               invoice.status === 'paid'
-                                ? 'bg-emerald-500/20 text-emerald-400'
-                                : 'bg-amber-500/20 text-amber-400'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-amber-100 text-amber-700'
                             }`}>
                               {invoice.status.toUpperCase()}
                             </span>
@@ -721,7 +722,7 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                           <td className="py-3 px-4 text-right">
                             <button
                               onClick={() => handleDownloadInvoice(invoice.id)}
-                              className="flex items-center gap-1 ml-auto px-3 py-1.5 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 rounded-lg transition-colors text-sm font-semibold"
+                              className="flex items-center gap-1 ml-auto px-3 py-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors text-sm font-semibold"
                             >
                               <Download className="w-4 h-4" />
                               PDF
@@ -735,20 +736,20 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
               </div>
 
               {/* Danger Zone */}
-              <div className="pt-6 border-t border-slate-700">
-                <h3 className="text-lg font-bold text-red-400 mb-4 flex items-center gap-2">
+              <div className="pt-6 border-t border-gray-200">
+                <h3 className="text-lg font-bold text-red-600 mb-4 flex items-center gap-2">
                   <AlertCircle className="w-5 h-5" />
                   Danger Zone
                 </h3>
-                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-white font-semibold">Cancel Subscription</p>
-                      <p className="text-slate-400 text-sm">
+                      <p className="text-gray-900 font-semibold">Cancel Subscription</p>
+                      <p className="text-gray-500 text-sm">
                         Your subscription will remain active until the end of the billing period.
                       </p>
                     </div>
-                    <button className="px-4 py-2 border border-red-500/50 text-red-400 hover:bg-red-500/20 font-semibold rounded-lg transition-colors">
+                    <button className="px-4 py-2 border border-red-300 text-red-600 hover:bg-red-100 font-semibold rounded-lg transition-colors">
                       Cancel Plan
                     </button>
                   </div>
@@ -768,7 +769,7 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
               onClick={() => setShowAddPaymentModal(false)}
             />
 
@@ -779,21 +780,21 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
               exit={{ opacity: 0, scale: 0.95 }}
               className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md"
             >
-              <div className="bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden">
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl overflow-hidden">
                 {/* Modal Header */}
-                <div className="px-6 py-4 bg-gradient-to-r from-purple-600 to-blue-600">
+                <div className="px-6 py-4 bg-gray-900">
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <CreditCard className="w-6 h-6" />
                     Add Payment Method
                   </h3>
-                  <p className="text-white/70 text-sm mt-1">Enter your card details securely</p>
+                  <p className="text-gray-400 text-sm mt-1">Enter your card details securely</p>
                 </div>
 
                 {/* Modal Body */}
                 <div className="p-6 space-y-4">
                   {/* Card Number */}
                   <div>
-                    <label className="block text-sm font-semibold text-slate-400 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       Card Number
                     </label>
                     <div className="relative">
@@ -802,7 +803,7 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                         value={formatCardNumber(newCard.cardNumber)}
                         onChange={(e) => setNewCard({ ...newCard, cardNumber: e.target.value.replace(/\s/g, '') })}
                         maxLength={19}
-                        className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all font-mono"
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all font-mono"
                         placeholder="1234 5678 9012 3456"
                       />
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1">
@@ -814,14 +815,14 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
 
                   {/* Cardholder Name */}
                   <div>
-                    <label className="block text-sm font-semibold text-slate-400 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       Cardholder Name
                     </label>
                     <input
                       type="text"
                       value={newCard.cardholderName}
                       onChange={(e) => setNewCard({ ...newCard, cardholderName: e.target.value })}
-                      className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                       placeholder="John Doe"
                     />
                   </div>
@@ -829,13 +830,13 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                   {/* Expiry & CVC */}
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-sm font-semibold text-slate-400 mb-2">
+                      <label className="block text-sm font-semibold text-gray-600 mb-2">
                         Month
                       </label>
                       <select
                         value={newCard.expMonth}
                         onChange={(e) => setNewCard({ ...newCard, expMonth: e.target.value })}
-                        className="w-full px-3 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                        className="w-full px-3 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                       >
                         <option value="">MM</option>
                         {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
@@ -846,13 +847,13 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-slate-400 mb-2">
+                      <label className="block text-sm font-semibold text-gray-600 mb-2">
                         Year
                       </label>
                       <select
                         value={newCard.expYear}
                         onChange={(e) => setNewCard({ ...newCard, expYear: e.target.value })}
-                        className="w-full px-3 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                        className="w-full px-3 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                       >
                         <option value="">YY</option>
                         {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() + i).map(y => (
@@ -863,7 +864,7 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-slate-400 mb-2">
+                      <label className="block text-sm font-semibold text-gray-600 mb-2">
                         CVC
                       </label>
                       <input
@@ -871,33 +872,33 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                         value={newCard.cvc}
                         onChange={(e) => setNewCard({ ...newCard, cvc: e.target.value.replace(/\D/g, '').slice(0, 4) })}
                         maxLength={4}
-                        className="w-full px-3 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all font-mono"
+                        className="w-full px-3 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all font-mono"
                         placeholder="123"
                       />
                     </div>
                   </div>
 
                   {/* Security Note */}
-                  <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-                    <Shield className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                    <p className="text-emerald-400 text-xs">
+                  <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <Shield className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                    <p className="text-emerald-700 text-xs">
                       Your payment information is encrypted and secure. We use Stripe for payment processing.
                     </p>
                   </div>
                 </div>
 
                 {/* Modal Footer */}
-                <div className="px-6 py-4 bg-slate-800/50 border-t border-slate-700 flex gap-3">
+                <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex gap-3">
                   <button
                     onClick={() => setShowAddPaymentModal(false)}
-                    className="flex-1 px-4 py-3 border border-slate-600 text-slate-400 hover:text-white hover:border-slate-500 font-semibold rounded-xl transition-colors"
+                    className="flex-1 px-4 py-3 border border-gray-300 text-gray-600 hover:text-gray-900 hover:border-gray-400 font-semibold rounded-xl transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleAddPaymentMethod}
                     disabled={isAddingCard || !newCard.cardNumber || !newCard.expMonth || !newCard.expYear || !newCard.cvc}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl hover:from-purple-500 hover:to-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isAddingCard ? (
                       <>
