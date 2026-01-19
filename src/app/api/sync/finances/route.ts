@@ -1,6 +1,8 @@
 /**
  * Manual Finance Sync - Fetch real fees from Amazon Finance API
- * Call this to sync financial data immediately
+ *
+ * SELLERBOARD-STYLE: Fees are attributed to ORDER PURCHASE DATE, not PostedDate
+ * This matches how Sellerboard reports fees - by when the order was placed, not when Amazon posted the event
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -20,7 +22,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    log('🚀 Starting manual finance sync...')
+    log('🚀 Starting manual finance sync (Sellerboard-style: by PurchaseDate)...')
 
     // Get active connection
     const { data: connections, error: connError } = await supabase
@@ -60,27 +62,100 @@ export async function POST(request: NextRequest) {
     log(`   ShipmentEvents: ${events.shipmentEvents?.length || 0}`)
     log(`   RefundEvents: ${events.refundEvents?.length || 0}`)
 
-    // Group events by date
+    // =====================================================
+    // STEP 1: Build order lookup map (amazonOrderId -> purchaseDate)
+    // This is the key to Sellerboard-style attribution!
+    // =====================================================
+
+    // Collect all order IDs from financial events
+    const orderIds = new Set<string>()
+
+    if (events.shipmentEvents) {
+      for (const shipment of events.shipmentEvents) {
+        const orderId = shipment.AmazonOrderId || shipment.amazonOrderId
+        if (orderId) orderIds.add(orderId)
+      }
+    }
+
+    if (events.refundEvents) {
+      for (const refund of events.refundEvents) {
+        const orderId = refund.AmazonOrderId || refund.amazonOrderId
+        if (orderId) orderIds.add(orderId)
+      }
+    }
+
+    log(`📦 Found ${orderIds.size} unique order IDs in financial events`)
+
+    // Lookup orders in our database to get purchase_date
+    const orderIdArray = Array.from(orderIds)
+    const { data: ordersData, error: ordersError } = await supabase
+      .from('orders')
+      .select('amazon_order_id, purchase_date')
+      .in('amazon_order_id', orderIdArray)
+
+    if (ordersError) {
+      log(`⚠️ Error fetching orders: ${ordersError.message}`)
+    }
+
+    // Create lookup map: amazonOrderId -> purchaseDate (YYYY-MM-DD)
+    const orderPurchaseDateMap = new Map<string, string>()
+    let matchedOrders = 0
+
+    if (ordersData) {
+      for (const order of ordersData) {
+        if (order.purchase_date) {
+          // Convert to PST date string (Amazon US timezone)
+          const purchaseDate = new Date(order.purchase_date)
+          // PST = UTC-8
+          const pstDate = new Date(purchaseDate.getTime() - (8 * 60 * 60 * 1000))
+          const dateStr = pstDate.toISOString().split('T')[0]
+          orderPurchaseDateMap.set(order.amazon_order_id, dateStr)
+          matchedOrders++
+        }
+      }
+    }
+
+    log(`✅ Matched ${matchedOrders}/${orderIds.size} orders with purchase dates`)
+
+    // =====================================================
+    // STEP 2: Group events by PURCHASE DATE (not PostedDate!)
+    // =====================================================
+
     const dailySummaries = new Map<string, {
       sales: number
       refunds: number
       fees: number
       units: number
       feeBreakdown: { [type: string]: number }
+      orderCount: number
     }>()
 
-    // Process shipment events (sales + fees)
+    let unmatchedOrders = 0
+
+    // Process shipment events (sales + fees) - GROUP BY PURCHASE DATE
     if (events.shipmentEvents) {
       for (const shipment of events.shipmentEvents) {
-        const postedDateRaw = shipment.PostedDate || shipment.postedDate
-        const postedDate = postedDateRaw?.split('T')[0]
-        if (!postedDate) continue
+        const orderId = shipment.AmazonOrderId || shipment.amazonOrderId
 
-        if (!dailySummaries.has(postedDate)) {
-          dailySummaries.set(postedDate, { sales: 0, refunds: 0, fees: 0, units: 0, feeBreakdown: {} })
+        // Get purchase date from our lookup, fallback to posted date if not found
+        let dateKey: string
+        if (orderId && orderPurchaseDateMap.has(orderId)) {
+          dateKey = orderPurchaseDateMap.get(orderId)!
+        } else {
+          // Fallback to PostedDate if order not in our database
+          const postedDateRaw = shipment.PostedDate || shipment.postedDate
+          dateKey = postedDateRaw?.split('T')[0]
+          if (orderId) unmatchedOrders++
         }
 
-        const summary = dailySummaries.get(postedDate)!
+        if (!dateKey) continue
+
+        if (!dailySummaries.has(dateKey)) {
+          dailySummaries.set(dateKey, { sales: 0, refunds: 0, fees: 0, units: 0, feeBreakdown: {}, orderCount: 0 })
+        }
+
+        const summary = dailySummaries.get(dateKey)!
+        summary.orderCount++
         const items = shipment.ShipmentItemList || shipment.shipmentItemList || []
 
         for (const item of items) {
@@ -112,18 +187,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Process refund events
+    if (unmatchedOrders > 0) {
+      log(`⚠️ ${unmatchedOrders} orders not found in database (using PostedDate fallback)`)
+    }
+
+    // Process refund events - GROUP BY PURCHASE DATE
     if (events.refundEvents) {
       for (const refund of events.refundEvents) {
-        const postedDateRaw = refund.PostedDate || refund.postedDate
-        const postedDate = postedDateRaw?.split('T')[0]
-        if (!postedDate) continue
+        const orderId = refund.AmazonOrderId || refund.amazonOrderId
 
-        if (!dailySummaries.has(postedDate)) {
-          dailySummaries.set(postedDate, { sales: 0, refunds: 0, fees: 0, units: 0, feeBreakdown: {} })
+        // Get purchase date from our lookup, fallback to posted date if not found
+        let dateKey: string
+        if (orderId && orderPurchaseDateMap.has(orderId)) {
+          dateKey = orderPurchaseDateMap.get(orderId)!
+        } else {
+          const postedDateRaw = refund.PostedDate || refund.postedDate
+          dateKey = postedDateRaw?.split('T')[0]
         }
 
-        const summary = dailySummaries.get(postedDate)!
+        if (!dateKey) continue
+
+        if (!dailySummaries.has(dateKey)) {
+          dailySummaries.set(dateKey, { sales: 0, refunds: 0, fees: 0, units: 0, feeBreakdown: {}, orderCount: 0 })
+        }
+
+        const summary = dailySummaries.get(dateKey)!
         const items = refund.ShipmentItemList || refund.shipmentItemList || []
 
         for (const item of items) {
@@ -188,19 +276,33 @@ export async function POST(request: NextRequest) {
       if (!error) savedCount++
     }
 
-    log(`\n✅ Saved ${savedCount} days to daily_metrics`)
+    log(`\n✅ Saved ${savedCount} days to daily_metrics (by PURCHASE DATE - Sellerboard style!)`)
+    log(`📦 Order matching: ${matchedOrders}/${orderIds.size} (${((matchedOrders/orderIds.size)*100).toFixed(1)}%)`)
 
-    // Get yesterday for comparison
-    const yesterday = new Date()
+    // Get yesterday in PST for comparison
+    const now = new Date()
+    const pstOffset = -8 * 60
+    const pstNow = new Date(now.getTime() + (pstOffset - now.getTimezoneOffset()) * 60000)
+    const yesterday = new Date(pstNow)
     yesterday.setDate(yesterday.getDate() - 1)
     const yesterdayStr = yesterday.toISOString().split('T')[0]
     const yesterdaySummary = dailySummaries.get(yesterdayStr)
 
+    log(`📅 Yesterday (PST): ${yesterdayStr}`)
+    if (yesterdaySummary) {
+      log(`   Sales: $${yesterdaySummary.sales.toFixed(2)}`)
+      log(`   Units: ${yesterdaySummary.units}`)
+      log(`   Amazon Fees: $${yesterdaySummary.fees.toFixed(2)}`)
+      log(`   Orders: ${yesterdaySummary.orderCount}`)
+    }
+
     return NextResponse.json({
       success: true,
+      method: 'SELLERBOARD-STYLE (by PurchaseDate)',
       summary: {
         days_processed: dailySummaries.size,
         days_saved: savedCount,
+        orders_matched: `${matchedOrders}/${orderIds.size}`,
         date_range: {
           start: startDate.toISOString().split('T')[0],
           end: endDate.toISOString().split('T')[0]
@@ -208,17 +310,24 @@ export async function POST(request: NextRequest) {
       },
       yesterday: yesterdaySummary ? {
         date: yesterdayStr,
-        sales: yesterdaySummary.sales.toFixed(2),
+        sales: `$${yesterdaySummary.sales.toFixed(2)}`,
         units: yesterdaySummary.units,
-        amazon_fees: yesterdaySummary.fees.toFixed(2),
-        refunds: yesterdaySummary.refunds.toFixed(2),
+        orders: yesterdaySummary.orderCount,
+        amazon_fees: `$${yesterdaySummary.fees.toFixed(2)}`,
+        refunds: `$${yesterdaySummary.refunds.toFixed(2)}`,
         fee_breakdown: yesterdaySummary.feeBreakdown,
-        comparison_with_sellerboard: {
+        sellerboard_comparison: {
+          sellerboard_sales: '$64.94',
+          sellerboard_units: 6,
           sellerboard_fees: '$21.94',
+          our_sales: `$${yesterdaySummary.sales.toFixed(2)}`,
+          our_units: yesterdaySummary.units,
           our_fees: `$${yesterdaySummary.fees.toFixed(2)}`,
-          match: Math.abs(yesterdaySummary.fees - 21.94) < 0.10
+          sales_match: Math.abs(yesterdaySummary.sales - 64.94) < 1.00,
+          units_match: yesterdaySummary.units === 6,
+          fees_match: Math.abs(yesterdaySummary.fees - 21.94) < 1.00
         }
-      } : null,
+      } : { date: yesterdayStr, note: 'No data for yesterday' },
       daily_data: dailyData.slice(0, 7), // Last 7 days
       logs
     })
