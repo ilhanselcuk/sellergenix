@@ -219,6 +219,15 @@ export default function NewDashboardClient({
         // Check if complete
         if (data.remaining === 0) {
           keepSyncing = false
+
+          // Update product prices from synced order items
+          setSyncMessage(`Updating product prices...`)
+          try {
+            await fetch('/api/update-product-prices')
+          } catch (e) {
+            // Ignore price update errors
+          }
+
           setSyncMessage(`Sync complete! ${totalItemsSaved} items synced from ${data.total} orders.`)
 
           // Wait a moment then refresh
@@ -421,9 +430,9 @@ export default function NewDashboardClient({
                 ? 'Showing your real Amazon data.'
                 : 'Amazon connected. Syncing your data...'}
           </p>
-          {/* Data Status Badge */}
+          {/* Data Status Badge + Sync Button */}
           {hasAmazonConnection && (
-            <div className="mt-2">
+            <div className="mt-2 flex items-center gap-3">
               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                 hasRealData
                   ? 'bg-green-100 text-green-800'
@@ -431,8 +440,27 @@ export default function NewDashboardClient({
               }`}>
                 {hasRealData
                   ? `${products.length} products loaded`
-                  : 'No data yet - sync in Settings'}
+                  : 'No data yet'}
               </span>
+              <button
+                onClick={startBatchSync}
+                disabled={isSyncing}
+                className="inline-flex items-center px-3 py-1 text-xs font-medium bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {isSyncing ? (
+                  <>
+                    <div className="animate-spin w-3 h-3 mr-1.5 border-2 border-white border-t-transparent rounded-full"></div>
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3 h-3 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Sync All
+                  </>
+                )}
+              </button>
             </div>
           )}
         </div>
