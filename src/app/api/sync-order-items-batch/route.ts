@@ -188,6 +188,13 @@ export async function GET(request: NextRequest) {
     log(`✅ Batch complete: ${itemsSaved} items saved, ${ordersProcessed} orders processed in ${duration}ms`)
     log(`⏳ Remaining orders: ${remainingAfter}`)
 
+    // Update last_sync_at timestamp on connection
+    await supabase
+      .from('amazon_connections')
+      .update({ last_sync_at: new Date().toISOString() })
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+
     return NextResponse.json({
       success: true,
       total: allOrderIds.size,

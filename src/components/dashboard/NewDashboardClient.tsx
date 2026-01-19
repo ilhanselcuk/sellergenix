@@ -70,6 +70,24 @@ interface NewDashboardClientProps {
   email: string
   hasAmazonConnection: boolean
   dashboardData?: DashboardData
+  lastSyncAt?: string | null
+}
+
+// Helper function to format time ago
+function formatTimeAgo(dateString: string | null | undefined): string {
+  if (!dateString) return 'Never'
+
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins} min ago`
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
 }
 
 // NOTE: Mock data generator removed - using real database data now via generateRealPeriodData
@@ -137,7 +155,8 @@ export default function NewDashboardClient({
   profileName,
   email,
   hasAmazonConnection,
-  dashboardData
+  dashboardData,
+  lastSyncAt
 }: NewDashboardClientProps) {
   // Check if we have real data
   const hasRealData = dashboardData?.hasRealData || false
@@ -489,25 +508,27 @@ export default function NewDashboardClient({
                   ? `${products.length} products loaded`
                   : 'No data yet'}
               </span>
-              <button
-                onClick={startBatchSync}
-                disabled={isSyncing}
-                className="inline-flex items-center px-3 py-1 text-xs font-medium bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors disabled:opacity-50"
-              >
-                {isSyncing ? (
-                  <>
-                    <div className="animate-spin w-3 h-3 mr-1.5 border-2 border-white border-t-transparent rounded-full"></div>
-                    Syncing...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-3 h-3 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              {/* Last Synced indicator with manual refresh */}
+              <span className="inline-flex items-center gap-2 text-xs text-gray-500">
+                <svg className="w-3.5 h-3.5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                Last synced: {formatTimeAgo(lastSyncAt)}
+                <button
+                  onClick={startBatchSync}
+                  disabled={isSyncing}
+                  className="p-1 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
+                  title="Refresh data"
+                >
+                  {isSyncing ? (
+                    <div className="animate-spin w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full"></div>
+                  ) : (
+                    <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
-                    Sync All
-                  </>
-                )}
-              </button>
+                  )}
+                </button>
+              </span>
             </div>
           )}
         </div>
