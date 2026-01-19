@@ -319,6 +319,38 @@ const marketplaceIds = ['ATVPDKIKX0DER'] // Force US marketplace
 
 ---
 
+### ⚠️ GELECEK İYİLEŞTİRME: Multi-Marketplace Desteği
+
+**Şu anki durum:** US marketplace (`ATVPDKIKX0DER`) hardcoded.
+
+**Yapılması gereken:** Kullanıcının seçtiği marketplace'e göre Sales API çağrılmalı:
+
+```typescript
+// Marketplace ID'leri
+const MARKETPLACES = {
+  US: 'ATVPDKIKX0DER',      // United States
+  CA: 'A2EUQ1WTGCTBG2',     // Canada
+  MX: 'A1AM78C64UM0Y8',     // Mexico
+  BR: 'A2Q3Y263D00KWC',     // Brazil
+  UK: 'A1F83G8C2ARO7P',     // United Kingdom
+  DE: 'A1PA6795UKMFR9',     // Germany
+  FR: 'A13V1IB3VIYBER',     // France
+  IT: 'APJ6JRA9NG5V4',      // Italy
+  ES: 'A1RKKUPIHCS9HS',     // Spain
+  JP: 'A1VC38T7YXB528',     // Japan
+  AU: 'A39IBJ37TRP1C6',     // Australia
+}
+
+// Dashboard'da marketplace seçildiğinde:
+const selectedMarketplace = userSelection || 'US'
+const marketplaceId = MARKETPLACES[selectedMarketplace]
+const result = await getAllPeriodSalesMetrics(refreshToken, [marketplaceId])
+```
+
+**NOT:** Şimdilik sadece US çalışıyor. Faz 2'de tüm marketplace'ler desteklenecek.
+
+---
+
 ### 🔗 İlgili Dosyalar
 
 | Dosya | Amaç |
