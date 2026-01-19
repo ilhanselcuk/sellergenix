@@ -28,8 +28,22 @@ import {
   ChevronRight,
   Settings,
   Shield,
-  Bell
+  Bell,
+  ShoppingBag,
+  Link,
+  Unlink,
+  RefreshCw,
+  ExternalLink,
+  Copy,
+  Loader2
 } from 'lucide-react'
+import {
+  connectWithManualTokenAction,
+  getAmazonConnectionAction,
+  disconnectAmazonAction,
+  testAmazonConnectionAction,
+  syncProductsAction
+} from '@/app/actions/amazon-actions'
 
 interface Profile {
   id: string
@@ -61,7 +75,7 @@ const planFeatures = {
   enterprise: ['Unlimited orders', 'Custom analytics', '24/7 support', 'Unlimited accounts', 'AI insights', 'API access', 'Custom integrations'],
 }
 
-type TabType = 'account' | 'company' | 'billing'
+type TabType = 'account' | 'company' | 'billing' | 'amazon'
 
 // Mock payment methods
 const initialPaymentMethods = [
@@ -74,6 +88,94 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
+
+  // Amazon connection state
+  const [amazonConnection, setAmazonConnection] = useState<any>(null)
+  const [amazonLoading, setAmazonLoading] = useState(true)
+  const [refreshToken, setRefreshToken] = useState('')
+  const [isConnecting, setIsConnecting] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [amazonError, setAmazonError] = useState<string | null>(null)
+  const [amazonSuccess, setAmazonSuccess] = useState<string | null>(null)
+  const [showTokenInput, setShowTokenInput] = useState(false)
+
+  // Load Amazon connection on mount
+  React.useEffect(() => {
+    loadAmazonConnection()
+  }, [])
+
+  const loadAmazonConnection = async () => {
+    setAmazonLoading(true)
+    const result = await getAmazonConnectionAction(userId)
+    if (result.success && result.connection) {
+      setAmazonConnection(result.connection)
+    }
+    setAmazonLoading(false)
+  }
+
+  const handleConnectAmazon = async () => {
+    if (!refreshToken.trim()) {
+      setAmazonError('Please enter your refresh token')
+      return
+    }
+    setIsConnecting(true)
+    setAmazonError(null)
+    setAmazonSuccess(null)
+
+    const result = await connectWithManualTokenAction(userId, refreshToken.trim())
+
+    if (result.success && result.connection) {
+      setAmazonConnection(result.connection)
+      setAmazonSuccess('Amazon account connected successfully! Syncing 2 years of data in background...')
+      setRefreshToken('')
+      setShowTokenInput(false)
+    } else {
+      setAmazonError(result.error || 'Failed to connect Amazon account')
+    }
+    setIsConnecting(false)
+  }
+
+  const handleDisconnectAmazon = async () => {
+    if (!confirm('Are you sure you want to disconnect your Amazon account? All synced data will be preserved.')) {
+      return
+    }
+    setAmazonLoading(true)
+    const result = await disconnectAmazonAction(userId)
+    if (result.success) {
+      setAmazonConnection(null)
+      setAmazonSuccess('Amazon account disconnected')
+    } else {
+      setAmazonError(result.error || 'Failed to disconnect')
+    }
+    setAmazonLoading(false)
+  }
+
+  const handleTestConnection = async () => {
+    setIsTesting(true)
+    setAmazonError(null)
+    const result = await testAmazonConnectionAction(userId)
+    if (result.success) {
+      setAmazonSuccess('Connection is working!')
+      loadAmazonConnection()
+    } else {
+      setAmazonError(result.error || 'Connection test failed')
+    }
+    setIsTesting(false)
+  }
+
+  const handleSyncProducts = async () => {
+    setIsSyncing(true)
+    setAmazonError(null)
+    setAmazonSuccess(null)
+    const result = await syncProductsAction(userId)
+    if (result.success) {
+      setAmazonSuccess(`Synced ${result.productsSync || 0} products successfully!`)
+    } else {
+      setAmazonError(result.error || 'Sync failed')
+    }
+    setIsSyncing(false)
+  }
 
   // Payment method state
   const [showAddPaymentModal, setShowAddPaymentModal] = useState(false)
@@ -197,6 +299,7 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
 
   const tabs = [
     { id: 'account' as TabType, label: 'Account', icon: User, description: 'Email & password' },
+    { id: 'amazon' as TabType, label: 'Amazon', icon: ShoppingBag, description: 'Connect store' },
     { id: 'company' as TabType, label: 'Company', icon: Building2, description: 'Business info' },
     { id: 'billing' as TabType, label: 'Billing', icon: CreditCard, description: 'Plans & invoices' },
   ]
@@ -386,6 +489,207 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
                   )}
                 </button>
               </div>
+            </motion.div>
+          )}
+
+          {/* Amazon Tab */}
+          {activeTab === 'amazon' && (
+            <motion.div
+              key="amazon"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="p-6 space-y-6"
+            >
+              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <ShoppingBag className="w-5 h-5 text-orange-500" />
+                Amazon Seller Central Connection
+              </h3>
+
+              {/* Status Messages */}
+              <AnimatePresence>
+                {amazonError && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 rounded-xl"
+                  >
+                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                    <p className="text-red-700 text-sm">{amazonError}</p>
+                    <button onClick={() => setAmazonError(null)} className="ml-auto text-red-400 hover:text-red-600">×</button>
+                  </motion.div>
+                )}
+                {amazonSuccess && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="flex items-center gap-2 p-4 bg-emerald-50 border border-emerald-200 rounded-xl"
+                  >
+                    <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+                    <p className="text-emerald-700 text-sm">{amazonSuccess}</p>
+                    <button onClick={() => setAmazonSuccess(null)} className="ml-auto text-emerald-400 hover:text-emerald-600">×</button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {amazonLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+                </div>
+              ) : amazonConnection ? (
+                /* Connected State */
+                <div className="space-y-6">
+                  {/* Connection Status Card */}
+                  <div className="bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-xl p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-gradient-to-br from-orange-400 to-orange-600 rounded-xl flex items-center justify-center shadow-lg">
+                          <ShoppingBag className="w-7 h-7 text-white" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xl font-black text-gray-900">Amazon Connected</span>
+                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full uppercase">
+                              {amazonConnection.status}
+                            </span>
+                          </div>
+                          <p className="text-gray-500 text-sm">Seller ID: <span className="font-mono">{amazonConnection.seller_id || 'N/A'}</span></p>
+                          <p className="text-gray-500 text-sm">Marketplaces: {amazonConnection.marketplace_ids?.length || 0} connected</p>
+                          {amazonConnection.last_sync_at && (
+                            <p className="text-gray-400 text-xs mt-1">
+                              Last sync: {new Date(amazonConnection.last_sync_at).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap gap-3 mt-6 pt-4 border-t border-emerald-200">
+                      <button
+                        onClick={handleTestConnection}
+                        disabled={isTesting}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-semibold rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        Test Connection
+                      </button>
+                      <button
+                        onClick={handleSyncProducts}
+                        disabled={isSyncing}
+                        className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white hover:bg-orange-600 font-semibold rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        Sync Products
+                      </button>
+                      <button
+                        onClick={handleDisconnectAmazon}
+                        className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-600 hover:bg-red-50 font-semibold rounded-lg transition-colors ml-auto"
+                      >
+                        <Unlink className="w-4 h-4" />
+                        Disconnect
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Marketplace List */}
+                  {amazonConnection.marketplace_ids && amazonConnection.marketplace_ids.length > 0 && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                      <h4 className="text-sm font-bold text-gray-700 mb-3">Connected Marketplaces</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {amazonConnection.marketplace_ids.map((id: string) => (
+                          <span key={id} className="px-3 py-1 bg-white border border-gray-200 rounded-lg text-xs font-mono text-gray-600">
+                            {id}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Not Connected State */
+                <div className="space-y-6">
+                  <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-8 text-center">
+                    <div className="w-16 h-16 bg-gradient-to-br from-orange-100 to-orange-200 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <ShoppingBag className="w-8 h-8 text-orange-500" />
+                    </div>
+                    <h4 className="text-lg font-bold text-gray-900 mb-2">Connect Your Amazon Account</h4>
+                    <p className="text-gray-500 text-sm mb-6 max-w-md mx-auto">
+                      Connect your Amazon Seller Central account to sync your products, orders, and sales data automatically.
+                    </p>
+
+                    {!showTokenInput ? (
+                      <button
+                        onClick={() => setShowTokenInput(true)}
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+                      >
+                        <Link className="w-5 h-5" />
+                        Connect Amazon Account
+                      </button>
+                    ) : (
+                      <div className="max-w-lg mx-auto text-left space-y-4">
+                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                          <h5 className="font-bold text-blue-800 mb-2">How to get your Refresh Token:</h5>
+                          <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                            <li>Go to Amazon Solution Provider Portal</li>
+                            <li>Find &quot;SellerGenix&quot; app</li>
+                            <li>Click &quot;Authorize app&quot;</li>
+                            <li>Copy the refresh token</li>
+                          </ol>
+                          <a
+                            href="https://sellercentral.amazon.com/apps/manage"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 text-sm font-semibold mt-2"
+                          >
+                            Open Seller Central Apps <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Refresh Token</label>
+                          <textarea
+                            value={refreshToken}
+                            onChange={(e) => setRefreshToken(e.target.value)}
+                            placeholder="Paste your refresh token here (starts with Atzr|...)"
+                            rows={3}
+                            className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 placeholder:text-gray-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all font-mono text-sm"
+                          />
+                        </div>
+
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => { setShowTokenInput(false); setRefreshToken(''); }}
+                            className="flex-1 px-4 py-3 border border-gray-300 text-gray-600 hover:text-gray-900 font-semibold rounded-xl transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleConnectAmazon}
+                            disabled={isConnecting || !refreshToken.trim()}
+                            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isConnecting ? (
+                              <>
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                Connecting...
+                              </>
+                            ) : (
+                              <>
+                                <Link className="w-5 h-5" />
+                                Connect
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
 
