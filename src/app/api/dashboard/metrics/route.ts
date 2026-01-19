@@ -68,9 +68,10 @@ async function getRealFeesForPeriod(
     console.log(`📊 Found ${orderIds.length} orders in date range for fee calculation`)
 
     // Step 2: Get order items for these orders
+    // Include both quantity_shipped and quantity_ordered as fallback
     const { data: items, error: itemsError } = await supabase
       .from('order_items')
-      .select('amazon_order_id, estimated_amazon_fee, quantity_shipped, asin')
+      .select('amazon_order_id, estimated_amazon_fee, quantity_shipped, quantity_ordered, asin')
       .eq('user_id', userId)
       .in('amazon_order_id', orderIds)
 
@@ -98,8 +99,10 @@ async function getRealFeesForPeriod(
       let orderHasRealFees = false
 
       for (const item of orderItems) {
-        if (item.estimated_amazon_fee && item.quantity_shipped) {
-          totalFees += item.estimated_amazon_fee * item.quantity_shipped
+        // Use quantity_shipped if available, otherwise fall back to quantity_ordered
+        const quantity = item.quantity_shipped || item.quantity_ordered || 1
+        if (item.estimated_amazon_fee) {
+          totalFees += item.estimated_amazon_fee * quantity
           orderHasRealFees = true
         }
       }
@@ -128,8 +131,9 @@ async function getRealFeesForPeriod(
 
     // Calculate total COGS from order items
     for (const item of items || []) {
-      if (item.asin && item.quantity_shipped && cogsMap.has(item.asin)) {
-        totalCogs += cogsMap.get(item.asin)! * item.quantity_shipped
+      const quantity = item.quantity_shipped || item.quantity_ordered || 1
+      if (item.asin && cogsMap.has(item.asin)) {
+        totalCogs += cogsMap.get(item.asin)! * quantity
       }
     }
 
