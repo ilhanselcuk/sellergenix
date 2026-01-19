@@ -409,6 +409,37 @@ export async function getDashboardData(userId: string) {
     console.log(`📋 Fetched ${orderItems.length} total order items`)
   }
 
+  // ========================================
+  // AUTO-FIX $0 PRICES: Use catalog price for pending orders
+  // This ensures dashboard always shows correct values
+  // ========================================
+  const productPriceMap: { [asin: string]: number } = {}
+  products.forEach(p => {
+    if (p.asin && p.price && p.price > 0) {
+      productPriceMap[p.asin] = p.price
+    }
+  })
+
+  let fixedPriceCount = 0
+  orderItems = orderItems.map(item => {
+    if (item.item_price === 0 || item.item_price === null) {
+      const catalogPrice = productPriceMap[item.asin]
+      if (catalogPrice) {
+        const quantity = item.quantity_ordered || 1
+        fixedPriceCount++
+        return {
+          ...item,
+          item_price: catalogPrice * quantity
+        }
+      }
+    }
+    return item
+  })
+
+  if (fixedPriceCount > 0) {
+    console.log(`💰 Auto-fixed ${fixedPriceCount} items with $0 price using catalog prices`)
+  }
+
   // Create order ID set for filtering
   const orderIds = orders.map(o => o.amazon_order_id)
 
