@@ -297,6 +297,28 @@ const sales = parseFloat(result.today?.totalSales?.amount || '0')
 
 ---
 
+### 🔴 HATA 4: Yanlış Marketplace Kullanımı (MXN vs USD)
+
+**Semptom:** API başarılı döner ama tüm değerler $0.00, currency "MXN" (Meksika Pesosu).
+
+**Sebep:** `connection.marketplace_ids` array'inde Meksika ilk sırada (`A1AM78C64UM0Y8`), Sales API ilk marketplace'i kullanıyor.
+
+**❌ YANLIŞ:**
+```typescript
+const marketplaceIds = connection.marketplace_ids || ['ATVPDKIKX0DER']
+// marketplace_ids = ['A1AM78C64UM0Y8', 'ATVPDKIKX0DER', ...] → Meksika kullanılır!
+```
+
+**✅ DOĞRU:**
+```typescript
+// IMPORTANT: Always use US marketplace for Sales API
+const marketplaceIds = ['ATVPDKIKX0DER'] // Force US marketplace
+```
+
+**Dosya:** `/src/app/api/dashboard/metrics/route.ts:117-120`
+
+---
+
 ### 🔗 İlgili Dosyalar
 
 | Dosya | Amaç |
