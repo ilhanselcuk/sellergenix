@@ -2,12 +2,14 @@
  * Cron Job - Auto Sync All Users
  * Runs every 15 minutes via Vercel Cron
  *
- * Syncs orders and order items for ALL active Amazon connections
+ * Syncs:
+ * 1. Order items (prices, quantities)
+ * 2. Financial events (REAL Amazon fees from Finances API)
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getOrderItems } from '@/lib/amazon-sp-api'
+import { getOrderItems, listFinancialEvents, calculateProfitMetrics } from '@/lib/amazon-sp-api'
 
 // Use service role for cron (no user session)
 const supabase = createClient(
@@ -72,99 +74,228 @@ export async function GET(request: NextRequest) {
 
         log(`  📦 Orders: ${allOrderIds.size} total, ${syncedOrderIds.size} synced, ${unsyncedOrderIds.length} pending`)
 
+        // Always sync finances, even if order items are all synced
+        let skipOrderItemsSync = false
         if (unsyncedOrderIds.length === 0) {
-          log(`  ✅ User already fully synced`)
-          usersProcessed++
-          continue
+          log(`  ✅ Order items already synced, will only sync finances`)
+          skipOrderItemsSync = true
         }
 
-        // Get product prices for fallback
-        const { data: products } = await supabase
-          .from('products')
-          .select('asin, price')
-          .eq('user_id', connection.user_id)
-
-        const productPrices: { [asin: string]: number } = {}
-        for (const p of products || []) {
-          if (p.asin && p.price) {
-            productPrices[p.asin] = p.price
-          }
-        }
-
-        // Sync up to 20 orders per user per cron run
-        const batchOrderIds = unsyncedOrderIds.slice(0, 20)
+        // ========================================
+        // STEP 1: Sync Order Items (if needed)
+        // ========================================
         let itemsSaved = 0
+        if (!skipOrderItemsSync) {
+          // Get product prices for fallback
+          const { data: products } = await supabase
+            .from('products')
+            .select('asin, price')
+            .eq('user_id', connection.user_id)
 
-        for (const orderId of batchOrderIds) {
-          try {
-            const result = await getOrderItems(connection.refresh_token, orderId)
-
-            if (!result.success || !result.orderItems) {
-              continue
+          const productPrices: { [asin: string]: number } = {}
+          for (const p of products || []) {
+            if (p.asin && p.price) {
+              productPrices[p.asin] = p.price
             }
+          }
 
-            for (const item of result.orderItems) {
-              const rawItem = item as any
-              const asin = rawItem.ASIN || rawItem.asin
-              const orderItemId = rawItem.OrderItemId || rawItem.orderItemId
+          // Sync up to 20 orders per user per cron run
+          const batchOrderIds = unsyncedOrderIds.slice(0, 20)
 
-              if (!asin || !orderItemId) continue
+          for (const orderId of batchOrderIds) {
+            try {
+              const result = await getOrderItems(connection.refresh_token, orderId)
 
-              const sku = rawItem.SellerSKU || rawItem.sellerSKU || null
-              const title = rawItem.Title || rawItem.title || null
-              const itemPrice = rawItem.ItemPrice || rawItem.itemPrice
-              let price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
-              const quantity = rawItem.QuantityOrdered || rawItem.quantityOrdered || 1
-
-              // Use catalog price for $0 items
-              if (price === 0 && asin && productPrices[asin]) {
-                price = productPrices[asin] * quantity
+              if (!result.success || !result.orderItems) {
+                continue
               }
 
-              // Check existing price
-              let finalPrice = price
-              if (price === 0) {
-                const { data: existingItem } = await supabase
-                  .from('order_items')
-                  .select('item_price')
-                  .eq('user_id', connection.user_id)
-                  .eq('order_item_id', orderItemId)
-                  .single()
+              for (const item of result.orderItems) {
+                const rawItem = item as any
+                const asin = rawItem.ASIN || rawItem.asin
+                const orderItemId = rawItem.OrderItemId || rawItem.orderItemId
 
-                if (existingItem && existingItem.item_price > 0) {
-                  finalPrice = existingItem.item_price
+                if (!asin || !orderItemId) continue
+
+                const sku = rawItem.SellerSKU || rawItem.sellerSKU || null
+                const title = rawItem.Title || rawItem.title || null
+                const itemPrice = rawItem.ItemPrice || rawItem.itemPrice
+                let price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
+                const quantity = rawItem.QuantityOrdered || rawItem.quantityOrdered || 1
+
+                // Use catalog price for $0 items
+                if (price === 0 && asin && productPrices[asin]) {
+                  price = productPrices[asin] * quantity
+                }
+
+                // Check existing price
+                let finalPrice = price
+                if (price === 0) {
+                  const { data: existingItem } = await supabase
+                    .from('order_items')
+                    .select('item_price')
+                    .eq('user_id', connection.user_id)
+                    .eq('order_item_id', orderItemId)
+                    .single()
+
+                  if (existingItem && existingItem.item_price > 0) {
+                    finalPrice = existingItem.item_price
+                  }
+                }
+
+                await supabase
+                  .from('order_items')
+                  .upsert({
+                    user_id: connection.user_id,
+                    amazon_order_id: orderId,
+                    order_item_id: orderItemId,
+                    asin: asin,
+                    seller_sku: sku,
+                    title: title,
+                    quantity_ordered: quantity,
+                    item_price: finalPrice,
+                    updated_at: new Date().toISOString(),
+                  }, {
+                    onConflict: 'user_id,order_item_id',
+                  })
+
+                itemsSaved++
+              }
+
+              totalOrdersSynced++
+              await new Promise(resolve => setTimeout(resolve, 100))
+
+            } catch (err: any) {
+              log(`    ⚠️ Error on ${orderId}: ${err.message}`)
+            }
+          }
+
+          totalItemsSynced += itemsSaved
+          log(`  ✅ Synced ${itemsSaved} items from ${batchOrderIds.length} orders`)
+        }
+
+        // ========================================
+        // STEP 2: Sync Financial Events (REAL FEES)
+        // ========================================
+        log(`  💰 Syncing financial events...`)
+        try {
+          // Fetch last 7 days of financial data
+          const endDate = new Date()
+          const startDate = new Date()
+          startDate.setDate(startDate.getDate() - 7)
+
+          const financesResult = await listFinancialEvents(connection.refresh_token, startDate, endDate)
+
+          if (financesResult.success && financesResult.data) {
+            const events = financesResult.data as any
+
+            // Group events by date
+            const dailySummaries = new Map<string, {
+              sales: number
+              refunds: number
+              fees: number
+              units: number
+            }>()
+
+            // Process shipment events (sales + fees)
+            if (events.shipmentEvents) {
+              for (const shipment of events.shipmentEvents) {
+                const postedDateRaw = shipment.PostedDate || shipment.postedDate
+                const postedDate = postedDateRaw?.split('T')[0]
+                if (!postedDate) continue
+
+                if (!dailySummaries.has(postedDate)) {
+                  dailySummaries.set(postedDate, { sales: 0, refunds: 0, fees: 0, units: 0 })
+                }
+
+                const summary = dailySummaries.get(postedDate)!
+                const items = shipment.ShipmentItemList || shipment.shipmentItemList || []
+
+                for (const item of items) {
+                  // Sales
+                  const chargeList = item.ItemChargeList || item.itemChargeList || []
+                  const principal = chargeList.find((c: any) =>
+                    (c.ChargeType || c.chargeType) === 'Principal'
+                  )
+                  const chargeAmount = principal?.ChargeAmount || principal?.chargeAmount
+                  if (chargeAmount?.CurrencyAmount || chargeAmount?.currencyAmount) {
+                    summary.sales += parseFloat(chargeAmount.CurrencyAmount || chargeAmount.currencyAmount)
+                  }
+
+                  // REAL Amazon Fees
+                  const feeList = item.ItemFeeList || item.itemFeeList || []
+                  for (const fee of feeList) {
+                    const feeAmount = fee.FeeAmount || fee.feeAmount
+                    if (feeAmount?.CurrencyAmount || feeAmount?.currencyAmount) {
+                      summary.fees += Math.abs(parseFloat(feeAmount.CurrencyAmount || feeAmount.currencyAmount))
+                    }
+                  }
+
+                  // Units
+                  summary.units += item.QuantityShipped || item.quantityShipped || 0
                 }
               }
-
-              await supabase
-                .from('order_items')
-                .upsert({
-                  user_id: connection.user_id,
-                  amazon_order_id: orderId,
-                  order_item_id: orderItemId,
-                  asin: asin,
-                  seller_sku: sku,
-                  title: title,
-                  quantity_ordered: quantity,
-                  item_price: finalPrice,
-                  updated_at: new Date().toISOString(),
-                }, {
-                  onConflict: 'user_id,order_item_id',
-                })
-
-              itemsSaved++
             }
 
-            totalOrdersSynced++
-            await new Promise(resolve => setTimeout(resolve, 100))
+            // Process refund events
+            if (events.refundEvents) {
+              for (const refund of events.refundEvents) {
+                const postedDateRaw = refund.PostedDate || refund.postedDate
+                const postedDate = postedDateRaw?.split('T')[0]
+                if (!postedDate) continue
 
-          } catch (err: any) {
-            log(`    ⚠️ Error on ${orderId}: ${err.message}`)
+                if (!dailySummaries.has(postedDate)) {
+                  dailySummaries.set(postedDate, { sales: 0, refunds: 0, fees: 0, units: 0 })
+                }
+
+                const summary = dailySummaries.get(postedDate)!
+                const items = refund.ShipmentItemList || refund.shipmentItemList || []
+
+                for (const item of items) {
+                  const chargeList = item.ItemChargeList || item.itemChargeList || []
+                  const principal = chargeList.find((c: any) =>
+                    (c.ChargeType || c.chargeType) === 'Principal'
+                  )
+                  const chargeAmount = principal?.ChargeAmount || principal?.chargeAmount
+                  if (chargeAmount?.CurrencyAmount || chargeAmount?.currencyAmount) {
+                    summary.refunds += Math.abs(parseFloat(chargeAmount.CurrencyAmount || chargeAmount.currencyAmount))
+                  }
+                }
+              }
+            }
+
+            // Save daily summaries to database
+            let daysSaved = 0
+            for (const [date, summary] of dailySummaries) {
+              const grossProfit = summary.sales - summary.refunds - summary.fees
+              const margin = summary.sales > 0 ? (grossProfit / summary.sales) * 100 : 0
+
+              const { error } = await supabase
+                .from('daily_metrics')
+                .upsert({
+                  user_id: connection.user_id,
+                  date,
+                  sales: summary.sales,
+                  units_sold: summary.units,
+                  refunds: summary.refunds,
+                  amazon_fees: summary.fees, // REAL FEES!
+                  gross_profit: grossProfit,
+                  margin,
+                  updated_at: new Date().toISOString(),
+                }, {
+                  onConflict: 'user_id,date',
+                })
+
+              if (!error) daysSaved++
+            }
+
+            log(`  ✅ Synced ${daysSaved} days of financial data (REAL fees)`)
+          } else {
+            log(`  ⚠️ Could not fetch financial events: ${financesResult.error || 'Unknown error'}`)
           }
+        } catch (financeError: any) {
+          log(`  ⚠️ Finance sync error: ${financeError.message}`)
         }
-
-        totalItemsSynced += itemsSaved
-        log(`  ✅ Synced ${itemsSaved} items from ${batchOrderIds.length} orders`)
 
         // Update last_sync_at
         await supabase
