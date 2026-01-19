@@ -70,26 +70,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
 
   const formatPercent = (value: number) => `${value.toFixed(1)}%`
 
-  // Mock breakdown data (in real app, this comes from API)
-  const salesBreakdown = {
-    organic: data.sales * 0.65,
-    sponsoredProducts: data.sales * 0.25,
-    sponsoredDisplay: data.sales * 0.10,
-  }
-
-  const unitsBreakdown = {
-    organic: Math.floor(data.units * 0.65),
-    spUnits: Math.floor(data.units * 0.25),
-    sdUnits: Math.floor(data.units * 0.10),
-  }
-
-  const adSpendBreakdown = {
-    sponsoredProducts: data.adSpend * 0.55,
-    sponsoredBrands: data.adSpend * 0.20,
-    sponsoredDisplay: data.adSpend * 0.15,
-    sbVideo: data.adSpend * 0.10,
-  }
-
+  // Amazon Fees breakdown (estimated percentages - real breakdown requires Finance API approval)
   const amazonFeesBreakdown = {
     fbaFulfillment: data.amazonFees * 0.55,
     referralFee: data.amazonFees * 0.35,
@@ -97,11 +78,17 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
     inboundFee: data.amazonFees * 0.03,
   }
 
+  // Calculated metrics (based on available data)
   const margin = data.sales > 0 ? (data.netProfit / data.sales) * 100 : 0
-  const roi = (data.cogs + data.adSpend) > 0 ? (data.netProfit / (data.cogs + data.adSpend)) * 100 : 0
-  const realAcos = data.sales > 0 ? (data.adSpend / data.sales) * 100 : 0
+  // ROI calculated with COGS only (Ad Spend not available yet)
+  const roi = data.cogs > 0 ? (data.netProfit / data.cogs) * 100 : 0
+  // Refund rate based on refund count vs units
   const refundRate = data.units > 0 ? (data.refunds / data.units) * 100 : 0
   const estPayout = data.sales - data.amazonFees - data.refunds
+
+  // Helper for "Coming Soon" display
+  const comingSoon = (label: string) => `$0.00 (${label})`
+  const comingSoonPercent = (label: string) => `0.0% (${label})`
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -138,27 +125,25 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           <div className="px-2 py-4 border-b border-gray-200">
             <h3 className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Revenue</h3>
 
-            <CollapsibleSection
-              title="Sales"
-              icon={<DollarSign className="w-4 h-4" />}
-              total={formatCurrency(data.sales)}
-              totalColor="text-emerald-600"
-              defaultOpen={true}
-            >
-              <MetricRow label="Organic" value={formatCurrency(salesBreakdown.organic)} indent />
-              <MetricRow label="Sponsored Products" value={formatCurrency(salesBreakdown.sponsoredProducts)} indent />
-              <MetricRow label="Sponsored Display" value={formatCurrency(salesBreakdown.sponsoredDisplay)} indent />
-            </CollapsibleSection>
+            {/* Sales - Real data from Amazon Orders API */}
+            <div className="flex items-center justify-between py-3 px-4">
+              <div className="flex items-center gap-3">
+                <span className="w-4" />
+                <span className="text-gray-500"><DollarSign className="w-4 h-4" /></span>
+                <span className="font-medium text-gray-900">Sales</span>
+              </div>
+              <span className="font-semibold text-emerald-600">{formatCurrency(data.sales)}</span>
+            </div>
 
-            <CollapsibleSection
-              title="Units"
-              icon={<Package className="w-4 h-4" />}
-              total={data.units.toLocaleString()}
-            >
-              <MetricRow label="Organic" value={unitsBreakdown.organic.toLocaleString()} indent />
-              <MetricRow label="SP Units" value={unitsBreakdown.spUnits.toLocaleString()} indent />
-              <MetricRow label="SD Units" value={unitsBreakdown.sdUnits.toLocaleString()} indent />
-            </CollapsibleSection>
+            {/* Units - Real data from Amazon Orders API */}
+            <div className="flex items-center justify-between py-3 px-4">
+              <div className="flex items-center gap-3">
+                <span className="w-4" />
+                <span className="text-gray-500"><Package className="w-4 h-4" /></span>
+                <span className="font-medium text-gray-900">Units</span>
+              </div>
+              <span className="font-semibold text-gray-900">{data.units.toLocaleString()}</span>
+            </div>
 
             <div className="flex items-center justify-between py-3 px-4">
               <div className="flex items-center gap-3">
@@ -174,17 +159,15 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           <div className="px-2 py-4 border-b border-gray-200">
             <h3 className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Deductions</h3>
 
-            <CollapsibleSection
-              title="Ad Spend"
-              icon={<BarChart3 className="w-4 h-4" />}
-              total={formatCurrency(-data.adSpend)}
-              totalColor="text-red-600"
-            >
-              <MetricRow label="Sponsored Products" value={formatCurrency(-adSpendBreakdown.sponsoredProducts)} valueColor="text-red-600" indent />
-              <MetricRow label="Sponsored Brands" value={formatCurrency(-adSpendBreakdown.sponsoredBrands)} valueColor="text-red-600" indent />
-              <MetricRow label="Sponsored Display" value={formatCurrency(-adSpendBreakdown.sponsoredDisplay)} valueColor="text-red-600" indent />
-              <MetricRow label="SB Video" value={formatCurrency(-adSpendBreakdown.sbVideo)} valueColor="text-red-600" indent />
-            </CollapsibleSection>
+            {/* Ad Spend - Requires Advertising API (Coming Soon) */}
+            <div className="flex items-center justify-between py-3 px-4 bg-amber-50/50 rounded-lg mx-2">
+              <div className="flex items-center gap-3">
+                <span className="w-4" />
+                <span className="text-gray-400"><BarChart3 className="w-4 h-4" /></span>
+                <span className="font-medium text-gray-500">Ad Spend</span>
+              </div>
+              <span className="font-medium text-amber-600">$0.00 <span className="text-xs">(Coming Soon)</span></span>
+            </div>
 
             <CollapsibleSection
               title="Amazon Fees"
@@ -192,10 +175,11 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
               total={formatCurrency(-data.amazonFees)}
               totalColor="text-red-600"
             >
-              <MetricRow label="FBA Fulfillment" value={formatCurrency(-amazonFeesBreakdown.fbaFulfillment)} valueColor="text-red-600" indent />
-              <MetricRow label="Referral Fee" value={formatCurrency(-amazonFeesBreakdown.referralFee)} valueColor="text-red-600" indent />
-              <MetricRow label="Storage Fee" value={formatCurrency(-amazonFeesBreakdown.storageFee)} valueColor="text-red-600" indent />
-              <MetricRow label="Inbound Fee" value={formatCurrency(-amazonFeesBreakdown.inboundFee)} valueColor="text-red-600" indent />
+              <MetricRow label="FBA Fulfillment (Est.)" value={formatCurrency(-amazonFeesBreakdown.fbaFulfillment)} valueColor="text-red-600" indent />
+              <MetricRow label="Referral Fee (Est.)" value={formatCurrency(-amazonFeesBreakdown.referralFee)} valueColor="text-red-600" indent />
+              <MetricRow label="Storage Fee (Est.)" value={formatCurrency(-amazonFeesBreakdown.storageFee)} valueColor="text-red-600" indent />
+              <MetricRow label="Inbound Fee (Est.)" value={formatCurrency(-amazonFeesBreakdown.inboundFee)} valueColor="text-red-600" indent />
+              <p className="text-xs text-gray-400 mt-2 pl-4">* Breakdown estimated. Real breakdown requires Finance API approval.</p>
             </CollapsibleSection>
 
             <div className="flex items-center justify-between py-3 px-4">
@@ -258,10 +242,11 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
             <h3 className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Performance Metrics</h3>
 
             <div className="grid grid-cols-2 gap-4 px-4">
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">Real ACOS</p>
-                <p className={`text-xl font-bold ${realAcos > 30 ? 'text-red-600' : realAcos > 20 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                  {formatPercent(realAcos)}
+              {/* Real ACOS - Requires Advertising API (Coming Soon) */}
+              <div className="bg-amber-50/50 rounded-xl p-4 border border-amber-200/50">
+                <p className="text-xs text-gray-400 mb-1">Real ACOS</p>
+                <p className="text-lg font-semibold text-amber-600">
+                  0.0% <span className="text-xs font-normal">(Coming Soon)</span>
                 </p>
               </div>
               <div className="bg-gray-50 rounded-xl p-4">
