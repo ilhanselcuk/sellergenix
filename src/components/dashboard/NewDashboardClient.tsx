@@ -223,6 +223,14 @@ export default function NewDashboardClient({
         if (data.remaining === 0) {
           keepSyncing = false
 
+          // Fix $0 prices on pending orders using catalog prices
+          setSyncMessage(`Fixing pending order prices...`)
+          try {
+            await fetch('/api/fix-zero-prices')
+          } catch (e) {
+            // Ignore fix price errors
+          }
+
           // Update product prices from synced order items
           setSyncMessage(`Updating product prices...`)
           try {
