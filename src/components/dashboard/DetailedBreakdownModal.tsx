@@ -175,11 +175,11 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
               total={formatCurrency(-data.amazonFees)}
               totalColor="text-red-600"
             >
-              <MetricRow label="FBA Fulfillment (Est.)" value={formatCurrency(-amazonFeesBreakdown.fbaFulfillment)} valueColor="text-red-600" indent />
-              <MetricRow label="Referral Fee (Est.)" value={formatCurrency(-amazonFeesBreakdown.referralFee)} valueColor="text-red-600" indent />
-              <MetricRow label="Storage Fee (Est.)" value={formatCurrency(-amazonFeesBreakdown.storageFee)} valueColor="text-red-600" indent />
-              <MetricRow label="Inbound Fee (Est.)" value={formatCurrency(-amazonFeesBreakdown.inboundFee)} valueColor="text-red-600" indent />
-              <p className="text-xs text-gray-400 mt-2 pl-4">* Breakdown estimated. Real breakdown requires Finance API approval.</p>
+              <MetricRow label="FBA Fulfillment (~55%)" value={formatCurrency(-amazonFeesBreakdown.fbaFulfillment)} valueColor="text-red-600" indent />
+              <MetricRow label="Referral Fee (~35%)" value={formatCurrency(-amazonFeesBreakdown.referralFee)} valueColor="text-red-600" indent />
+              <MetricRow label="Storage Fee (~7%)" value={formatCurrency(-amazonFeesBreakdown.storageFee)} valueColor="text-red-600" indent />
+              <MetricRow label="Inbound Fee (~3%)" value={formatCurrency(-amazonFeesBreakdown.inboundFee)} valueColor="text-red-600" indent />
+              <p className="text-xs text-gray-400 mt-2 pl-4">* Total fee is from Amazon. Breakdown is estimated.</p>
             </CollapsibleSection>
 
             <div className="flex items-center justify-between py-3 px-4">
