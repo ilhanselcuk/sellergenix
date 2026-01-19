@@ -24,6 +24,13 @@ export async function GET() {
       .order('purchase_date', { ascending: false })
       .limit(10)
 
+    // Get order_items from database
+    const { data: orderItems, error: orderItemsError } = await supabase
+      .from('order_items')
+      .select('*')
+      .eq('user_id', user.id)
+      .limit(20)
+
     // Get dashboard data
     const dashboardData = await getDashboardData(user.id)
 
@@ -54,6 +61,15 @@ export async function GET() {
         items_unshipped: o.items_unshipped
       })),
       ordersError: ordersError?.message,
+      orderItemsCount: orderItems?.length || 0,
+      orderItemsSample: orderItems?.slice(0, 5).map(item => ({
+        amazon_order_id: item.amazon_order_id,
+        asin: item.asin,
+        quantity_ordered: item.quantity_ordered,
+        item_price: item.item_price,
+        title: item.title?.substring(0, 40)
+      })),
+      orderItemsError: orderItemsError?.message,
       dashboardData: {
         hasRealData: dashboardData.hasRealData,
         today: dashboardData.today,
