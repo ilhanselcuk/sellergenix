@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
+import Link from 'next/link'
 import MarketplaceSelector from '@/components/dashboard/MarketplaceSelector'
 import PeriodSelector, { PERIOD_SETS } from '@/components/dashboard/PeriodSelector'
 import PeriodCardsGrid from '@/components/dashboard/PeriodCardsGrid'
@@ -10,246 +11,132 @@ import ProductTable, { ProductData } from '@/components/dashboard/ProductTable'
 import ProductSettingsModal, { ProductCosts } from '@/components/dashboard/ProductSettingsModal'
 import AIChatBar from '@/components/dashboard/AIChatBar'
 
+// Dashboard data from database
+interface DashboardData {
+  today: PeriodMetrics
+  yesterday: PeriodMetrics
+  last7Days: PeriodMetrics
+  last30Days: PeriodMetrics
+  lastMonth: PeriodMetrics
+  products: DatabaseProduct[]
+  hasRealData: boolean
+}
+
+interface PeriodMetrics {
+  sales: number
+  units: number
+  orders: number
+  refunds: number
+  adSpend: number
+  amazonFees: number
+  grossProfit: number
+  netProfit: number
+  margin: number
+  roi: number
+}
+
+interface DatabaseProduct {
+  id: string
+  asin: string
+  sku: string | null
+  title: string | null
+  image_url?: string | null
+  imageUrl?: string | null
+  price: number | null
+  cogs: number | null
+  fba_stock?: number
+  // Calculated stats
+  units?: number
+  unitsSold?: number
+  orders?: number
+  sales?: number
+  refunds?: number
+  adSpend?: number
+  grossProfit?: number
+  netProfit?: number
+  margin?: number
+  roi?: number
+  acos?: number
+  bsr?: number | null
+}
+
 interface NewDashboardClientProps {
   profileName: string
   email: string
   hasAmazonConnection: boolean
+  dashboardData?: DashboardData
 }
 
-// Mock data generator for periods
-const generateMockPeriodData = (
+// NOTE: Mock data generator removed - using real database data now via generateRealPeriodData
+
+// NOTE: MOCK_PRODUCTS removed - dashboard now uses real database data
+
+// Transform database products to ProductData format for ProductTable
+function transformDatabaseProducts(dbProducts: DatabaseProduct[]): ProductData[] {
+  if (!dbProducts || dbProducts.length === 0) {
+    return []
+  }
+
+  return dbProducts.map((p, index) => ({
+    id: p.id || `db-${index}`,
+    asin: p.asin,
+    sku: p.sku || '',
+    title: p.title || `Product ${p.asin}`,
+    imageUrl: p.imageUrl || p.image_url || undefined,
+    stock: p.fba_stock ?? null,
+    units: p.units || p.unitsSold || 0,
+    refunds: p.refunds || 0,
+    cogs: p.cogs || 0,
+    sales: p.sales || 0,
+    adSpend: p.adSpend || 0,
+    grossProfit: p.grossProfit || 0,
+    netProfit: p.netProfit || 0,
+    margin: p.margin || 0,
+    roi: p.roi || 0,
+    bsr: p.bsr || null
+  }))
+}
+
+// Generate period data from database metrics
+function generateRealPeriodData(
   label: string,
   startDate: Date,
-  endDate: Date
-): PeriodData => {
-  const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
-  const baseMultiplier = Math.max(1, daysDiff / 7)
+  endDate: Date,
+  metrics: PeriodMetrics
+): PeriodData {
+  // Calculate ACOS: (adSpend / sales) * 100
+  const acos = metrics.sales > 0 ? (metrics.adSpend / metrics.sales) * 100 : 0
 
-  const sales = Math.round((8000 + Math.random() * 4000) * baseMultiplier)
-  const orders = Math.round((80 + Math.random() * 40) * baseMultiplier)
-  const units = Math.round(orders * (1.2 + Math.random() * 0.3))
-  const adSpend = Math.round(sales * (0.08 + Math.random() * 0.07))
-  const amazonFees = Math.round(sales * 0.15)
-  const cogs = Math.round(sales * 0.30)
-  const refunds = Math.round(sales * (0.02 + Math.random() * 0.02))
-  const grossProfit = sales - amazonFees - cogs - refunds
-  const netProfit = grossProfit - adSpend
-  const acos = adSpend > 0 ? (adSpend / sales) * 100 : 0
-  const netProfitChange = (Math.random() - 0.3) * 30
+  // Calculate change (placeholder - could be calculated from comparing periods)
+  const netProfitChange = 0 // Would need previous period data to calculate
 
   return {
     label,
     startDate,
     endDate,
-    netProfit,
+    netProfit: metrics.netProfit,
     netProfitChange,
-    sales,
-    orders,
-    units,
+    sales: metrics.sales,
+    orders: metrics.orders,
+    units: metrics.units,
     acos,
-    adSpend,
-    refunds,
-    amazonFees,
-    cogs,
-    grossProfit
+    adSpend: metrics.adSpend,
+    refunds: metrics.refunds,
+    amazonFees: metrics.amazonFees,
+    cogs: 0, // Would need COGS from products
+    grossProfit: metrics.grossProfit
   }
 }
-
-// Mock product data
-const MOCK_PRODUCTS: ProductData[] = [
-  {
-    id: '1',
-    asin: 'B08XYZ1234',
-    sku: 'SKU-001',
-    title: 'Premium Wireless Bluetooth Headphones',
-    imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=100&h=100&fit=crop',
-    isParent: true,
-    stock: null,
-    units: 145,
-    refunds: 3,
-    cogs: 1305, // $9/unit cost
-    sales: 4350,
-    adSpend: 287,
-    grossProfit: 1740,
-    netProfit: 1453,
-    margin: 33.4,
-    roi: 112,
-    bsr: 2456,
-    children: [
-      {
-        id: '1-1',
-        asin: 'B08XYZ1234-BLK',
-        sku: 'SKU-001-BLK',
-        title: 'Premium Wireless Headphones - Black',
-        parentAsin: 'B08XYZ1234',
-        stock: null,
-        units: 89,
-        refunds: 2,
-        cogs: 801, // $9/unit cost
-        sales: 2670,
-        adSpend: 176,
-        grossProfit: 1068,
-        netProfit: 892,
-        margin: 33.4,
-        roi: 112,
-        bsr: 2456
-      },
-      {
-        id: '1-2',
-        asin: 'B08XYZ1234-WHT',
-        sku: 'SKU-001-WHT',
-        title: 'Premium Wireless Headphones - White',
-        parentAsin: 'B08XYZ1234',
-        stock: null,
-        units: 56,
-        refunds: 1,
-        cogs: 504, // $9/unit cost
-        sales: 1680,
-        adSpend: 111,
-        grossProfit: 672,
-        netProfit: 561,
-        margin: 33.4,
-        roi: 112,
-        bsr: 3890
-      }
-    ]
-  },
-  {
-    id: '2',
-    asin: 'B09ABC5678',
-    sku: 'SKU-002',
-    title: 'Organic Green Tea Matcha Powder 100g',
-    imageUrl: 'https://images.unsplash.com/photo-1556881286-fc6915169721?w=100&h=100&fit=crop',
-    stock: null,
-    units: 234,
-    refunds: 5,
-    cogs: 936, // $4/unit cost
-    sales: 3510,
-    adSpend: 421,
-    grossProfit: 1404,
-    netProfit: 983,
-    margin: 28.0,
-    roi: 78,
-    bsr: 1234
-  },
-  {
-    id: '3',
-    asin: 'B07DEF9012',
-    sku: 'SKU-003',
-    title: 'Stainless Steel Water Bottle 32oz',
-    imageUrl: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=100&h=100&fit=crop',
-    isParent: true,
-    stock: null,
-    units: 312,
-    refunds: 8,
-    cogs: 1872, // $6/unit cost
-    sales: 6240,
-    adSpend: 562,
-    grossProfit: 2496,
-    netProfit: 1934,
-    margin: 31.0,
-    roi: 95,
-    bsr: 567,
-    children: [
-      {
-        id: '3-1',
-        asin: 'B07DEF9012-BLU',
-        sku: 'SKU-003-BLU',
-        title: 'Water Bottle 32oz - Blue',
-        parentAsin: 'B07DEF9012',
-        stock: null,
-        units: 156,
-        refunds: 4,
-        cogs: 936, // $6/unit cost
-        sales: 3120,
-        adSpend: 281,
-        grossProfit: 1248,
-        netProfit: 967,
-        margin: 31.0,
-        roi: 95,
-        bsr: 567
-      },
-      {
-        id: '3-2',
-        asin: 'B07DEF9012-GRN',
-        sku: 'SKU-003-GRN',
-        title: 'Water Bottle 32oz - Green',
-        parentAsin: 'B07DEF9012',
-        stock: null,
-        units: 98,
-        refunds: 3,
-        cogs: 588, // $6/unit cost
-        sales: 1960,
-        adSpend: 176,
-        grossProfit: 784,
-        netProfit: 608,
-        margin: 31.0,
-        roi: 95,
-        bsr: 890
-      },
-      {
-        id: '3-3',
-        asin: 'B07DEF9012-RED',
-        sku: 'SKU-003-RED',
-        title: 'Water Bottle 32oz - Red',
-        parentAsin: 'B07DEF9012',
-        stock: null,
-        units: 58,
-        refunds: 1,
-        cogs: 348, // $6/unit cost
-        sales: 1160,
-        adSpend: 105,
-        grossProfit: 464,
-        netProfit: 359,
-        margin: 31.0,
-        roi: 95,
-        bsr: 1234
-      }
-    ]
-  },
-  {
-    id: '4',
-    asin: 'B10GHI3456',
-    sku: 'SKU-004',
-    title: 'Bamboo Cutting Board Set (3 Pieces)',
-    imageUrl: 'https://images.unsplash.com/photo-1594226801341-41427b4e5c22?w=100&h=100&fit=crop',
-    stock: null,
-    units: 87,
-    refunds: 2,
-    cogs: 783, // $9/unit cost
-    sales: 2610,
-    adSpend: 235,
-    grossProfit: 1044,
-    netProfit: 809,
-    margin: 31.0,
-    roi: 88,
-    bsr: 4567
-  },
-  {
-    id: '5',
-    asin: 'B11JKL7890',
-    sku: 'SKU-005',
-    title: 'LED Desk Lamp with USB Charging Port',
-    imageUrl: 'https://images.unsplash.com/photo-1534073828943-f801091bb18c?w=100&h=100&fit=crop',
-    stock: null,
-    units: 178,
-    refunds: 6,
-    cogs: 1602, // $9/unit cost
-    sales: 5340,
-    adSpend: 481,
-    grossProfit: 2136,
-    netProfit: 1655,
-    margin: 31.0,
-    roi: 92,
-    bsr: 789
-  }
-]
 
 export default function NewDashboardClient({
   profileName,
   email,
-  hasAmazonConnection
+  hasAmazonConnection,
+  dashboardData
 }: NewDashboardClientProps) {
+  // Check if we have real data
+  const hasRealData = dashboardData?.hasRealData || false
+
   // Marketplace state
   const [selectedRegion, setSelectedRegion] = useState('north-america')
   const [selectedCountry, setSelectedCountry] = useState('ATVPDKIKX0DER')
@@ -268,20 +155,55 @@ export default function NewDashboardClient({
   const [breakdownModalData, setBreakdownModalData] = useState<PeriodData | null>(null)
   const [productSettingsOpen, setProductSettingsOpen] = useState(false)
 
-  // Product state
-  const [products, setProducts] = useState<ProductData[]>(MOCK_PRODUCTS)
+  // Product state - use real data if available, otherwise empty array
+  const initialProducts = useMemo(() => {
+    if (dashboardData?.products && dashboardData.products.length > 0) {
+      return transformDatabaseProducts(dashboardData.products)
+    }
+    return []
+  }, [dashboardData?.products])
 
-  // Generate period data based on selected set
+  const [products, setProducts] = useState<ProductData[]>(initialProducts)
+
+  // Generate period data from real database data
   const periodData = useMemo(() => {
     if (isCustomMode && customRange.start && customRange.end) {
-      return [generateMockPeriodData('Custom Range', customRange.start, customRange.end)]
+      // For custom mode, use last30Days data as approximation
+      const metrics = dashboardData?.last30Days || {
+        sales: 0, units: 0, orders: 0, refunds: 0,
+        adSpend: 0, amazonFees: 0, grossProfit: 0, netProfit: 0,
+        margin: 0, roi: 0
+      }
+      return [generateRealPeriodData('Custom Range', customRange.start, customRange.end, metrics)]
     }
 
+    // Build period data from database
     const selectedSet = PERIOD_SETS.find(s => s.id === selectedSetId) || PERIOD_SETS[0]
-    return selectedSet.periods.map(period =>
-      generateMockPeriodData(period.label, period.startDate, period.endDate)
-    )
-  }, [selectedSetId, isCustomMode, customRange])
+
+    // Map period labels to database data
+    const periodMapping: { [key: string]: PeriodMetrics | undefined } = {
+      'Today': dashboardData?.today,
+      'Yesterday': dashboardData?.yesterday,
+      'Last 7 Days': dashboardData?.last7Days,
+      'Last 30 Days': dashboardData?.last30Days,
+      'Last Month': dashboardData?.lastMonth
+    }
+
+    return selectedSet.periods.map(period => {
+      const dbMetrics = periodMapping[period.label]
+
+      if (dbMetrics) {
+        return generateRealPeriodData(period.label, period.startDate, period.endDate, dbMetrics)
+      }
+
+      // Fallback: return zeros if no data
+      return generateRealPeriodData(period.label, period.startDate, period.endDate, {
+        sales: 0, units: 0, orders: 0, refunds: 0,
+        adSpend: 0, amazonFees: 0, grossProfit: 0, netProfit: 0,
+        margin: 0, roi: 0
+      })
+    })
+  }, [selectedSetId, isCustomMode, customRange, dashboardData])
 
   // Selected period for product table
   const selectedPeriod = periodData[selectedPeriodIndex] || periodData[0]
@@ -387,10 +309,26 @@ export default function NewDashboardClient({
             Welcome back, {profileName}!
           </h1>
           <p className="text-gray-500">
-            {hasAmazonConnection
-              ? 'Your Amazon data is syncing automatically.'
-              : 'Connect your Amazon account to see real data.'}
+            {!hasAmazonConnection
+              ? 'Connect your Amazon account to see real data.'
+              : hasRealData
+                ? 'Showing your real Amazon data.'
+                : 'Amazon connected. Syncing your data...'}
           </p>
+          {/* Data Status Badge */}
+          {hasAmazonConnection && (
+            <div className="mt-2">
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                hasRealData
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-yellow-100 text-yellow-800'
+              }`}>
+                {hasRealData
+                  ? `${products.length} products loaded`
+                  : 'No data yet - sync in Settings'}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Top Bar: Marketplace + Period Selector */}
@@ -436,12 +374,37 @@ export default function NewDashboardClient({
           </p>
         </div>
 
-        {/* Product Table */}
-        <ProductTable
-          products={products}
-          onProductClick={handleProductClick}
-          onSettingsClick={() => setProductSettingsOpen(true)}
-        />
+        {/* Product Table or Empty State */}
+        {products.length > 0 ? (
+          <ProductTable
+            products={products}
+            onProductClick={handleProductClick}
+            onSettingsClick={() => setProductSettingsOpen(true)}
+          />
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+            <div className="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-12 h-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No products yet</h3>
+            <p className="text-gray-500 mb-6 max-w-sm mx-auto">
+              {!hasAmazonConnection
+                ? 'Connect your Amazon account to sync your products and see your sales data.'
+                : 'Your Amazon account is connected. Click below to sync your products.'}
+            </p>
+            <Link
+              href="/dashboard/settings"
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              {!hasAmazonConnection ? 'Connect Amazon Account' : 'Sync Products in Settings'}
+              <svg className="w-4 h-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          </div>
+        )}
       </main>
 
       {/* AI Chat Bar */}
