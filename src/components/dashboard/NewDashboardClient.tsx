@@ -22,6 +22,8 @@ interface DashboardData {
   thisMonth: PeriodMetrics
   lastMonth: PeriodMetrics
   products: DatabaseProduct[]
+  recentOrders?: any[]
+  orderItems?: any[]
   hasRealData: boolean
 }
 
@@ -262,44 +264,64 @@ export default function NewDashboardClient({
 
   const [products, setProducts] = useState<ProductData[]>(initialProducts)
 
+  // Helper function to calculate metrics for any date range
+  const calculateMetricsForDateRange = (startDate: Date, endDate: Date): PeriodMetrics => {
+    // Normalize dates
+    const start = new Date(startDate)
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(endDate)
+    end.setHours(23, 59, 59, 999)
+
+    // Filter orders in date range
+    const filteredOrders = (dashboardData?.recentOrders || []).filter((order: any) => {
+      const orderDate = new Date(order.purchase_date)
+      return orderDate >= start && orderDate <= end
+    })
+
+    // Get order IDs
+    const orderIds = new Set(filteredOrders.map((o: any) => o.amazon_order_id))
+
+    // Filter order items for these orders
+    const filteredItems = (dashboardData?.orderItems || []).filter((item: any) =>
+      orderIds.has(item.amazon_order_id)
+    )
+
+    // Calculate metrics from filtered items
+    const totalSales = filteredItems.reduce((sum: number, item: any) => sum + (item.item_price || 0), 0)
+    const totalUnits = filteredItems.reduce((sum: number, item: any) => sum + (item.quantity_ordered || 0), 0)
+    const estimatedFees = totalSales * 0.15
+    const estimatedAdSpend = totalSales * 0.05
+    const estimatedGrossProfit = totalSales * 0.35
+    const estimatedNetProfit = totalSales * 0.20
+
+    return {
+      sales: totalSales,
+      units: totalUnits,
+      orders: filteredOrders.length,
+      refunds: 0,
+      adSpend: estimatedAdSpend,
+      amazonFees: estimatedFees,
+      grossProfit: estimatedGrossProfit,
+      netProfit: estimatedNetProfit,
+      margin: totalSales > 0 ? (estimatedNetProfit / totalSales) * 100 : 0,
+      roi: estimatedAdSpend > 0 ? (estimatedNetProfit / estimatedAdSpend) * 100 : 0
+    }
+  }
+
   // Generate period data from real database data
   const periodData = useMemo(() => {
     if (isCustomMode && customRange.start && customRange.end) {
-      // For custom mode, use last30Days data as approximation
-      const metrics = dashboardData?.last30Days || {
-        sales: 0, units: 0, orders: 0, refunds: 0,
-        adSpend: 0, amazonFees: 0, grossProfit: 0, netProfit: 0,
-        margin: 0, roi: 0
-      }
+      const metrics = calculateMetricsForDateRange(customRange.start, customRange.end)
       return [generateRealPeriodData('Custom Range', customRange.start, customRange.end, metrics)]
     }
 
-    // Build period data from database
+    // Build period data from database - calculate dynamically for ALL periods
     const selectedSet = PERIOD_SETS.find(s => s.id === selectedSetId) || PERIOD_SETS[0]
 
-    // Map period labels to database data
-    const periodMapping: { [key: string]: PeriodMetrics | undefined } = {
-      'Today': dashboardData?.today,
-      'Yesterday': dashboardData?.yesterday,
-      'Last 7 Days': dashboardData?.last7Days,
-      'Last 30 Days': dashboardData?.last30Days,
-      'This Month': dashboardData?.thisMonth,
-      'Last Month': dashboardData?.lastMonth
-    }
-
     return selectedSet.periods.map(period => {
-      const dbMetrics = periodMapping[period.label]
-
-      if (dbMetrics) {
-        return generateRealPeriodData(period.label, period.startDate, period.endDate, dbMetrics)
-      }
-
-      // Fallback: return zeros if no data
-      return generateRealPeriodData(period.label, period.startDate, period.endDate, {
-        sales: 0, units: 0, orders: 0, refunds: 0,
-        adSpend: 0, amazonFees: 0, grossProfit: 0, netProfit: 0,
-        margin: 0, roi: 0
-      })
+      // Calculate metrics dynamically based on period's startDate and endDate
+      const metrics = calculateMetricsForDateRange(period.startDate, period.endDate)
+      return generateRealPeriodData(period.label, period.startDate, period.endDate, metrics)
     })
   }, [selectedSetId, isCustomMode, customRange, dashboardData])
 
