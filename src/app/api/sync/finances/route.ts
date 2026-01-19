@@ -324,37 +324,44 @@ export async function POST(request: NextRequest) {
     // This allows accurate fee estimation for orders without Finance data
     // =====================================================
     let asinUpdated = 0
-    log(`\n📊 Updating per-ASIN fee data for ${asinFeeData.size} ASINs...`)
+    let asinCreated = 0
+    log(`\n📊 Saving per-SKU fee data for ${asinFeeData.size} SKUs...`)
 
-    for (const [asin, data] of asinFeeData) {
+    for (const [sku, data] of asinFeeData) {
       if (data.totalUnits > 0) {
         const avgFeePerUnit = data.totalFees / data.totalUnits
         const avgFbaFeePerUnit = data.fbaFee / data.totalUnits
         const avgReferralFeePerUnit = data.referralFee / data.totalUnits
 
-        // Update products table with latest fee data
-        // Finance API returns SellerSKU which can be ASIN or SKU
-        const { error } = await supabase
+        // UPSERT: Create product if doesn't exist, update fee data if exists
+        const { error, data: upsertResult } = await supabase
           .from('products')
-          .update({
+          .upsert({
+            user_id: connection.user_id,
+            sku: sku,
+            title: `Product ${sku}`, // Placeholder title
+            is_active: true,
             avg_fee_per_unit: avgFeePerUnit,
             avg_fba_fee_per_unit: avgFbaFeePerUnit,
             avg_referral_fee_per_unit: avgReferralFeePerUnit,
             fee_data_updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'user_id,sku',
+            ignoreDuplicates: false
           })
-          .eq('user_id', connection.user_id)
-          .eq('sku', asin) // SellerSKU from Finance API matches our SKU field
 
         if (!error) {
           asinUpdated++
-          if (asinUpdated <= 3) {
-            log(`   ${asin}: $${avgFeePerUnit.toFixed(2)}/unit (FBA: $${avgFbaFeePerUnit.toFixed(2)}, Referral: $${avgReferralFeePerUnit.toFixed(2)})`)
+          if (asinUpdated <= 5) {
+            log(`   ${sku}: $${avgFeePerUnit.toFixed(2)}/unit (FBA: $${avgFbaFeePerUnit.toFixed(2)}, Referral: $${avgReferralFeePerUnit.toFixed(2)})`)
           }
+        } else {
+          log(`   ⚠️ Error saving ${sku}: ${error.message}`)
         }
       }
     }
 
-    log(`✅ Updated fee data for ${asinUpdated} ASINs`)
+    log(`✅ Saved fee data for ${asinUpdated} SKUs`)
 
     // Get yesterday in PST for comparison
     const now = new Date()
