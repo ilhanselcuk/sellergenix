@@ -3,13 +3,15 @@
  * Runs every 15 minutes via Vercel Cron
  *
  * Syncs:
+ * 0. NEW ORDERS from Amazon (last 3 days) ← CRITICAL!
  * 1. Order items (prices, quantities)
  * 2. Financial events (REAL Amazon fees from Finances API)
+ * 3. Product dimensions
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getOrderItems, listFinancialEvents, getCatalogItem } from '@/lib/amazon-sp-api'
+import { getOrders, getOrderItems, listFinancialEvents, getCatalogItem } from '@/lib/amazon-sp-api'
 import { calculateFBAFee } from '@/lib/services/dimensions-sync'
 
 // Use service role for cron (no user session)
@@ -50,6 +52,7 @@ export async function GET(request: NextRequest) {
 
     log(`📊 Found ${connections.length} active connections`)
 
+    let totalNewOrdersSynced = 0
     let totalOrdersSynced = 0
     let totalItemsSynced = 0
     let usersProcessed = 0
@@ -58,6 +61,93 @@ export async function GET(request: NextRequest) {
       try {
         log(`\n👤 Processing user ${connection.user_id} (${connection.seller_id})...`)
 
+        // ========================================
+        // STEP 0: Sync NEW ORDERS from Amazon (CRITICAL!)
+        // ========================================
+        log(`  📦 Step 0: Fetching new orders from Amazon...`)
+        try {
+          // Get marketplace IDs from connection or use default US
+          const { data: fullConnection } = await supabase
+            .from('amazon_connections')
+            .select('marketplace_ids')
+            .eq('id', connection.id)
+            .single()
+
+          const marketplaceIds = fullConnection?.marketplace_ids || ['ATVPDKIKX0DER']
+
+          // Fetch last 3 days of orders (to catch any we missed)
+          const endDate = new Date()
+          const startDate = new Date()
+          startDate.setDate(startDate.getDate() - 3)
+
+          const ordersResult = await getOrders(
+            connection.refresh_token,
+            marketplaceIds,
+            startDate,
+            endDate
+          )
+
+          if (ordersResult.success && ordersResult.orders) {
+            const orders = ordersResult.orders
+            let newOrdersSaved = 0
+
+            for (const order of orders) {
+              const rawOrder = order as any
+              const orderId = rawOrder.AmazonOrderId || rawOrder.amazonOrderId
+
+              if (!orderId) continue
+
+              const purchaseDate = rawOrder.PurchaseDate || rawOrder.purchaseDate
+              const orderStatus = rawOrder.OrderStatus || rawOrder.orderStatus
+              const fulfillmentChannel = rawOrder.FulfillmentChannel || rawOrder.fulfillmentChannel
+              const orderTotal = rawOrder.OrderTotal || rawOrder.orderTotal
+              const itemsShipped = rawOrder.NumberOfItemsShipped ?? 0
+              const itemsUnshipped = rawOrder.NumberOfItemsUnshipped ?? 0
+              const marketplaceId = rawOrder.MarketplaceId || rawOrder.marketplaceId || 'ATVPDKIKX0DER'
+              const isPrime = rawOrder.IsPrime ?? false
+              const isBusinessOrder = rawOrder.IsBusinessOrder ?? false
+              const shippingAddress = rawOrder.ShippingAddress || rawOrder.shippingAddress
+
+              const { error: upsertError } = await supabase
+                .from('orders')
+                .upsert({
+                  user_id: connection.user_id,
+                  amazon_order_id: orderId,
+                  purchase_date: purchaseDate,
+                  order_status: orderStatus,
+                  fulfillment_channel: fulfillmentChannel,
+                  order_total: orderTotal ? parseFloat(orderTotal.Amount || orderTotal.amount || '0') : 0,
+                  currency_code: orderTotal?.CurrencyCode || orderTotal?.currencyCode || 'USD',
+                  items_shipped: itemsShipped,
+                  items_unshipped: itemsUnshipped,
+                  marketplace_id: marketplaceId,
+                  is_prime: isPrime,
+                  is_business_order: isBusinessOrder,
+                  ship_city: shippingAddress?.City || shippingAddress?.city,
+                  ship_state: shippingAddress?.StateOrRegion || shippingAddress?.stateOrRegion,
+                  ship_country: shippingAddress?.CountryCode || shippingAddress?.countryCode,
+                  updated_at: new Date().toISOString()
+                }, {
+                  onConflict: 'user_id,amazon_order_id'
+                })
+
+              if (!upsertError) {
+                newOrdersSaved++
+              }
+            }
+
+            totalNewOrdersSynced += newOrdersSaved
+            log(`  ✅ Synced ${newOrdersSaved} orders from Amazon (${orders.length} total in last 3 days)`)
+          } else {
+            log(`  ⚠️ Could not fetch orders: ${ordersResult.error || 'Unknown error'}`)
+          }
+        } catch (orderSyncError: any) {
+          log(`  ⚠️ Order sync error: ${orderSyncError.message}`)
+        }
+
+        // ========================================
+        // STEP 1: Sync Order Items (for orders missing items)
+        // ========================================
         // Get orders that need item sync (missing items)
         const { data: allOrders } = await supabase
           .from('orders')
@@ -384,11 +474,12 @@ export async function GET(request: NextRequest) {
 
     const duration = Date.now() - startTime
 
-    log(`\n🎉 Cron complete: ${usersProcessed} users, ${totalOrdersSynced} orders, ${totalItemsSynced} items in ${duration}ms`)
+    log(`\n🎉 Cron complete: ${usersProcessed} users, ${totalNewOrdersSynced} new orders, ${totalItemsSynced} items in ${duration}ms`)
 
     return NextResponse.json({
       success: true,
       usersProcessed,
+      totalNewOrdersSynced,
       totalOrdersSynced,
       totalItemsSynced,
       duration,
