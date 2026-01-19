@@ -42,11 +42,13 @@ export async function GET() {
     console.log('  interval:', interval)
 
     // Call Sales API directly
+    // IMPORTANT: Use only US marketplace to avoid token parsing issues
+    // And pass marketplaceIds as array, not comma-separated string
     const response = await client.callAPI({
       operation: 'getOrderMetrics',
       endpoint: 'sales',
       query: {
-        marketplaceIds: marketplaceIds.join(','),
+        marketplaceIds: ['ATVPDKIKX0DER'], // US only - array format
         interval: interval,
         granularity: 'Total',
         granularityTimeZone: 'America/Los_Angeles',

@@ -58,8 +58,12 @@ export async function getOrderMetrics(
   const client = createAmazonSPAPIClient(refreshToken)
 
   try {
+    // IMPORTANT: Amazon SP-API expects marketplaceIds as array, not comma-separated string
+    // Also, use only the first (primary) marketplace to avoid "decrypting token" errors
+    const primaryMarketplace = params.marketplaceIds[0] || 'ATVPDKIKX0DER'
+
     const query: Record<string, any> = {
-      marketplaceIds: params.marketplaceIds.join(','),
+      marketplaceIds: [primaryMarketplace], // Array format, single marketplace
       interval: params.interval,
       granularity: params.granularity,
     }
