@@ -351,30 +351,30 @@ export async function getDashboardData(userId: string) {
 
   console.log(`📅 Dashboard dates (PST): Today=${today.toISOString().split('T')[0]}, Yesterday=${yesterday.toISOString().split('T')[0]}`)
 
-  // Fetch daily metrics for last 30 days (covers all periods)
+  // Fetch ALL daily metrics (no date filter - show all available data)
   const { data: dailyMetrics, error: metricsError } = await supabase
     .from('daily_metrics')
     .select('*')
     .eq('user_id', userId)
-    .gte('date', last30Days.toISOString().split('T')[0])
     .order('date', { ascending: true })
 
   if (metricsError) {
     console.error('Error fetching dashboard metrics:', metricsError)
   }
 
-  // Fetch recent orders
+  // Fetch ALL orders - no date limit (Amazon provides up to 2 years of data)
+  // We need all data for accurate calculations and historical views
   const { data: recentOrders, error: ordersError } = await supabase
     .from('orders')
     .select('*')
     .eq('user_id', userId)
-    .gte('purchase_date', last30Days.toISOString())
     .order('purchase_date', { ascending: false })
-    .limit(100)
 
   if (ordersError) {
     console.error('Error fetching recent orders:', ordersError)
   }
+
+  console.log(`📦 Fetched ${recentOrders?.length || 0} total orders (all time)`)
 
   // Fetch products with stats from order_items
   const { data: productsData, error: productsError } = await supabase
@@ -392,24 +392,22 @@ export async function getDashboardData(userId: string) {
   const products = productsData || []
   const orders = recentOrders || []
 
-  // Get order IDs from recent orders (last 30 days)
-  const orderIds = orders.map(o => o.amazon_order_id)
+  // Fetch ALL order_items for this user (more efficient than filtering by order_ids)
+  const { data: orderItemsData, error: orderItemsError } = await supabase
+    .from('order_items')
+    .select('*')
+    .eq('user_id', userId)
 
-  // Fetch order_items for these orders
   let orderItems: any[] = []
-  if (orderIds.length > 0) {
-    const { data: orderItemsData, error: orderItemsError } = await supabase
-      .from('order_items')
-      .select('*')
-      .eq('user_id', userId)
-      .in('amazon_order_id', orderIds)
-
-    if (orderItemsError) {
-      console.error('Error fetching order items:', orderItemsError)
-    } else {
-      orderItems = orderItemsData || []
-    }
+  if (orderItemsError) {
+    console.error('Error fetching order items:', orderItemsError)
+  } else {
+    orderItems = orderItemsData || []
+    console.log(`📋 Fetched ${orderItems.length} total order items`)
   }
+
+  // Create order ID set for filtering
+  const orderIds = orders.map(o => o.amazon_order_id)
 
   // Group order items by ASIN
   const itemsByAsin: { [asin: string]: typeof orderItems } = {}
@@ -570,15 +568,24 @@ export async function getDashboardData(userId: string) {
 
   console.log(`📅 Today PST: ${todayStr}, UTC range: ${todayStartUTC.toISOString()} - ${todayEndUTC.toISOString()}`)
 
+  // Calculate period data
+  const todayData = aggregateMetrics(metrics.filter(m => m.date === todayStr), todayStartUTC, todayEndUTC, orderItems)
+  const yesterdayData = aggregateMetrics(metrics.filter(m => m.date === yesterdayStr), yesterdayStartUTC, yesterdayEndUTC, orderItems)
+  const last7DaysData = aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days), last7Days, pstNow, orderItems)
+  const last30DaysData = aggregateMetrics(metrics, last30Days, pstNow, orderItems)
+  const lastMonthData = aggregateMetrics(metrics.filter(m => {
+    const date = new Date(m.date)
+    return date >= lastMonthStart && date <= lastMonthEnd
+  }), lastMonthStart, lastMonthEnd, orderItems)
+
+  console.log(`💰 Period data - Today: $${todayData.sales.toFixed(2)}, Yesterday: $${yesterdayData.sales.toFixed(2)}, Last7D: $${last7DaysData.sales.toFixed(2)}, Last30D: $${last30DaysData.sales.toFixed(2)}, LastMonth: $${lastMonthData.sales.toFixed(2)}`)
+
   return {
-    today: aggregateMetrics(metrics.filter(m => m.date === todayStr), todayStartUTC, todayEndUTC, orderItems),
-    yesterday: aggregateMetrics(metrics.filter(m => m.date === yesterdayStr), yesterdayStartUTC, yesterdayEndUTC, orderItems),
-    last7Days: aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days), last7Days, pstNow, orderItems),
-    last30Days: aggregateMetrics(metrics, last30Days, pstNow, orderItems),
-    lastMonth: aggregateMetrics(metrics.filter(m => {
-      const date = new Date(m.date)
-      return date >= lastMonthStart && date <= lastMonthEnd
-    }), lastMonthStart, lastMonthEnd, orderItems),
+    today: todayData,
+    yesterday: yesterdayData,
+    last7Days: last7DaysData,
+    last30Days: last30DaysData,
+    lastMonth: lastMonthData,
     dailyMetrics: metrics,
     recentOrders: orders,
     orderItems: orderItems,
