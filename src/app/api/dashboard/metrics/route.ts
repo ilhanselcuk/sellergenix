@@ -42,6 +42,8 @@ interface RealFeeData {
 /**
  * Get real fee data from database for a date range
  * Uses order_items.estimated_amazon_fee (which contains REAL fees for shipped orders)
+ *
+ * NOTE: Uses two separate queries because Supabase join requires foreign key relationship
  */
 async function getRealFeesForPeriod(
   userId: string,
@@ -49,25 +51,41 @@ async function getRealFeesForPeriod(
   endDate: Date
 ): Promise<RealFeeData> {
   try {
-    // Query orders and their items in the date range
-    const { data: orders, error } = await supabase
+    // Step 1: Get order IDs in the date range
+    const { data: orders, error: ordersError } = await supabase
       .from('orders')
-      .select(`
-        amazon_order_id,
-        order_status,
-        order_items (
-          estimated_amazon_fee,
-          quantity_shipped,
-          asin
-        )
-      `)
+      .select('amazon_order_id, order_status')
       .eq('user_id', userId)
       .gte('purchase_date', startDate.toISOString())
       .lte('purchase_date', endDate.toISOString())
 
-    if (error || !orders) {
-      console.log('⚠️ Could not fetch orders for fee calculation:', error?.message)
+    if (ordersError || !orders || orders.length === 0) {
+      console.log('⚠️ No orders found for fee calculation in date range:', ordersError?.message)
       return { totalFees: 0, totalCogs: 0, orderCount: 0, feeSource: 'estimated' }
+    }
+
+    const orderIds = orders.map(o => o.amazon_order_id)
+    console.log(`📊 Found ${orderIds.length} orders in date range for fee calculation`)
+
+    // Step 2: Get order items for these orders
+    const { data: items, error: itemsError } = await supabase
+      .from('order_items')
+      .select('amazon_order_id, estimated_amazon_fee, quantity_shipped, asin')
+      .eq('user_id', userId)
+      .in('amazon_order_id', orderIds)
+
+    if (itemsError) {
+      console.log('⚠️ Could not fetch order items:', itemsError.message)
+      return { totalFees: 0, totalCogs: 0, orderCount: orders.length, feeSource: 'estimated' }
+    }
+
+    // Group items by order
+    const itemsByOrder = new Map<string, typeof items>()
+    for (const item of items || []) {
+      if (!itemsByOrder.has(item.amazon_order_id)) {
+        itemsByOrder.set(item.amazon_order_id, [])
+      }
+      itemsByOrder.get(item.amazon_order_id)!.push(item)
     }
 
     let totalFees = 0
@@ -76,10 +94,10 @@ async function getRealFeesForPeriod(
     let ordersWithEstimatedFees = 0
 
     for (const order of orders) {
-      const items = (order as any).order_items || []
+      const orderItems = itemsByOrder.get(order.amazon_order_id) || []
       let orderHasRealFees = false
 
-      for (const item of items) {
+      for (const item of orderItems) {
         if (item.estimated_amazon_fee && item.quantity_shipped) {
           totalFees += item.estimated_amazon_fee * item.quantity_shipped
           orderHasRealFees = true
@@ -108,13 +126,10 @@ async function getRealFeesForPeriod(
       }
     }
 
-    // Calculate total COGS
-    for (const order of orders) {
-      const items = (order as any).order_items || []
-      for (const item of items) {
-        if (item.asin && item.quantity_shipped && cogsMap.has(item.asin)) {
-          totalCogs += cogsMap.get(item.asin)! * item.quantity_shipped
-        }
+    // Calculate total COGS from order items
+    for (const item of items || []) {
+      if (item.asin && item.quantity_shipped && cogsMap.has(item.asin)) {
+        totalCogs += cogsMap.get(item.asin)! * item.quantity_shipped
       }
     }
 
