@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useSearchParams, useRouter } from 'next/navigation'
 import MarketplaceSelector from '@/components/dashboard/MarketplaceSelector'
 import PeriodSelector, { PERIOD_SETS } from '@/components/dashboard/PeriodSelector'
 import PeriodCardsGrid from '@/components/dashboard/PeriodCardsGrid'
@@ -156,6 +157,82 @@ export default function NewDashboardClient({
   const [breakdownModalData, setBreakdownModalData] = useState<PeriodData | null>(null)
   const [productSettingsOpen, setProductSettingsOpen] = useState(false)
 
+  // Auto-sync and refresh state
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState('')
+
+  // Check for auto_sync param and start sync automatically
+  useEffect(() => {
+    const autoSync = searchParams.get('auto_sync')
+    if (autoSync === 'true' && hasAmazonConnection) {
+      // Remove the param from URL
+      const url = new URL(window.location.href)
+      url.searchParams.delete('auto_sync')
+      router.replace(url.pathname + url.search)
+
+      // Start sync automatically
+      startSync()
+    }
+  }, [searchParams, hasAmazonConnection])
+
+  // Start sync function
+  const startSync = useCallback(async () => {
+    if (isSyncing) return
+
+    setIsSyncing(true)
+    setSyncMessage('Starting sync...')
+
+    try {
+      const response = await fetch('/api/sync/start', { method: 'POST' })
+      const data = await response.json()
+
+      if (data.success) {
+        setSyncMessage('Sync started! Data will appear as it syncs...')
+      } else {
+        setSyncMessage(`Sync error: ${data.error || 'Unknown error'}`)
+        setIsSyncing(false)
+      }
+    } catch (error) {
+      setSyncMessage('Failed to start sync')
+      setIsSyncing(false)
+    }
+  }, [isSyncing])
+
+  // Auto-refresh while syncing (every 10 seconds)
+  useEffect(() => {
+    if (!isSyncing) return
+
+    const refreshInterval = setInterval(async () => {
+      // Check sync status
+      try {
+        const response = await fetch('/api/sync/status')
+        const data = await response.json()
+
+        if (data.job) {
+          const { status, recordsSynced } = data.job
+
+          if (status === 'completed' || status === 'failed') {
+            setIsSyncing(false)
+            setSyncMessage(status === 'completed' ? 'Sync completed!' : 'Sync failed')
+
+            // Refresh page to show new data
+            setTimeout(() => {
+              window.location.reload()
+            }, 1000)
+          } else if (status === 'running') {
+            setSyncMessage(`Syncing... ${recordsSynced || 0} records so far`)
+          }
+        }
+      } catch (error) {
+        // Ignore status check errors, keep polling
+      }
+    }, 10000) // Check every 10 seconds
+
+    return () => clearInterval(refreshInterval)
+  }, [isSyncing])
+
   // Onboarding popup - show if no Amazon connection
   const [showOnboarding, setShowOnboarding] = useState(!hasAmazonConnection)
 
@@ -307,6 +384,14 @@ export default function NewDashboardClient({
     <div className="min-h-screen bg-gray-50">
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-32">
+        {/* Sync Status Banner */}
+        {isSyncing && (
+          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-3">
+            <div className="animate-spin w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+            <span className="text-blue-800 font-medium">{syncMessage}</span>
+          </div>
+        )}
+
         {/* Welcome Message */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">
@@ -398,15 +483,28 @@ export default function NewDashboardClient({
                 ? 'Connect your Amazon account to sync your products and see your sales data.'
                 : 'Your Amazon account is connected. Click below to sync your products.'}
             </p>
-            <Link
-              href="/dashboard/settings"
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              {!hasAmazonConnection ? 'Connect Amazon Account' : 'Sync Products in Settings'}
-              <svg className="w-4 h-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
+            {!hasAmazonConnection ? (
+              <a
+                href="/api/amazon/auth"
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Connect Amazon Account
+                <svg className="w-4 h-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </a>
+            ) : (
+              <button
+                onClick={startSync}
+                disabled={isSyncing}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {isSyncing ? 'Syncing...' : 'Sync Products Now'}
+                <svg className="w-4 h-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            )}
           </div>
         )}
       </main>
@@ -477,8 +575,8 @@ export default function NewDashboardClient({
 
               {/* Actions */}
               <div className="space-y-3">
-                <Link
-                  href="/dashboard/settings"
+                <a
+                  href="/api/amazon/auth"
                   className="flex items-center justify-center w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
                   onClick={() => setShowOnboarding(false)}
                 >
@@ -486,7 +584,7 @@ export default function NewDashboardClient({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                   </svg>
                   Connect Amazon Account
-                </Link>
+                </a>
                 <button
                   onClick={() => setShowOnboarding(false)}
                   className="w-full px-6 py-3 text-gray-600 font-medium rounded-xl hover:bg-gray-100 transition-colors"

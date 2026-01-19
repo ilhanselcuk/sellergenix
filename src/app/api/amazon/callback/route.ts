@@ -114,19 +114,8 @@ export async function GET(request: NextRequest) {
 
     console.log('✅ Amazon connection saved successfully!')
 
-    // Start background sync (fire and forget)
-    try {
-      fetch(`${baseUrl}/api/amazon/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
-      }).catch(() => {}) // Ignore errors, sync runs in background
-    } catch (e) {
-      // Ignore - background sync is not critical for redirect
-    }
-
-    // Redirect directly to main dashboard - sync happens in background
-    return NextResponse.redirect(`${baseUrl}/dashboard`)
+    // Redirect to dashboard with auto_sync flag to trigger sync
+    return NextResponse.redirect(`${baseUrl}/dashboard?auto_sync=true`)
   } catch (error: any) {
     console.error('❌ OAuth callback error:', error)
     return NextResponse.redirect(`${baseUrl}/dashboard/amazon?error=unknown`)
