@@ -265,17 +265,32 @@ export default function NewDashboardClient({
   const [products, setProducts] = useState<ProductData[]>(initialProducts)
 
   // Helper function to calculate metrics for any date range
+  // IMPORTANT: Amazon US uses PST timezone. We must convert dates to PST for accurate filtering.
   const calculateMetricsForDateRange = (startDate: Date, endDate: Date): PeriodMetrics => {
-    // Normalize dates
-    const start = new Date(startDate)
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(endDate)
-    end.setHours(23, 59, 59, 999)
+    // Convert selected dates to PST range in UTC
+    // PST = UTC - 8 hours
+    // So Jan 3 00:00 PST = Jan 3 08:00 UTC
+    // And Jan 3 23:59:59 PST = Jan 4 07:59:59 UTC
 
-    // Filter orders in date range
+    // Get year, month, day from the input dates (treating them as PST dates)
+    const startYear = startDate.getFullYear()
+    const startMonth = startDate.getMonth()
+    const startDay = startDate.getDate()
+
+    const endYear = endDate.getFullYear()
+    const endMonth = endDate.getMonth()
+    const endDay = endDate.getDate()
+
+    // Create UTC times that represent PST midnight and end of day
+    // PST midnight = UTC 08:00 same day
+    const pstStartUTC = new Date(Date.UTC(startYear, startMonth, startDay, 8, 0, 0, 0))
+    // PST 23:59:59.999 = UTC next day 07:59:59.999
+    const pstEndUTC = new Date(Date.UTC(endYear, endMonth, endDay + 1, 7, 59, 59, 999))
+
+    // Filter orders in PST date range
     const filteredOrders = (dashboardData?.recentOrders || []).filter((order: any) => {
       const orderDate = new Date(order.purchase_date)
-      return orderDate >= start && orderDate <= end
+      return orderDate >= pstStartUTC && orderDate <= pstEndUTC
     })
 
     // Get order IDs
