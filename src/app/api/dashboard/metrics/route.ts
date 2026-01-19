@@ -114,9 +114,13 @@ export async function GET(request: Request) {
       })
     }
 
-    const marketplaceIds = connection.marketplace_ids || ['ATVPDKIKX0DER']
+    // IMPORTANT: Always use US marketplace for Sales API
+    // The connection.marketplace_ids might have other marketplaces first (like Mexico)
+    // but the seller's actual sales are in US (ATVPDKIKX0DER)
+    const marketplaceIds = ['ATVPDKIKX0DER'] // Force US marketplace
 
     console.log('📊 Fetching Sales API metrics for dashboard...')
+    console.log('📊 Using marketplace:', marketplaceIds[0])
 
     // Fetch metrics from Amazon Sales API
     console.log('🚀 Calling getAllPeriodSalesMetrics...')
