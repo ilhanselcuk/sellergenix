@@ -43,6 +43,22 @@ export interface CatalogItem {
       value: number
     }[]
   }[]
+  // Product dimensions for FBA fee calculation
+  dimensions?: {
+    marketplaceId: string
+    item?: {
+      length?: { value: number; unit: string }
+      width?: { value: number; unit: string }
+      height?: { value: number; unit: string }
+      weight?: { value: number; unit: string }
+    }
+    package?: {
+      length?: { value: number; unit: string }
+      width?: { value: number; unit: string }
+      height?: { value: number; unit: string }
+      weight?: { value: number; unit: string }
+    }
+  }[]
   attributes?: Record<string, any>
 }
 
@@ -314,7 +330,8 @@ export async function getCatalogItem(
   try {
     const url = new URL(`${endpoint}/catalog/2022-04-01/items/${asin}`)
     url.searchParams.set('marketplaceIds', marketplaceId)
-    url.searchParams.set('includedData', 'summaries,images,salesRanks,attributes')
+    // Include dimensions for FBA fee calculation
+    url.searchParams.set('includedData', 'summaries,images,salesRanks,attributes,dimensions')
 
     const response = await fetch(url.toString(), {
       method: 'GET',

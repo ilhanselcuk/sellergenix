@@ -9,7 +9,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getOrderItems, listFinancialEvents, calculateProfitMetrics } from '@/lib/amazon-sp-api'
+import { getOrderItems, listFinancialEvents, getCatalogItem } from '@/lib/amazon-sp-api'
+import { calculateFBAFee } from '@/lib/services/dimensions-sync'
 
 // Use service role for cron (no user session)
 const supabase = createClient(
@@ -295,6 +296,77 @@ export async function GET(request: NextRequest) {
           }
         } catch (financeError: any) {
           log(`  ⚠️ Finance sync error: ${financeError.message}`)
+        }
+
+        // ========================================
+        // STEP 3: Sync Product Dimensions (for FBA fee calculation)
+        // ========================================
+        log(`  📏 Syncing product dimensions...`)
+        try {
+          // Get products without dimensions (limit to 5 per cron run to stay within rate limits)
+          const { data: productsNeedingDimensions } = await supabase
+            .from('products')
+            .select('id, asin')
+            .eq('user_id', connection.user_id)
+            .or('weight_lbs.is.null,length_inches.is.null')
+            .limit(5)
+
+          let dimensionsSynced = 0
+          for (const product of productsNeedingDimensions || []) {
+            if (!product.asin) continue
+
+            try {
+              const catalogItem = await getCatalogItem(connection.refresh_token, product.asin)
+              if (!catalogItem) continue
+
+              const dimensionData = (catalogItem as any).dimensions?.[0]
+              const dims = dimensionData?.package || dimensionData?.item
+
+              if (dims) {
+                // Convert to inches/pounds
+                const toInches = (v: number, u: string) => {
+                  if (u.toLowerCase().includes('cm')) return v / 2.54
+                  if (u.toLowerCase().includes('mm')) return v / 25.4
+                  return v
+                }
+                const toPounds = (v: number, u: string) => {
+                  if (u.toLowerCase().includes('kg')) return v * 2.205
+                  if (u.toLowerCase().includes('g') && !u.toLowerCase().includes('kg')) return v / 453.592
+                  if (u.toLowerCase().includes('oz')) return v / 16
+                  return v
+                }
+
+                const lengthInches = dims.length ? toInches(dims.length.value, dims.length.unit) : null
+                const widthInches = dims.width ? toInches(dims.width.value, dims.width.unit) : null
+                const heightInches = dims.height ? toInches(dims.height.value, dims.height.unit) : null
+                const weightLbs = dims.weight ? toPounds(dims.weight.value, dims.weight.unit) : null
+
+                await supabase
+                  .from('products')
+                  .update({
+                    length_inches: lengthInches,
+                    width_inches: widthInches,
+                    height_inches: heightInches,
+                    weight_lbs: weightLbs,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', product.id)
+
+                dimensionsSynced++
+              }
+
+              // Rate limiting
+              await new Promise(resolve => setTimeout(resolve, 200))
+            } catch (dimErr: any) {
+              log(`    ⚠️ Dimension error for ${product.asin}: ${dimErr.message}`)
+            }
+          }
+
+          if (dimensionsSynced > 0) {
+            log(`  ✅ Synced dimensions for ${dimensionsSynced} products`)
+          }
+        } catch (dimError: any) {
+          log(`  ⚠️ Dimensions sync error: ${dimError.message}`)
         }
 
         // Update last_sync_at
