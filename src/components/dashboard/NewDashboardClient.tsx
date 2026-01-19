@@ -162,6 +162,7 @@ export default function NewDashboardClient({
   const router = useRouter()
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState('')
+  const [syncProgress, setSyncProgress] = useState({ total: 0, synced: 0, remaining: 0 })
 
   // Check for auto_sync param and start sync automatically
   useEffect(() => {
@@ -173,64 +174,69 @@ export default function NewDashboardClient({
       router.replace(url.pathname + url.search)
 
       // Start sync automatically
-      startSync()
+      startBatchSync()
     }
   }, [searchParams, hasAmazonConnection])
 
-  // Start sync function
-  const startSync = useCallback(async () => {
+  // Start batch sync function - loops automatically until complete
+  const startBatchSync = useCallback(async () => {
     if (isSyncing) return
 
     setIsSyncing(true)
-    setSyncMessage('Starting sync...')
+    setSyncMessage('Starting order items sync...')
+    setSyncProgress({ total: 0, synced: 0, remaining: 0 })
 
-    try {
-      const response = await fetch('/api/sync/start', { method: 'POST' })
-      const data = await response.json()
+    let keepSyncing = true
+    let totalItemsSaved = 0
 
-      if (data.success) {
-        setSyncMessage('Sync started! Data will appear as it syncs...')
-      } else {
-        setSyncMessage(`Sync error: ${data.error || 'Unknown error'}`)
-        setIsSyncing(false)
-      }
-    } catch (error) {
-      setSyncMessage('Failed to start sync')
-      setIsSyncing(false)
-    }
-  }, [isSyncing])
-
-  // Auto-refresh while syncing (every 10 seconds)
-  useEffect(() => {
-    if (!isSyncing) return
-
-    const refreshInterval = setInterval(async () => {
-      // Check sync status
+    while (keepSyncing) {
       try {
-        const response = await fetch('/api/sync/status')
+        const response = await fetch('/api/sync-order-items-batch?batch=15')
         const data = await response.json()
 
-        if (data.job) {
-          const { status, recordsSynced } = data.job
-
-          if (status === 'completed' || status === 'failed') {
-            setIsSyncing(false)
-            setSyncMessage(status === 'completed' ? 'Sync completed!' : 'Sync failed')
-
-            // Refresh page to show new data
-            setTimeout(() => {
-              window.location.reload()
-            }, 1000)
-          } else if (status === 'running') {
-            setSyncMessage(`Syncing... ${recordsSynced || 0} records so far`)
-          }
+        if (data.error) {
+          setSyncMessage(`Sync error: ${data.error}`)
+          keepSyncing = false
+          break
         }
-      } catch (error) {
-        // Ignore status check errors, keep polling
-      }
-    }, 10000) // Check every 10 seconds
 
-    return () => clearInterval(refreshInterval)
+        // Update progress
+        setSyncProgress({
+          total: data.total || 0,
+          synced: data.synced || 0,
+          remaining: data.remaining || 0
+        })
+        totalItemsSaved += data.itemsSaved || 0
+
+        const progressPercent = data.total > 0
+          ? Math.round((data.synced / data.total) * 100)
+          : 0
+
+        setSyncMessage(
+          `Syncing orders... ${data.synced}/${data.total} (${progressPercent}%) - ${totalItemsSaved} items saved`
+        )
+
+        // Check if complete
+        if (data.remaining === 0) {
+          keepSyncing = false
+          setSyncMessage(`Sync complete! ${totalItemsSaved} items synced from ${data.total} orders.`)
+
+          // Wait a moment then refresh
+          setTimeout(() => {
+            window.location.reload()
+          }, 2000)
+        }
+
+        // Small delay between batches to prevent overwhelming
+        await new Promise(resolve => setTimeout(resolve, 500))
+
+      } catch (error: any) {
+        setSyncMessage(`Sync error: ${error.message}`)
+        keepSyncing = false
+      }
+    }
+
+    setIsSyncing(false)
   }, [isSyncing])
 
   // Onboarding popup - show if no Amazon connection
@@ -384,11 +390,22 @@ export default function NewDashboardClient({
     <div className="min-h-screen bg-gray-50">
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-32">
-        {/* Sync Status Banner */}
+        {/* Sync Status Banner with Progress Bar */}
         {isSyncing && (
-          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-3">
-            <div className="animate-spin w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-            <span className="text-blue-800 font-medium">{syncMessage}</span>
+          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="animate-spin w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+              <span className="text-blue-800 font-medium">{syncMessage}</span>
+            </div>
+            {/* Progress Bar */}
+            {syncProgress.total > 0 && (
+              <div className="w-full bg-blue-200 rounded-full h-2.5">
+                <div
+                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.round((syncProgress.synced / syncProgress.total) * 100)}%` }}
+                ></div>
+              </div>
+            )}
           </div>
         )}
 
@@ -495,14 +512,23 @@ export default function NewDashboardClient({
               </a>
             ) : (
               <button
-                onClick={startSync}
+                onClick={startBatchSync}
                 disabled={isSyncing}
                 className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
-                {isSyncing ? 'Syncing...' : 'Sync Products Now'}
-                <svg className="w-4 h-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
+                {isSyncing ? (
+                  <>
+                    <div className="animate-spin w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full"></div>
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    Sync All Orders
+                    <svg className="w-4 h-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </>
+                )}
               </button>
             )}
           </div>
