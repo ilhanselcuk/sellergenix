@@ -501,6 +501,7 @@ export async function getDashboardData(userId: string) {
   // orders is already defined above
 
   // Create product lookup map for dimensions AND historical fee data
+  // CRITICAL: Don't overwrite entries that have fee data with entries that don't!
   const productDataMap = new Map<string, {
     weight: number | null
     length: number | null
@@ -512,32 +513,51 @@ export async function getDashboardData(userId: string) {
     avgFbaFeePerUnit: number | null
     avgReferralFeePerUnit: number | null
   }>()
+
+  // Helper to check if we should overwrite existing entry
+  const shouldOverwrite = (existing: any, newData: any): boolean => {
+    // If existing has fee data and new doesn't, don't overwrite
+    if (existing?.avgFeePerUnit && existing.avgFeePerUnit > 0) {
+      if (!newData.avgFeePerUnit || newData.avgFeePerUnit <= 0) {
+        return false // Keep the one with fee data
+      }
+    }
+    return true // Otherwise, overwrite (newer or has fee data)
+  }
+
   for (const p of products) {
+    const newData = {
+      weight: p.weight_lbs,
+      length: p.length_inches,
+      width: p.width_inches,
+      height: p.height_inches,
+      cogs: p.cogs,
+      // Historical fee data from Finance API sync
+      avgFeePerUnit: (p as any).avg_fee_per_unit || null,
+      avgFbaFeePerUnit: (p as any).avg_fba_fee_per_unit || null,
+      avgReferralFeePerUnit: (p as any).avg_referral_fee_per_unit || null,
+    }
+
     if (p.asin) {
-      productDataMap.set(p.asin, {
-        weight: p.weight_lbs,
-        length: p.length_inches,
-        width: p.width_inches,
-        height: p.height_inches,
-        cogs: p.cogs,
-        // Historical fee data from Finance API sync
-        avgFeePerUnit: (p as any).avg_fee_per_unit || null,
-        avgFbaFeePerUnit: (p as any).avg_fba_fee_per_unit || null,
-        avgReferralFeePerUnit: (p as any).avg_referral_fee_per_unit || null,
-      })
+      const existing = productDataMap.get(p.asin)
+      if (!existing || shouldOverwrite(existing, newData)) {
+        productDataMap.set(p.asin, newData)
+      }
     }
     // Also map by SKU for matching
     if (p.sku) {
-      productDataMap.set(p.sku, {
-        weight: p.weight_lbs,
-        length: p.length_inches,
-        width: p.width_inches,
-        height: p.height_inches,
-        cogs: p.cogs,
-        avgFeePerUnit: (p as any).avg_fee_per_unit || null,
-        avgFbaFeePerUnit: (p as any).avg_fba_fee_per_unit || null,
-        avgReferralFeePerUnit: (p as any).avg_referral_fee_per_unit || null,
-      })
+      const existing = productDataMap.get(p.sku)
+      if (!existing || shouldOverwrite(existing, newData)) {
+        productDataMap.set(p.sku, newData)
+      }
+    }
+  }
+
+  // Debug log: Show SKU fee data found
+  console.log('📊 Product fee data loaded:')
+  for (const [key, data] of productDataMap) {
+    if (data.avgFeePerUnit && data.avgFeePerUnit > 0) {
+      console.log(`   ${key}: $${data.avgFeePerUnit.toFixed(2)}/unit`)
     }
   }
 
@@ -548,14 +568,19 @@ export async function getDashboardData(userId: string) {
   const calculateFBAFeeForItem = (asin: string, sellerSku: string | null, itemPrice: number, quantity: number): number => {
     // Try lookup by ASIN first, then by SKU
     let data = productDataMap.get(asin)
+    let lookupMethod = data ? `ASIN:${asin}` : ''
+
     if (!data?.avgFeePerUnit && sellerSku) {
       data = productDataMap.get(sellerSku)
+      lookupMethod = data ? `SKU:${sellerSku}` : 'NONE'
     }
 
     // PRIORITY 1: Use historical fee data from Finance API (Sellerboard style!)
     // This is the most accurate because it uses REAL fees for this exact SKU
     if (data?.avgFeePerUnit && data.avgFeePerUnit > 0) {
-      return data.avgFeePerUnit * quantity
+      const fee = data.avgFeePerUnit * quantity
+      console.log(`💰 Fee calc [${lookupMethod}]: $${data.avgFeePerUnit.toFixed(2)}/unit × ${quantity} = $${fee.toFixed(2)}`)
+      return fee
     }
 
     // PRIORITY 2: Calculate from dimensions if available
@@ -610,7 +635,9 @@ export async function getDashboardData(userId: string) {
     }
 
     // PRIORITY 3: Fallback to 15% estimate
-    return itemPrice * 0.15
+    const fallbackFee = itemPrice * 0.15
+    console.log(`⚠️ Fee calc FALLBACK [ASIN:${asin} SKU:${sellerSku}]: 15% of $${itemPrice.toFixed(2)} = $${fallbackFee.toFixed(2)}`)
+    return fallbackFee
   }
 
   // Helper to aggregate from order_items for accurate sales calculation
