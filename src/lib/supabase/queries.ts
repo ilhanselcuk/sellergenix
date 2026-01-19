@@ -542,14 +542,18 @@ export async function getDashboardData(userId: string) {
   }
 
   // Helper to calculate FBA fee - PRIORITY ORDER:
-  // 1. Historical Finance API data (most accurate - real fees from same ASIN)
+  // 1. Historical Finance API data (most accurate - real fees from same SKU)
   // 2. Dimension-based calculation (accurate if dimensions are set)
   // 3. 15% estimate (fallback)
-  const calculateFBAFeeForItem = (asin: string, itemPrice: number, quantity: number): number => {
-    const data = productDataMap.get(asin)
+  const calculateFBAFeeForItem = (asin: string, sellerSku: string | null, itemPrice: number, quantity: number): number => {
+    // Try lookup by ASIN first, then by SKU
+    let data = productDataMap.get(asin)
+    if (!data?.avgFeePerUnit && sellerSku) {
+      data = productDataMap.get(sellerSku)
+    }
 
     // PRIORITY 1: Use historical fee data from Finance API (Sellerboard style!)
-    // This is the most accurate because it uses REAL fees for this exact ASIN
+    // This is the most accurate because it uses REAL fees for this exact SKU
     if (data?.avgFeePerUnit && data.avgFeePerUnit > 0) {
       return data.avgFeePerUnit * quantity
     }
@@ -640,17 +644,21 @@ export async function getDashboardData(userId: string) {
     let totalFees = 0
     let totalCogs = 0
     for (const item of relevantItems) {
-      const asin = item.asin
+      const asin = item.asin || ''
+      const sellerSku = item.seller_sku || null
       const itemPrice = item.item_price || 0
       const quantity = item.quantity_ordered || 1
 
-      // FBA + Referral fees
-      totalFees += calculateFBAFeeForItem(asin, itemPrice, quantity)
+      // FBA + Referral fees (looks up by ASIN first, then by SKU)
+      totalFees += calculateFBAFeeForItem(asin, sellerSku, itemPrice, quantity)
 
-      // COGS from product data
-      const dims = productDataMap.get(asin)
-      if (dims?.cogs) {
-        totalCogs += dims.cogs * quantity
+      // COGS from product data (try ASIN first, then SKU)
+      let productData = productDataMap.get(asin)
+      if (!productData?.cogs && sellerSku) {
+        productData = productDataMap.get(sellerSku)
+      }
+      if (productData?.cogs) {
+        totalCogs += productData.cogs * quantity
       }
     }
 
