@@ -155,6 +155,9 @@ export default function NewDashboardClient({
   const [breakdownModalData, setBreakdownModalData] = useState<PeriodData | null>(null)
   const [productSettingsOpen, setProductSettingsOpen] = useState(false)
 
+  // Onboarding popup - show if no Amazon connection
+  const [showOnboarding, setShowOnboarding] = useState(!hasAmazonConnection)
+
   // Product state - use real data if available, otherwise empty array
   const initialProducts = useMemo(() => {
     if (dashboardData?.products && dashboardData.products.length > 0) {
@@ -423,6 +426,77 @@ export default function NewDashboardClient({
         products={products}
         onSave={handleCostsSave}
       />
+
+      {/* Onboarding Popup - Welcome & Connect Amazon */}
+      {showOnboarding && !hasAmazonConnection && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
+            {/* Header with gradient */}
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-8 text-center">
+              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">Welcome to SellerGenix!</h2>
+              <p className="text-white/80">Let's connect your Amazon account to get started</p>
+            </div>
+
+            {/* Content */}
+            <div className="px-6 py-8">
+              <div className="space-y-4 mb-8">
+                <div className="flex items-start gap-4">
+                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <span className="text-blue-600 font-bold text-sm">1</span>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Connect your Amazon account</h3>
+                    <p className="text-sm text-gray-500">Securely link your seller account to start tracking</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-4">
+                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                    <span className="text-purple-600 font-bold text-sm">2</span>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">We sync your data automatically</h3>
+                    <p className="text-sm text-gray-500">Orders, products, and profits - all in one place</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-4">
+                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                    <span className="text-green-600 font-bold text-sm">3</span>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">See your real-time analytics</h3>
+                    <p className="text-sm text-gray-500">Track sales, profits, and optimize your business</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="space-y-3">
+                <Link
+                  href="/dashboard/settings"
+                  className="flex items-center justify-center w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
+                  onClick={() => setShowOnboarding(false)}
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                  </svg>
+                  Connect Amazon Account
+                </Link>
+                <button
+                  onClick={() => setShowOnboarding(false)}
+                  className="w-full px-6 py-3 text-gray-600 font-medium rounded-xl hover:bg-gray-100 transition-colors"
+                >
+                  I'll do this later
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
