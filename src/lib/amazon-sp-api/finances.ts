@@ -80,8 +80,8 @@ export async function listFinancialEventGroups(
 
     return {
       success: true,
-      data: response.payload?.FinancialEventGroupList || [],
-      nextToken: response.payload?.NextToken,
+      data: response.FinancialEventGroupList || response.payload?.FinancialEventGroupList || [],
+      nextToken: response.NextToken || response.payload?.NextToken,
     }
   } catch (error) {
     console.error('Failed to list financial event groups:', error)
@@ -128,7 +128,8 @@ export async function listFinancialEvents(
       query: params,
     })
 
-    const payload = response.payload?.FinancialEvents || {}
+    // API returns FinancialEvents directly, not under payload
+    const payload = response.FinancialEvents || response.payload?.FinancialEvents || {}
 
     return {
       success: true,
@@ -139,7 +140,7 @@ export async function listFinancialEvents(
         adjustmentEvents: payload.AdjustmentEventList || [],
         chargebackEvents: payload.ChargebackEventList || [],
       },
-      nextToken: response.payload?.NextToken,
+      nextToken: response.NextToken || response.payload?.NextToken,
     }
   } catch (error) {
     console.error('Failed to list financial events:', error)
@@ -176,7 +177,8 @@ export async function getFinancialEventsByGroup(
       },
     })
 
-    const payload = response.payload?.FinancialEvents || {}
+    // API returns FinancialEvents directly, not under payload
+    const payload = response.FinancialEvents || response.payload?.FinancialEvents || {}
 
     return {
       success: true,
