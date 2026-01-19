@@ -59,3 +59,16 @@ export {
   calculateOrderMetrics,
 } from './orders'
 export type { Order, OrderItem } from './orders'
+
+// Sales API (Aggregate Metrics - MORE RELIABLE!)
+export {
+  getOrderMetrics,
+  getTodaySalesMetrics,
+  getYesterdaySalesMetrics,
+  getThisMonthSalesMetrics,
+  getLastMonthSalesMetrics,
+  getDailySalesMetrics,
+  getAllPeriodSalesMetrics,
+  createInterval,
+} from './sales'
+export type { OrderMetrics, GetOrderMetricsParams } from './sales'
