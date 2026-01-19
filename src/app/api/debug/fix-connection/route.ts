@@ -50,7 +50,7 @@ export async function GET() {
           console.log('Testing refresh token validity...')
           const profileResult = await getSellerProfile(mostRecentInactive.refresh_token)
 
-          if (profileResult.success) {
+          if (profileResult.success && profileResult.data) {
             console.log('Refresh token is valid! Reactivating connection...')
 
             // Reactivate the connection
@@ -69,9 +69,11 @@ export async function GET() {
             } else {
               console.log('Connection reactivated successfully!')
               fixedConnection = updated
+              // Extract seller info from the data
+              const marketplaces = Array.isArray(profileResult.data) ? profileResult.data : []
               validationResult = {
-                sellerId: profileResult.sellerId,
-                marketplaces: profileResult.marketplaces?.length || 0
+                message: 'Token valid, connection reactivated',
+                marketplaces: marketplaces.length
               }
             }
           } else {
