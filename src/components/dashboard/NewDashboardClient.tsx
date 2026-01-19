@@ -19,6 +19,7 @@ interface DashboardData {
   yesterday: PeriodMetrics
   last7Days: PeriodMetrics
   last30Days: PeriodMetrics
+  thisMonth: PeriodMetrics
   lastMonth: PeriodMetrics
   products: DatabaseProduct[]
   hasRealData: boolean
@@ -282,6 +283,7 @@ export default function NewDashboardClient({
       'Yesterday': dashboardData?.yesterday,
       'Last 7 Days': dashboardData?.last7Days,
       'Last 30 Days': dashboardData?.last30Days,
+      'This Month': dashboardData?.thisMonth,
       'Last Month': dashboardData?.lastMonth
     }
 

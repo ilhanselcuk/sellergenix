@@ -349,6 +349,9 @@ export async function getDashboardData(userId: string) {
   const lastMonthStart = new Date(pstNow.getFullYear(), pstNow.getMonth() - 1, 1)
   const lastMonthEnd = new Date(pstNow.getFullYear(), pstNow.getMonth(), 0)
 
+  // This Month: From 1st of current month to today
+  const thisMonthStart = new Date(pstNow.getFullYear(), pstNow.getMonth(), 1)
+
   console.log(`📅 Dashboard dates (PST): Today=${today.toISOString().split('T')[0]}, Yesterday=${yesterday.toISOString().split('T')[0]}`)
 
   // Fetch ALL daily metrics (no date filter - show all available data)
@@ -568,23 +571,32 @@ export async function getDashboardData(userId: string) {
 
   console.log(`📅 Today PST: ${todayStr}, UTC range: ${todayStartUTC.toISOString()} - ${todayEndUTC.toISOString()}`)
 
+  // This Month UTC range
+  const thisMonthStartUTC = new Date(thisMonthStart)
+  thisMonthStartUTC.setUTCHours(8, 0, 0, 0) // PST midnight = UTC 08:00
+
   // Calculate period data
   const todayData = aggregateMetrics(metrics.filter(m => m.date === todayStr), todayStartUTC, todayEndUTC, orderItems)
   const yesterdayData = aggregateMetrics(metrics.filter(m => m.date === yesterdayStr), yesterdayStartUTC, yesterdayEndUTC, orderItems)
   const last7DaysData = aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days), last7Days, pstNow, orderItems)
   const last30DaysData = aggregateMetrics(metrics, last30Days, pstNow, orderItems)
+  const thisMonthData = aggregateMetrics(metrics.filter(m => {
+    const date = new Date(m.date)
+    return date >= thisMonthStart && date <= today
+  }), thisMonthStartUTC, todayEndUTC, orderItems)
   const lastMonthData = aggregateMetrics(metrics.filter(m => {
     const date = new Date(m.date)
     return date >= lastMonthStart && date <= lastMonthEnd
   }), lastMonthStart, lastMonthEnd, orderItems)
 
-  console.log(`💰 Period data - Today: $${todayData.sales.toFixed(2)}, Yesterday: $${yesterdayData.sales.toFixed(2)}, Last7D: $${last7DaysData.sales.toFixed(2)}, Last30D: $${last30DaysData.sales.toFixed(2)}, LastMonth: $${lastMonthData.sales.toFixed(2)}`)
+  console.log(`💰 Period data - Today: $${todayData.sales.toFixed(2)}, Yesterday: $${yesterdayData.sales.toFixed(2)}, ThisMonth: $${thisMonthData.sales.toFixed(2)}, Last30D: $${last30DaysData.sales.toFixed(2)}, LastMonth: $${lastMonthData.sales.toFixed(2)}`)
 
   return {
     today: todayData,
     yesterday: yesterdayData,
     last7Days: last7DaysData,
     last30Days: last30DaysData,
+    thisMonth: thisMonthData,
     lastMonth: lastMonthData,
     dailyMetrics: metrics,
     recentOrders: orders,
