@@ -42,9 +42,9 @@ import {
   getAmazonConnectionAction,
   disconnectAmazonAction,
   testAmazonConnectionAction,
-  syncProductsAction,
-  syncOrdersAndExtractProductsAction
+  syncProductsAction
 } from '@/app/actions/amazon-actions'
+import SyncStatusIndicator from '@/components/dashboard/SyncStatusIndicator'
 
 interface Profile {
   id: string
@@ -182,13 +182,23 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
     setIsSyncing(true)
     setAmazonError(null)
     setAmazonSuccess(null)
-    const result = await syncOrdersAndExtractProductsAction(userId)
-    if (result.success) {
-      setAmazonSuccess(`Synced ${result.ordersSynced || 0} orders and extracted ${result.productsExtracted || 0} products!`)
-      loadAmazonConnection() // Refresh connection data
-    } else {
-      setAmazonError(result.error || 'Sync failed')
+
+    try {
+      // Use async API - returns immediately, sync runs in background
+      const response = await fetch('/api/sync/start', { method: 'POST' })
+      const result = await response.json()
+
+      if (result.success) {
+        setAmazonSuccess('Sync started! Check the progress indicator in the bottom-right corner.')
+        // Don't wait for completion - sync runs in background
+        // User can close the page and data will still sync
+      } else {
+        setAmazonError(result.error || 'Failed to start sync')
+      }
+    } catch (error) {
+      setAmazonError(error instanceof Error ? error.message : 'Failed to start sync')
     }
+
     setIsSyncing(false)
   }
 
@@ -1237,6 +1247,9 @@ export function SettingsClient({ userId, userEmail, profile }: SettingsClientPro
           </>
         )}
       </AnimatePresence>
+
+      {/* Sync Status Indicator */}
+      <SyncStatusIndicator />
     </div>
   )
 }

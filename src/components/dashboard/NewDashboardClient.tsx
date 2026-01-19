@@ -10,6 +10,7 @@ import DetailedBreakdownModal from '@/components/dashboard/DetailedBreakdownModa
 import ProductTable, { ProductData } from '@/components/dashboard/ProductTable'
 import ProductSettingsModal, { ProductCosts } from '@/components/dashboard/ProductSettingsModal'
 import AIChatBar from '@/components/dashboard/AIChatBar'
+import SyncStatusIndicator from '@/components/dashboard/SyncStatusIndicator'
 
 // Dashboard data from database
 interface DashboardData {
@@ -497,6 +498,9 @@ export default function NewDashboardClient({
           </div>
         </div>
       )}
+
+      {/* Sync Status Indicator - shows sync progress in bottom right */}
+      <SyncStatusIndicator onSyncComplete={() => window.location.reload()} />
     </div>
   )
 }
