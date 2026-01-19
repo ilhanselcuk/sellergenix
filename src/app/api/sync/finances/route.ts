@@ -130,6 +130,18 @@ export async function POST(request: NextRequest) {
       orderCount: number
     }>()
 
+    // =====================================================
+    // STEP 3: Track per-ASIN fees for future estimation
+    // When Finance API hasn't posted events for new orders,
+    // we'll use historical ASIN fee data to estimate
+    // =====================================================
+    const asinFeeData = new Map<string, {
+      totalFees: number
+      totalUnits: number
+      fbaFee: number
+      referralFee: number
+    }>()
+
     let unmatchedOrders = 0
 
     // Process shipment events (sales + fees) - GROUP BY PURCHASE DATE
@@ -159,6 +171,9 @@ export async function POST(request: NextRequest) {
         const items = shipment.ShipmentItemList || shipment.shipmentItemList || []
 
         for (const item of items) {
+          // Get ASIN for per-ASIN fee tracking
+          const asin = item.SellerSKU || item.sellerSKU || item.ASIN || item.asin || ''
+
           // Sales (Principal charge)
           const chargeList = item.ItemChargeList || item.itemChargeList || []
           const principal = chargeList.find((c: any) =>
@@ -169,8 +184,12 @@ export async function POST(request: NextRequest) {
             summary.sales += parseFloat(chargeAmount.CurrencyAmount || chargeAmount.currencyAmount)
           }
 
-          // REAL Amazon Fees - with breakdown
+          // REAL Amazon Fees - with breakdown AND per-ASIN tracking
           const feeList = item.ItemFeeList || item.itemFeeList || []
+          let itemTotalFees = 0
+          let itemFbaFee = 0
+          let itemReferralFee = 0
+
           for (const fee of feeList) {
             const feeType = fee.FeeType || fee.feeType || 'Unknown'
             const feeAmount = fee.FeeAmount || fee.feeAmount
@@ -178,11 +197,32 @@ export async function POST(request: NextRequest) {
               const amount = Math.abs(parseFloat(feeAmount.CurrencyAmount || feeAmount.currencyAmount))
               summary.fees += amount
               summary.feeBreakdown[feeType] = (summary.feeBreakdown[feeType] || 0) + amount
+              itemTotalFees += amount
+
+              // Categorize fee types for per-ASIN tracking
+              if (feeType.includes('FBA') || feeType.includes('Fulfillment')) {
+                itemFbaFee += amount
+              } else if (feeType.includes('Commission') || feeType.includes('Referral')) {
+                itemReferralFee += amount
+              }
             }
           }
 
           // Units
-          summary.units += item.QuantityShipped || item.quantityShipped || 0
+          const quantity = item.QuantityShipped || item.quantityShipped || 0
+          summary.units += quantity
+
+          // Track per-ASIN fee data
+          if (asin && quantity > 0) {
+            if (!asinFeeData.has(asin)) {
+              asinFeeData.set(asin, { totalFees: 0, totalUnits: 0, fbaFee: 0, referralFee: 0 })
+            }
+            const asinData = asinFeeData.get(asin)!
+            asinData.totalFees += itemTotalFees
+            asinData.totalUnits += quantity
+            asinData.fbaFee += itemFbaFee
+            asinData.referralFee += itemReferralFee
+          }
         }
       }
     }
@@ -278,6 +318,43 @@ export async function POST(request: NextRequest) {
 
     log(`\n✅ Saved ${savedCount} days to daily_metrics (by PURCHASE DATE - Sellerboard style!)`)
     log(`📦 Order matching: ${matchedOrders}/${orderIds.size} (${((matchedOrders/orderIds.size)*100).toFixed(1)}%)`)
+
+    // =====================================================
+    // STEP 4: Save per-ASIN fee averages to products table
+    // This allows accurate fee estimation for orders without Finance data
+    // =====================================================
+    let asinUpdated = 0
+    log(`\n📊 Updating per-ASIN fee data for ${asinFeeData.size} ASINs...`)
+
+    for (const [asin, data] of asinFeeData) {
+      if (data.totalUnits > 0) {
+        const avgFeePerUnit = data.totalFees / data.totalUnits
+        const avgFbaFeePerUnit = data.fbaFee / data.totalUnits
+        const avgReferralFeePerUnit = data.referralFee / data.totalUnits
+
+        // Update products table with latest fee data
+        // Finance API returns SellerSKU which can be ASIN or SKU
+        const { error } = await supabase
+          .from('products')
+          .update({
+            avg_fee_per_unit: avgFeePerUnit,
+            avg_fba_fee_per_unit: avgFbaFeePerUnit,
+            avg_referral_fee_per_unit: avgReferralFeePerUnit,
+            fee_data_updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', connection.user_id)
+          .eq('sku', asin) // SellerSKU from Finance API matches our SKU field
+
+        if (!error) {
+          asinUpdated++
+          if (asinUpdated <= 3) {
+            log(`   ${asin}: $${avgFeePerUnit.toFixed(2)}/unit (FBA: $${avgFbaFeePerUnit.toFixed(2)}, Referral: $${avgReferralFeePerUnit.toFixed(2)})`)
+          }
+        }
+      }
+    }
+
+    log(`✅ Updated fee data for ${asinUpdated} ASINs`)
 
     // Get yesterday in PST for comparison
     const now = new Date()

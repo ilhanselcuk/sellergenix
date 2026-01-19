@@ -500,36 +500,66 @@ export async function getDashboardData(userId: string) {
   const metrics = dailyMetrics || []
   // orders is already defined above
 
-  // Create product lookup map for dimensions
-  const productDimensionsMap = new Map<string, {
+  // Create product lookup map for dimensions AND historical fee data
+  const productDataMap = new Map<string, {
     weight: number | null
     length: number | null
     width: number | null
     height: number | null
     cogs: number | null
+    // NEW: Historical fee data from Finance API
+    avgFeePerUnit: number | null
+    avgFbaFeePerUnit: number | null
+    avgReferralFeePerUnit: number | null
   }>()
   for (const p of products) {
     if (p.asin) {
-      productDimensionsMap.set(p.asin, {
+      productDataMap.set(p.asin, {
         weight: p.weight_lbs,
         length: p.length_inches,
         width: p.width_inches,
         height: p.height_inches,
-        cogs: p.cogs
+        cogs: p.cogs,
+        // Historical fee data from Finance API sync
+        avgFeePerUnit: (p as any).avg_fee_per_unit || null,
+        avgFbaFeePerUnit: (p as any).avg_fba_fee_per_unit || null,
+        avgReferralFeePerUnit: (p as any).avg_referral_fee_per_unit || null,
+      })
+    }
+    // Also map by SKU for matching
+    if (p.sku) {
+      productDataMap.set(p.sku, {
+        weight: p.weight_lbs,
+        length: p.length_inches,
+        width: p.width_inches,
+        height: p.height_inches,
+        cogs: p.cogs,
+        avgFeePerUnit: (p as any).avg_fee_per_unit || null,
+        avgFbaFeePerUnit: (p as any).avg_fba_fee_per_unit || null,
+        avgReferralFeePerUnit: (p as any).avg_referral_fee_per_unit || null,
       })
     }
   }
 
-  // Helper to calculate FBA fee based on dimensions
+  // Helper to calculate FBA fee - PRIORITY ORDER:
+  // 1. Historical Finance API data (most accurate - real fees from same ASIN)
+  // 2. Dimension-based calculation (accurate if dimensions are set)
+  // 3. 15% estimate (fallback)
   const calculateFBAFeeForItem = (asin: string, itemPrice: number, quantity: number): number => {
-    const dims = productDimensionsMap.get(asin)
+    const data = productDataMap.get(asin)
 
-    // If we have dimensions, calculate accurate fee
-    if (dims?.weight && dims.length && dims.width && dims.height) {
-      const weight = dims.weight
-      const length = dims.length
-      const width = dims.width
-      const height = dims.height
+    // PRIORITY 1: Use historical fee data from Finance API (Sellerboard style!)
+    // This is the most accurate because it uses REAL fees for this exact ASIN
+    if (data?.avgFeePerUnit && data.avgFeePerUnit > 0) {
+      return data.avgFeePerUnit * quantity
+    }
+
+    // PRIORITY 2: Calculate from dimensions if available
+    if (data?.weight && data.length && data.width && data.height) {
+      const weight = data.weight
+      const length = data.length
+      const width = data.width
+      const height = data.height
 
       // Sort dimensions
       const sortedDims = [length, width, height].sort((a, b) => b - a)
@@ -575,7 +605,7 @@ export async function getDashboardData(userId: string) {
       return (fbaFeePerUnit * quantity) + referralFee
     }
 
-    // Fallback: Estimate based on item price (~15% total fees)
+    // PRIORITY 3: Fallback to 15% estimate
     return itemPrice * 0.15
   }
 
