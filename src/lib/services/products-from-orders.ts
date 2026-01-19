@@ -114,9 +114,24 @@ export async function extractProductsFromOrders(
           const sku = rawItem.SellerSKU || rawItem.sellerSKU || null
           const title = rawItem.Title || rawItem.title || null
           const itemPrice = rawItem.ItemPrice || rawItem.itemPrice
-          const price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
+          let price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
           const quantity = rawItem.QuantityOrdered || rawItem.quantityOrdered || 1
           const orderItemId = rawItem.OrderItemId || rawItem.orderItemId
+
+          // For Pending orders, ItemPrice is often $0 - use catalog price as fallback
+          if (price === 0 && asin) {
+            const { data: product } = await supabase
+              .from('products')
+              .select('price')
+              .eq('user_id', userId)
+              .eq('asin', asin)
+              .single()
+
+            if (product?.price) {
+              price = product.price * quantity
+              console.log(`    📦 Using catalog price for pending order: $${price}`)
+            }
+          }
 
           // CRITICAL: Save order item to database (for accurate sales calculation)
           try {

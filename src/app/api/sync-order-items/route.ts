@@ -92,10 +92,25 @@ export async function GET(request: NextRequest) {
           const sku = rawItem.SellerSKU || rawItem.sellerSKU || null
           const title = rawItem.Title || rawItem.title || null
           const itemPrice = rawItem.ItemPrice || rawItem.itemPrice
-          const price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
+          let price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
           const quantity = rawItem.QuantityOrdered || rawItem.quantityOrdered || 1
 
-          // Save to database (without currency_code - column doesn't exist)
+          // For Pending orders, ItemPrice is often $0 - use catalog price as fallback
+          if (price === 0 && asin) {
+            const { data: product } = await supabase
+              .from('products')
+              .select('price')
+              .eq('user_id', user.id)
+              .eq('asin', asin)
+              .single()
+
+            if (product?.price) {
+              price = product.price * quantity
+              log(`    📦 Using catalog price for pending order: $${price}`)
+            }
+          }
+
+          // Save to database
           const { error: insertError } = await supabase
             .from('order_items')
             .upsert({
