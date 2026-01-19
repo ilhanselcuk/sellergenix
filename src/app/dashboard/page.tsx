@@ -80,6 +80,7 @@ export default async function DashboardPage() {
 
       {/* Dashboard Content */}
       <NewDashboardClient
+        userId={user.id}
         profileName={profile?.full_name || 'User'}
         email={user.email || ''}
         hasAmazonConnection={hasAmazonConnection}

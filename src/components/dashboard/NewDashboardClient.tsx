@@ -66,11 +66,20 @@ interface DatabaseProduct {
 }
 
 interface NewDashboardClientProps {
+  userId: string
   profileName: string
   email: string
   hasAmazonConnection: boolean
   dashboardData?: DashboardData
   lastSyncAt?: string | null
+}
+
+// Sales API response type
+interface SalesApiMetrics {
+  today: PeriodMetrics
+  yesterday: PeriodMetrics
+  thisMonth: PeriodMetrics
+  lastMonth: PeriodMetrics
 }
 
 // Helper function to format time ago
@@ -152,6 +161,7 @@ function generateRealPeriodData(
 }
 
 export default function NewDashboardClient({
+  userId,
   profileName,
   email,
   hasAmazonConnection,
@@ -160,6 +170,44 @@ export default function NewDashboardClient({
 }: NewDashboardClientProps) {
   // Check if we have real data
   const hasRealData = dashboardData?.hasRealData || false
+
+  // Sales API metrics state - this is the SOURCE OF TRUTH for period cards
+  const [salesApiMetrics, setSalesApiMetrics] = useState<SalesApiMetrics | null>(null)
+  const [salesApiLoading, setSalesApiLoading] = useState(false)
+  const [salesApiError, setSalesApiError] = useState<string | null>(null)
+
+  // Fetch Sales API metrics on mount (more accurate than database calculations!)
+  useEffect(() => {
+    if (!hasAmazonConnection || !userId) return
+
+    const fetchSalesApiMetrics = async () => {
+      setSalesApiLoading(true)
+      setSalesApiError(null)
+
+      try {
+        const response = await fetch(`/api/dashboard/metrics?userId=${userId}`)
+        const data = await response.json()
+
+        if (data.success && data.metrics) {
+          console.log('📊 Sales API metrics loaded:', data.metrics)
+          setSalesApiMetrics(data.metrics)
+        } else if (data.fallbackToDatabase) {
+          console.log('⚠️ Sales API not available, using database')
+          setSalesApiError('Sales API unavailable, using cached data')
+        } else {
+          console.error('❌ Sales API error:', data.error)
+          setSalesApiError(data.error || 'Failed to fetch metrics')
+        }
+      } catch (error: any) {
+        console.error('❌ Sales API fetch error:', error)
+        setSalesApiError(error.message || 'Network error')
+      } finally {
+        setSalesApiLoading(false)
+      }
+    }
+
+    fetchSalesApiMetrics()
+  }, [userId, hasAmazonConnection])
 
   // Marketplace state
   const [selectedRegion, setSelectedRegion] = useState('north-america')
@@ -396,22 +444,54 @@ export default function NewDashboardClient({
     }
   }
 
-  // Generate period data from real database data
+  // Generate period data - PREFER Sales API data over database calculations!
   const periodData = useMemo(() => {
     if (isCustomMode && customRange.start && customRange.end) {
+      // Custom range: Use database calculation (Sales API doesn't support custom ranges yet)
       const metrics = calculateMetricsForDateRange(customRange.start, customRange.end)
       return [generateRealPeriodData('Custom Range', customRange.start, customRange.end, metrics)]
     }
 
-    // Build period data from database - calculate dynamically for ALL periods
     const selectedSet = PERIOD_SETS.find(s => s.id === selectedSetId) || PERIOD_SETS[0]
 
+    // If Sales API metrics are available, use them for standard periods (more accurate!)
+    if (salesApiMetrics && selectedSetId === 'default') {
+      console.log('📊 Using Sales API metrics for period cards')
+
+      // Map Sales API metrics to period data
+      // default set has: Today, Yesterday, This Month, Last Month
+      return selectedSet.periods.map(period => {
+        let metrics: PeriodMetrics | null = null
+
+        // Match period label to Sales API data
+        if (period.label === 'Today') {
+          metrics = salesApiMetrics.today
+        } else if (period.label === 'Yesterday') {
+          metrics = salesApiMetrics.yesterday
+        } else if (period.label === 'This Month') {
+          metrics = salesApiMetrics.thisMonth
+        } else if (period.label === 'Last Month') {
+          metrics = salesApiMetrics.lastMonth
+        }
+
+        // Use Sales API metrics if available, otherwise fall back to database
+        if (metrics) {
+          return generateRealPeriodData(period.label, period.startDate, period.endDate, metrics)
+        }
+
+        // Fallback to database calculation
+        const dbMetrics = calculateMetricsForDateRange(period.startDate, period.endDate)
+        return generateRealPeriodData(period.label, period.startDate, period.endDate, dbMetrics)
+      })
+    }
+
+    // Fallback: Build period data from database calculations
+    console.log('📦 Using database calculations for period cards (Sales API not available)')
     return selectedSet.periods.map(period => {
-      // Calculate metrics dynamically based on period's startDate and endDate
       const metrics = calculateMetricsForDateRange(period.startDate, period.endDate)
       return generateRealPeriodData(period.label, period.startDate, period.endDate, metrics)
     })
-  }, [selectedSetId, isCustomMode, customRange, dashboardData])
+  }, [selectedSetId, isCustomMode, customRange, dashboardData, salesApiMetrics])
 
   // Selected period for product table
   const selectedPeriod = periodData[selectedPeriodIndex] || periodData[0]
@@ -613,6 +693,30 @@ export default function NewDashboardClient({
           </div>
         )}
 
+        {/* Sales API Status Banner */}
+        {hasAmazonConnection && (
+          <div className="mb-4">
+            {salesApiLoading && (
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg flex items-center gap-2">
+                <div className="animate-spin w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full"></div>
+                <span className="text-purple-800 text-sm font-medium">Loading real-time metrics from Amazon...</span>
+              </div>
+            )}
+            {salesApiError && !salesApiLoading && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
+                <span className="text-amber-600">⚠️</span>
+                <span className="text-amber-800 text-sm">{salesApiError}</span>
+              </div>
+            )}
+            {salesApiMetrics && !salesApiLoading && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                <span className="text-green-600">✅</span>
+                <span className="text-green-800 text-sm font-medium">Live data from Amazon Sales API</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Welcome Message */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">
@@ -621,9 +725,11 @@ export default function NewDashboardClient({
           <p className="text-gray-500">
             {!hasAmazonConnection
               ? 'Connect your Amazon account to see real data.'
-              : hasRealData
-                ? 'Showing your real Amazon data.'
-                : 'Amazon connected. Syncing your data...'}
+              : salesApiMetrics
+                ? 'Showing real-time data from Amazon Sales API.'
+                : hasRealData
+                  ? 'Showing your cached Amazon data.'
+                  : 'Amazon connected. Loading your data...'}
           </p>
           {/* Data Status Badge + Sync Button */}
           {hasAmazonConnection && (
