@@ -290,38 +290,57 @@ export async function updateProductFeeAverages(
   console.log(`📈 Updating fee averages for ASIN: ${asin}`)
 
   try {
-    // 1. Get shipped orders with this ASIN from last 14 days
+    // 1. Get shipped orders from last 14 days
     const fourteenDaysAgo = new Date()
     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
 
-    const { data: recentOrders, error: ordersError } = await supabase
-      .from('order_items')
-      .select(`
-        estimated_amazon_fee,
-        quantity_ordered,
-        quantity_shipped,
-        orders!inner(order_status, purchase_date)
-      `)
+    // First get shipped order IDs
+    const { data: shippedOrders, error: ordersError } = await supabase
+      .from('orders')
+      .select('amazon_order_id')
       .eq('user_id', userId)
-      .eq('asin', asin)
-      .gte('orders.purchase_date', fourteenDaysAgo.toISOString())
-      .eq('orders.order_status', 'Shipped')
+      .eq('order_status', 'Shipped')
+      .gte('purchase_date', fourteenDaysAgo.toISOString())
 
     if (ordersError) {
-      console.error('Failed to fetch recent orders:', ordersError)
+      console.error('Failed to fetch shipped orders:', ordersError)
       return false
+    }
+
+    if (!shippedOrders || shippedOrders.length === 0) {
+      console.log(`   No shipped orders found in last 14 days`)
+      // Still continue if we have newFeeData
+      if (!newFeeData) return false
+    }
+
+    // Get order items for this ASIN from shipped orders
+    const orderIds = shippedOrders?.map(o => o.amazon_order_id) || []
+
+    let recentItems: any[] = []
+    if (orderIds.length > 0) {
+      const { data: items, error: itemsError } = await supabase
+        .from('order_items')
+        .select('estimated_amazon_fee, quantity_shipped')
+        .eq('user_id', userId)
+        .eq('asin', asin)
+        .in('amazon_order_id', orderIds)
+        .not('estimated_amazon_fee', 'is', null)
+
+      if (itemsError) {
+        console.error('Failed to fetch order items:', itemsError)
+      } else {
+        recentItems = items || []
+      }
     }
 
     // 2. Calculate averages from recent orders
     let totalFees = 0
     let totalUnits = 0
 
-    if (recentOrders) {
-      for (const item of recentOrders) {
-        if (item.estimated_amazon_fee && item.quantity_shipped) {
-          totalFees += item.estimated_amazon_fee * item.quantity_shipped
-          totalUnits += item.quantity_shipped
-        }
+    for (const item of recentItems) {
+      if (item.estimated_amazon_fee && item.quantity_shipped) {
+        totalFees += item.estimated_amazon_fee * item.quantity_shipped
+        totalUnits += item.quantity_shipped
       }
     }
 
