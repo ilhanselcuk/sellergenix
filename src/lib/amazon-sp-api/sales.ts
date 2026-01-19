@@ -98,19 +98,18 @@ export async function getOrderMetrics(
       query,
     })
 
-    // Debug: Log the raw response structure
-    console.log('📦 Raw Sales API response:', JSON.stringify(response, null, 2))
+    // Response is directly an array of metrics (no payload wrapper)
+    // Example: [{ interval, unitCount, orderCount, totalSales, ... }]
+    const metrics = Array.isArray(response) ? response : (response.payload || [response])
 
-    const metrics = response.payload || response || []
-
-    console.log(`✅ Fetched ${Array.isArray(metrics) ? metrics.length : 'N/A'} metric intervals`)
-    if (Array.isArray(metrics) && metrics.length > 0) {
+    console.log(`✅ Fetched ${metrics.length} metric intervals`)
+    if (metrics.length > 0) {
       console.log('📊 First metric:', JSON.stringify(metrics[0], null, 2))
     }
 
     return {
       success: true,
-      metrics: Array.isArray(metrics) ? metrics : [metrics],
+      metrics: metrics,
     }
   } catch (error: any) {
     console.error('❌ Failed to fetch order metrics:', error)
