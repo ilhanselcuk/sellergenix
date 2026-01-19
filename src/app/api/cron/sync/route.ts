@@ -90,6 +90,7 @@ export async function GET(request: NextRequest) {
           if (ordersResult.success && ordersResult.orders) {
             const orders = ordersResult.orders
             let newOrdersSaved = 0
+            let skippedCanceled = 0
 
             for (const order of orders) {
               const rawOrder = order as any
@@ -97,8 +98,15 @@ export async function GET(request: NextRequest) {
 
               if (!orderId) continue
 
-              const purchaseDate = rawOrder.PurchaseDate || rawOrder.purchaseDate
               const orderStatus = rawOrder.OrderStatus || rawOrder.orderStatus
+
+              // SKIP Canceled orders - they don't count as sales!
+              if (orderStatus === 'Canceled') {
+                skippedCanceled++
+                continue
+              }
+
+              const purchaseDate = rawOrder.PurchaseDate || rawOrder.purchaseDate
               const fulfillmentChannel = rawOrder.FulfillmentChannel || rawOrder.fulfillmentChannel
               const orderTotal = rawOrder.OrderTotal || rawOrder.orderTotal
               const itemsShipped = rawOrder.NumberOfItemsShipped ?? 0
@@ -108,6 +116,31 @@ export async function GET(request: NextRequest) {
               const isBusinessOrder = rawOrder.IsBusinessOrder ?? false
               const shippingAddress = rawOrder.ShippingAddress || rawOrder.shippingAddress
 
+              // Get order total - for Pending orders this might be $0
+              let orderTotalAmount = orderTotal ? parseFloat(orderTotal.Amount || orderTotal.amount || '0') : 0
+
+              // For Pending orders with $0, try to get price from order items
+              if (orderTotalAmount === 0 && (orderStatus === 'Pending' || orderStatus === 'Unshipped')) {
+                try {
+                  const itemsResult = await getOrderItems(connection.refresh_token, orderId)
+                  if (itemsResult.success && itemsResult.orderItems) {
+                    let itemsTotal = 0
+                    for (const item of itemsResult.orderItems) {
+                      const rawItem = item as any
+                      const itemPrice = rawItem.ItemPrice || rawItem.itemPrice
+                      const price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
+                      itemsTotal += price
+                    }
+                    if (itemsTotal > 0) {
+                      orderTotalAmount = itemsTotal
+                      log(`    📦 Got price $${itemsTotal.toFixed(2)} from order items for Pending order ${orderId}`)
+                    }
+                  }
+                } catch (itemErr: any) {
+                  // Silently continue if we can't get items
+                }
+              }
+
               const { error: upsertError } = await supabase
                 .from('orders')
                 .upsert({
@@ -116,7 +149,7 @@ export async function GET(request: NextRequest) {
                   purchase_date: purchaseDate,
                   order_status: orderStatus,
                   fulfillment_channel: fulfillmentChannel,
-                  order_total: orderTotal ? parseFloat(orderTotal.Amount || orderTotal.amount || '0') : 0,
+                  order_total: orderTotalAmount,
                   currency_code: orderTotal?.CurrencyCode || orderTotal?.currencyCode || 'USD',
                   items_shipped: itemsShipped,
                   items_unshipped: itemsUnshipped,
@@ -134,10 +167,13 @@ export async function GET(request: NextRequest) {
               if (!upsertError) {
                 newOrdersSaved++
               }
+
+              // Small delay to avoid rate limits when fetching order items
+              await new Promise(resolve => setTimeout(resolve, 100))
             }
 
             totalNewOrdersSynced += newOrdersSaved
-            log(`  ✅ Synced ${newOrdersSaved} orders from Amazon (${orders.length} total in last 3 days)`)
+            log(`  ✅ Synced ${newOrdersSaved} orders (skipped ${skippedCanceled} canceled)`)
           } else {
             log(`  ⚠️ Could not fetch orders: ${ordersResult.error || 'Unknown error'}`)
           }

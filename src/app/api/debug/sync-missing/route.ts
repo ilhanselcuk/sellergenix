@@ -53,6 +53,21 @@ export async function GET() {
     const savedOrders: string[] = []
     const errors: string[] = []
 
+    // First, delete any Canceled orders from DB
+    const canceledOrderIds = orders
+      .filter((o: any) => (o.OrderStatus || o.orderStatus) === 'Canceled')
+      .map((o: any) => o.AmazonOrderId || o.amazonOrderId)
+      .filter(Boolean)
+
+    if (canceledOrderIds.length > 0) {
+      await supabase
+        .from('orders')
+        .delete()
+        .eq('user_id', connection.user_id)
+        .in('amazon_order_id', canceledOrderIds)
+      console.log(`Deleted ${canceledOrderIds.length} canceled orders from DB`)
+    }
+
     for (const order of orders) {
       try {
         const rawOrder = order as any
@@ -63,8 +78,15 @@ export async function GET() {
           continue
         }
 
-        const purchaseDate = rawOrder.PurchaseDate || rawOrder.purchaseDate
         const orderStatus = rawOrder.OrderStatus || rawOrder.orderStatus
+
+        // SKIP Canceled orders - they don't count as sales!
+        if (orderStatus === 'Canceled') {
+          skippedCount++
+          continue
+        }
+
+        const purchaseDate = rawOrder.PurchaseDate || rawOrder.purchaseDate
         const fulfillmentChannel = rawOrder.FulfillmentChannel || rawOrder.fulfillmentChannel
         const orderTotal = rawOrder.OrderTotal || rawOrder.orderTotal
         const itemsShipped = rawOrder.NumberOfItemsShipped ?? 0
@@ -73,6 +95,31 @@ export async function GET() {
         const isPrime = rawOrder.IsPrime ?? false
         const isBusinessOrder = rawOrder.IsBusinessOrder ?? false
         const shippingAddress = rawOrder.ShippingAddress || rawOrder.shippingAddress
+
+        // Get order total - for Pending orders this might be $0
+        let orderTotalAmount = orderTotal ? parseFloat(orderTotal.Amount || orderTotal.amount || '0') : 0
+
+        // For Pending orders with $0, try to get price from order items
+        if (orderTotalAmount === 0 && (orderStatus === 'Pending' || orderStatus === 'Unshipped')) {
+          try {
+            const { getOrderItems } = await import('@/lib/amazon-sp-api')
+            const itemsResult = await getOrderItems(connection.refresh_token, orderId)
+            if (itemsResult.success && itemsResult.orderItems) {
+              let itemsTotal = 0
+              for (const item of itemsResult.orderItems) {
+                const rawItem = item as any
+                const itemPrice = rawItem.ItemPrice || rawItem.itemPrice
+                const price = parseFloat(itemPrice?.Amount || itemPrice?.amount || '0')
+                itemsTotal += price
+              }
+              if (itemsTotal > 0) {
+                orderTotalAmount = itemsTotal
+              }
+            }
+          } catch (itemErr: any) {
+            // Silently continue
+          }
+        }
 
         // Upsert order
         const { error: upsertError } = await supabase
@@ -83,7 +130,7 @@ export async function GET() {
             purchase_date: purchaseDate,
             order_status: orderStatus,
             fulfillment_channel: fulfillmentChannel,
-            order_total: orderTotal ? parseFloat(orderTotal.Amount || orderTotal.amount || '0') : 0,
+            order_total: orderTotalAmount,
             currency_code: orderTotal?.CurrencyCode || orderTotal?.currencyCode || 'USD',
             items_shipped: itemsShipped,
             items_unshipped: itemsUnshipped,
