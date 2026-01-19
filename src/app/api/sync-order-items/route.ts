@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
               item_price: price,
               updated_at: new Date().toISOString(),
             }, {
-              onConflict: 'user_id,amazon_order_id,order_item_id',
+              onConflict: 'user_id,order_item_id',
             })
 
           if (insertError) {
