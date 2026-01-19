@@ -84,7 +84,7 @@ export default async function DashboardPage() {
         email={user.email || ''}
         hasAmazonConnection={hasAmazonConnection}
         dashboardData={dashboardData}
-        lastSyncAt={amazonConnection?.last_synced_at || amazonConnection?.last_sync_at || null}
+        lastSyncAt={amazonConnection?.last_synced_at || (amazonConnection as any)?.last_sync_at || null}
       />
 
       {/* Footer */}
