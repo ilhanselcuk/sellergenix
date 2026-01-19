@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       .from('amazon_connections')
       .select('*')
       .eq('user_id', user.id)
-      .eq('status', 'active')
+      .eq('is_active', true)
       .single()
 
     if (fetchError || !connection) {
