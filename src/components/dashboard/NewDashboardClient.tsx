@@ -370,6 +370,89 @@ export default function NewDashboardClient({
   // Selected period for product table
   const selectedPeriod = periodData[selectedPeriodIndex] || periodData[0]
 
+  // Calculate products filtered by selected period
+  const filteredProducts = useMemo(() => {
+    if (!selectedPeriod || !dashboardData?.orderItems || !dashboardData?.recentOrders) {
+      return initialProducts
+    }
+
+    // PST date conversion (same as calculateMetricsForDateRange)
+    const startYear = selectedPeriod.startDate.getFullYear()
+    const startMonth = selectedPeriod.startDate.getMonth()
+    const startDay = selectedPeriod.startDate.getDate()
+    const endYear = selectedPeriod.endDate.getFullYear()
+    const endMonth = selectedPeriod.endDate.getMonth()
+    const endDay = selectedPeriod.endDate.getDate()
+
+    const pstStartUTC = new Date(Date.UTC(startYear, startMonth, startDay, 8, 0, 0, 0))
+    const pstEndUTC = new Date(Date.UTC(endYear, endMonth, endDay + 1, 7, 59, 59, 999))
+
+    // Filter orders in date range
+    const filteredOrders = dashboardData.recentOrders.filter((order: any) => {
+      const orderDate = new Date(order.purchase_date)
+      return orderDate >= pstStartUTC && orderDate <= pstEndUTC
+    })
+
+    const orderIds = new Set(filteredOrders.map((o: any) => o.amazon_order_id))
+
+    // Filter order items
+    const filteredItems = dashboardData.orderItems.filter((item: any) =>
+      orderIds.has(item.amazon_order_id)
+    )
+
+    // Auto-fix $0 prices with catalog prices
+    const productPriceMap: { [asin: string]: number } = {}
+    initialProducts.forEach(p => {
+      if (p.asin && p.sales && p.units && p.units > 0) {
+        productPriceMap[p.asin] = p.sales / p.units // Average price per unit
+      }
+    })
+
+    // Group by ASIN and calculate stats
+    const statsByAsin: { [asin: string]: { units: number; sales: number; orders: Set<string>; refunds: number } } = {}
+
+    filteredItems.forEach((item: any) => {
+      const asin = item.asin
+      if (!statsByAsin[asin]) {
+        statsByAsin[asin] = { units: 0, sales: 0, orders: new Set(), refunds: 0 }
+      }
+      statsByAsin[asin].units += item.quantity_ordered || 0
+
+      // Use catalog price if item_price is $0
+      let itemPrice = item.item_price || 0
+      if (itemPrice === 0 && productPriceMap[asin]) {
+        itemPrice = productPriceMap[asin] * (item.quantity_ordered || 1)
+      }
+      statsByAsin[asin].sales += itemPrice
+      statsByAsin[asin].orders.add(item.amazon_order_id)
+    })
+
+    // Map to products with period-specific stats
+    return initialProducts.map(product => {
+      const stats = statsByAsin[product.asin] || { units: 0, sales: 0, orders: new Set(), refunds: 0 }
+      const sales = stats.sales
+      const units = stats.units
+      const cogs = product.cogs || 0
+      const totalCogs = cogs * units
+      const estimatedFees = sales * 0.15
+      const estimatedAdSpend = sales * 0.08
+      const grossProfit = sales - totalCogs - estimatedFees
+      const netProfit = grossProfit - estimatedAdSpend
+
+      return {
+        ...product,
+        units,
+        sales,
+        refunds: Math.floor(units * 0.05),
+        adSpend: estimatedAdSpend,
+        grossProfit,
+        netProfit,
+        margin: sales > 0 ? parseFloat(((netProfit / sales) * 100).toFixed(1)) : 0,
+        roi: totalCogs > 0 ? parseFloat(((netProfit / totalCogs) * 100).toFixed(0)) : 0
+      }
+    }).filter(p => p.units > 0 || p.sales > 0) // Only show products with activity in period
+  }, [selectedPeriod, dashboardData, initialProducts])
+
   // Handle period card click
   const handlePeriodSelect = (index: number) => {
     setSelectedPeriodIndex(index)
@@ -577,12 +660,23 @@ export default function NewDashboardClient({
         </div>
 
         {/* Product Table or Empty State */}
-        {products.length > 0 ? (
+        {filteredProducts.length > 0 ? (
           <ProductTable
-            products={products}
+            products={filteredProducts}
             onProductClick={handleProductClick}
             onSettingsClick={() => setProductSettingsOpen(true)}
           />
+        ) : initialProducts.length > 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+            <div className="mx-auto w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-12 h-12 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No sales in this period</h3>
+            <p className="text-gray-500 mb-4">There were no product sales for {selectedPeriod?.label || 'this period'}.</p>
+            <p className="text-sm text-gray-400">Try selecting a different date range.</p>
+          </div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
             <div className="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
