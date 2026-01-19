@@ -16,6 +16,11 @@ const supabase = createClient(
 
 export async function GET() {
   try {
+    // First, list ALL connections to debug
+    const { data: allConnections, error: listError } = await supabase
+      .from('amazon_connections')
+      .select('id, user_id, seller_id, is_active, created_at')
+
     // Get active connection
     const { data: connection, error: connError } = await supabase
       .from('amazon_connections')
@@ -24,7 +29,12 @@ export async function GET() {
       .single()
 
     if (connError || !connection) {
-      return NextResponse.json({ error: 'No active connection', details: connError })
+      return NextResponse.json({
+        error: 'No active connection',
+        details: connError,
+        allConnections: allConnections,
+        hint: 'Check if is_active=true for any connection'
+      })
     }
 
     const client = createAmazonSPAPIClient(connection.refresh_token)
