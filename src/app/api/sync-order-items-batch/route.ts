@@ -131,6 +131,22 @@ export async function GET(request: NextRequest) {
             log(`  📦 Using catalog price for ${asin}: $${price.toFixed(2)}`)
           }
 
+          // If price is still $0, check if we have an existing price in DB - don't overwrite it!
+          let finalPrice = price
+          if (price === 0) {
+            const { data: existingItem } = await supabase
+              .from('order_items')
+              .select('item_price')
+              .eq('user_id', user.id)
+              .eq('order_item_id', orderItemId)
+              .single()
+
+            if (existingItem && existingItem.item_price > 0) {
+              finalPrice = existingItem.item_price
+              log(`  💾 Keeping existing price for ${orderItemId}: $${finalPrice.toFixed(2)}`)
+            }
+          }
+
           // Save to database
           const { error: insertError } = await supabase
             .from('order_items')
@@ -142,7 +158,7 @@ export async function GET(request: NextRequest) {
               seller_sku: sku,
               title: title,
               quantity_ordered: quantity,
-              item_price: price,
+              item_price: finalPrice,
               updated_at: new Date().toISOString(),
             }, {
               onConflict: 'user_id,order_item_id',
