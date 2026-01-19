@@ -291,6 +291,42 @@ export default function NewDashboardClient({
 
   const [products, setProducts] = useState<ProductData[]>(initialProducts)
 
+  // Build product fee data map for SKU-based fee lookup
+  // This uses historical fee data from Finance API (Sellerboard-style)
+  const productFeeMap = useMemo(() => {
+    const map = new Map<string, number>()
+    if (dashboardData?.products) {
+      for (const product of dashboardData.products) {
+        const feePerUnit = (product as any).avg_fee_per_unit
+        if (feePerUnit && feePerUnit > 0) {
+          // Map by both ASIN and SKU for flexible lookup
+          if (product.asin) map.set(product.asin, feePerUnit)
+          if (product.sku) map.set(product.sku, feePerUnit)
+        }
+      }
+    }
+    console.log('📊 Product fee map loaded:', map.size, 'entries')
+    return map
+  }, [dashboardData?.products])
+
+  // Helper function to calculate fee for a single item using SKU lookup
+  const calculateFeeForItem = (asin: string, sellerSku: string | null, itemPrice: number, quantity: number): number => {
+    // Try lookup by ASIN first, then by SKU
+    let feePerUnit = productFeeMap.get(asin)
+
+    if (!feePerUnit && sellerSku) {
+      feePerUnit = productFeeMap.get(sellerSku)
+    }
+
+    // If we found historical fee data, use it
+    if (feePerUnit && feePerUnit > 0) {
+      return feePerUnit * quantity
+    }
+
+    // Fallback to 15% estimate
+    return itemPrice * 0.15
+  }
+
   // Helper function to calculate metrics for any date range
   // IMPORTANT: Amazon US uses PST timezone. We must convert dates to PST for accurate filtering.
   const calculateMetricsForDateRange = (startDate: Date, endDate: Date): PeriodMetrics => {
@@ -331,10 +367,20 @@ export default function NewDashboardClient({
     // Calculate metrics from filtered items
     const totalSales = filteredItems.reduce((sum: number, item: any) => sum + (item.item_price || 0), 0)
     const totalUnits = filteredItems.reduce((sum: number, item: any) => sum + (item.quantity_ordered || 0), 0)
-    const estimatedFees = totalSales * 0.15
+
+    // Calculate fees using SKU-based historical data (Sellerboard-style!)
+    let totalFees = 0
+    for (const item of filteredItems) {
+      const asin = item.asin || ''
+      const sellerSku = item.seller_sku || null
+      const itemPrice = item.item_price || 0
+      const quantity = item.quantity_ordered || 1
+      totalFees += calculateFeeForItem(asin, sellerSku, itemPrice, quantity)
+    }
+
     const estimatedAdSpend = totalSales * 0.05
-    const estimatedGrossProfit = totalSales * 0.35
-    const estimatedNetProfit = totalSales * 0.20
+    const grossProfit = totalSales - totalFees
+    const netProfit = grossProfit - estimatedAdSpend
 
     return {
       sales: totalSales,
@@ -342,11 +388,11 @@ export default function NewDashboardClient({
       orders: filteredOrders.length,
       refunds: 0,
       adSpend: estimatedAdSpend,
-      amazonFees: estimatedFees,
-      grossProfit: estimatedGrossProfit,
-      netProfit: estimatedNetProfit,
-      margin: totalSales > 0 ? (estimatedNetProfit / totalSales) * 100 : 0,
-      roi: estimatedAdSpend > 0 ? (estimatedNetProfit / estimatedAdSpend) * 100 : 0
+      amazonFees: totalFees,
+      grossProfit: grossProfit,
+      netProfit: netProfit,
+      margin: totalSales > 0 ? (netProfit / totalSales) * 100 : 0,
+      roi: estimatedAdSpend > 0 ? (netProfit / estimatedAdSpend) * 100 : 0
     }
   }
 
