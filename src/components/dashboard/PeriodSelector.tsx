@@ -13,10 +13,50 @@ export interface PeriodSet {
   }[]
 }
 
-// Helper function to get date ranges
-const getDateRange = (type: string): { startDate: Date; endDate: Date } => {
+// =============================================
+// PST TIMEZONE HELPERS
+// Amazon US marketplace uses PST (UTC-8) for daily boundaries
+// CRITICAL: All date ranges must be PST-aligned for accurate data
+// =============================================
+
+/**
+ * Get today's date in PST timezone
+ * This returns the calendar date (year, month, day) as it currently is in PST
+ */
+function getPSTToday(): { year: number; month: number; day: number } {
   const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  // Convert UTC to PST by subtracting 8 hours
+  const pstTime = new Date(now.getTime() - 8 * 60 * 60 * 1000)
+  return {
+    year: pstTime.getUTCFullYear(),
+    month: pstTime.getUTCMonth(),
+    day: pstTime.getUTCDate()
+  }
+}
+
+/**
+ * Create a Date object representing a specific day in PST
+ * The returned Date can be used for display and will be correctly
+ * converted to UTC for API calls by calculateMetricsForDateRange
+ */
+function createPSTDate(year: number, month: number, day: number): Date {
+  // We create a local Date but the year/month/day represent PST calendar dates
+  // This works because calculateMetricsForDateRange extracts year/month/day
+  // and treats them as PST dates
+  return new Date(year, month, day)
+}
+
+/**
+ * Get day of week in PST (0=Sunday, 1=Monday, etc.)
+ */
+function getPSTDayOfWeek(year: number, month: number, day: number): number {
+  return new Date(year, month, day).getDay()
+}
+
+// Helper function to get date ranges (PST-aware)
+const getDateRange = (type: string): { startDate: Date; endDate: Date } => {
+  const pst = getPSTToday()
+  const today = createPSTDate(pst.year, pst.month, pst.day)
 
   switch (type) {
     case 'today':

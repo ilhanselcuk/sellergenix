@@ -290,5 +290,244 @@ export const scheduledFeeSync = inngest.createFunction(
   }
 );
 
+/**
+ * Historical Data Sync Function
+ *
+ * Syncs up to 2 years of historical order data from Amazon SP-API
+ * This is a long-running task that uses Inngest steps for reliability
+ *
+ * Process:
+ * 1. Fetch orders in monthly chunks (to avoid rate limits)
+ * 2. For each batch of orders, fetch order items
+ * 3. Save to database
+ * 4. Track progress
+ */
+export const syncHistoricalData = inngest.createFunction(
+  {
+    id: "sync-historical-data",
+    retries: 3,
+    // Only 1 historical sync per user at a time
+    concurrency: {
+      limit: 1,
+      key: "event.data.userId",
+    },
+  },
+  { event: "amazon/sync.historical" },
+  async ({ event, step }) => {
+    const { userId, refreshToken, marketplaceIds, yearsBack = 2 } = event.data;
+
+    console.log(`🚀 [Inngest] Starting historical sync for user ${userId}, years: ${yearsBack}`);
+
+    const results: Record<string, unknown> = {
+      startedAt: new Date().toISOString(),
+      yearsBack,
+      marketplaceIds,
+    };
+
+    // Calculate date range - 2 years back from now
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setFullYear(startDate.getFullYear() - yearsBack);
+
+    console.log(`📅 Syncing orders from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+    // Split into monthly chunks to avoid overwhelming the API
+    // Amazon Orders API has rate limit of ~1 request per minute
+    const monthlyChunks: { start: Date; end: Date }[] = [];
+    let chunkStart = new Date(startDate);
+
+    while (chunkStart < endDate) {
+      const chunkEnd = new Date(chunkStart);
+      chunkEnd.setMonth(chunkEnd.getMonth() + 1);
+      if (chunkEnd > endDate) {
+        chunkEnd.setTime(endDate.getTime());
+      }
+
+      monthlyChunks.push({ start: new Date(chunkStart), end: new Date(chunkEnd) });
+      chunkStart = new Date(chunkEnd);
+    }
+
+    console.log(`📊 Split into ${monthlyChunks.length} monthly chunks`);
+
+    let totalOrders = 0;
+    let totalOrderItems = 0;
+    let processedChunks = 0;
+
+    // Process each monthly chunk
+    for (let i = 0; i < monthlyChunks.length; i++) {
+      const chunk = monthlyChunks[i];
+      const chunkLabel = `${chunk.start.toISOString().split("T")[0]} to ${chunk.end.toISOString().split("T")[0]}`;
+
+      const chunkResult = await step.run(`sync-chunk-${i}`, async () => {
+        console.log(`📦 Processing chunk ${i + 1}/${monthlyChunks.length}: ${chunkLabel}`);
+
+        // Dynamic import to avoid circular dependencies
+        const { getOrders, getOrderItems } = await import("@/lib/amazon-sp-api/orders");
+
+        let chunkOrders = 0;
+        let chunkItems = 0;
+        let nextToken: string | undefined;
+        let pageCount = 0;
+
+        // Paginate through all orders in this chunk
+        do {
+          // Build query params
+          const queryParams: Record<string, any> = {
+            MarketplaceIds: marketplaceIds,
+            CreatedAfter: chunk.start.toISOString(),
+            CreatedBefore: new Date(chunk.end.getTime() - 3 * 60 * 1000).toISOString(), // 3 min buffer
+            MaxResultsPerPage: 100,
+          };
+
+          if (nextToken) {
+            queryParams.NextToken = nextToken;
+          }
+
+          // Fetch orders page
+          const ordersResult = await getOrders(
+            refreshToken,
+            marketplaceIds,
+            chunk.start,
+            chunk.end
+          );
+
+          if (!ordersResult.success || !ordersResult.orders) {
+            console.error(`❌ Failed to fetch orders for chunk ${i}:`, ordersResult.error);
+            break;
+          }
+
+          const orders = ordersResult.orders;
+          nextToken = ordersResult.nextToken;
+          pageCount++;
+
+          console.log(`  Page ${pageCount}: ${orders.length} orders`);
+
+          // Save orders to database
+          for (const order of orders) {
+            // Skip canceled orders
+            if (order.orderStatus === "Canceled") {
+              continue;
+            }
+
+            // Upsert order
+            const { error: orderError } = await supabase
+              .from("orders")
+              .upsert(
+                {
+                  user_id: userId,
+                  amazon_order_id: order.amazonOrderId,
+                  purchase_date: order.purchaseDate,
+                  last_update_date: order.lastUpdateDate,
+                  order_status: order.orderStatus,
+                  fulfillment_channel: order.fulfillmentChannel,
+                  sales_channel: order.salesChannel,
+                  order_total: order.orderTotal?.amount
+                    ? parseFloat(order.orderTotal.amount)
+                    : null,
+                  currency_code: order.orderTotal?.currencyCode || "USD",
+                  marketplace_id: order.marketplaceId || marketplaceIds[0],
+                  number_of_items_shipped: order.numberOfItemsShipped || 0,
+                  number_of_items_unshipped: order.numberOfItemsUnshipped || 0,
+                  is_prime: order.isPrime || false,
+                  is_business: order.isBusinessOrder || false,
+                },
+                { onConflict: "amazon_order_id" }
+              );
+
+            if (orderError) {
+              console.error(`  Error saving order ${order.amazonOrderId}:`, orderError.message);
+              continue;
+            }
+
+            chunkOrders++;
+
+            // Fetch order items
+            const itemsResult = await getOrderItems(refreshToken, order.amazonOrderId);
+
+            if (itemsResult.success && itemsResult.orderItems) {
+              for (const item of itemsResult.orderItems) {
+                // Upsert order item
+                const { error: itemError } = await supabase
+                  .from("order_items")
+                  .upsert(
+                    {
+                      user_id: userId,
+                      amazon_order_id: order.amazonOrderId,
+                      order_item_id: item.orderItemId,
+                      asin: item.asin,
+                      seller_sku: item.sellerSKU,
+                      title: item.title,
+                      quantity_ordered: item.quantityOrdered,
+                      quantity_shipped: item.quantityShipped,
+                      item_price: item.itemPrice?.amount
+                        ? parseFloat(item.itemPrice.amount)
+                        : null,
+                      item_tax: item.itemTax?.amount
+                        ? parseFloat(item.itemTax.amount)
+                        : null,
+                      shipping_price: item.shippingPrice?.amount
+                        ? parseFloat(item.shippingPrice.amount)
+                        : null,
+                      promotion_discount: item.promotionDiscount?.amount
+                        ? parseFloat(item.promotionDiscount.amount)
+                        : null,
+                    },
+                    { onConflict: "order_item_id" }
+                  );
+
+                if (!itemError) {
+                  chunkItems++;
+                }
+              }
+            }
+
+            // Rate limit: 200ms between orders to avoid throttling
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+
+          // Rate limit between pages
+          if (nextToken) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        } while (nextToken);
+
+        return { orders: chunkOrders, items: chunkItems, pages: pageCount };
+      });
+
+      totalOrders += chunkResult.orders;
+      totalOrderItems += chunkResult.items;
+      processedChunks++;
+
+      console.log(
+        `✅ Chunk ${i + 1}/${monthlyChunks.length} complete: ${chunkResult.orders} orders, ${chunkResult.items} items`
+      );
+
+      // Small delay between chunks
+      if (i < monthlyChunks.length - 1) {
+        await step.sleep(`chunk-delay-${i}`, "2s");
+      }
+    }
+
+    // Final step: Update product fee averages
+    await step.run("refresh-product-averages", async () => {
+      try {
+        const result = await refreshAllProductFeeAverages(userId);
+        return result;
+      } catch (error) {
+        return { error: String(error) };
+      }
+    });
+
+    results.totalOrders = totalOrders;
+    results.totalOrderItems = totalOrderItems;
+    results.processedChunks = processedChunks;
+    results.completedAt = new Date().toISOString();
+
+    console.log(`🎉 [Inngest] Historical sync completed for user ${userId}:`, results);
+
+    return results;
+  }
+);
+
 // Export all functions
-export const functions = [syncAmazonFees, syncSingleOrderFees, scheduledFeeSync];
+export const functions = [syncAmazonFees, syncSingleOrderFees, scheduledFeeSync, syncHistoricalData];

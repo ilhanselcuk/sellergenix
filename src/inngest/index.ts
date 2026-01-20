@@ -5,5 +5,5 @@
  */
 
 export { inngest } from "./client";
-export { functions, syncAmazonFees, syncSingleOrderFees, scheduledFeeSync } from "./functions";
-export type { SyncFeesEvent, SyncOrderFeesEvent, RefreshProductAveragesEvent, InngestEvents } from "./client";
+export { functions, syncAmazonFees, syncSingleOrderFees, scheduledFeeSync, syncHistoricalData } from "./functions";
+export type { SyncFeesEvent, SyncOrderFeesEvent, RefreshProductAveragesEvent, SyncHistoricalDataEvent, InngestEvents } from "./client";

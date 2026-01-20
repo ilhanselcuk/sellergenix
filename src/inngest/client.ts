@@ -43,5 +43,15 @@ export type RefreshProductAveragesEvent = {
   };
 };
 
+export type SyncHistoricalDataEvent = {
+  name: "amazon/sync.historical";
+  data: {
+    userId: string;
+    refreshToken: string;
+    marketplaceIds: string[];
+    yearsBack?: number; // Default 2 years
+  };
+};
+
 // Union type for all events
-export type InngestEvents = SyncFeesEvent | SyncOrderFeesEvent | RefreshProductAveragesEvent;
+export type InngestEvents = SyncFeesEvent | SyncOrderFeesEvent | RefreshProductAveragesEvent | SyncHistoricalDataEvent;
