@@ -617,6 +617,72 @@ if (item.estimated_amazon_fee) {
 
 ---
 
+### 🚀 INNGEST BACKGROUND JOBS (19 Ocak 2026)
+
+**Durum:** ✅ **KURULDU VE ÇALIŞIYOR**
+
+Inngest, Vercel'in 10s/60s timeout limitini aşmak için kullanılıyor.
+
+#### Dosya Yapısı:
+```
+src/inngest/
+├── client.ts      # Inngest client ve event types
+├── functions.ts   # Background job tanımları
+├── index.ts       # Export'lar
+```
+
+#### Background Jobs:
+
+| Job | Trigger | Açıklama |
+|-----|---------|----------|
+| `syncAmazonFees` | `amazon/sync.fees` event | Büyük fee sync (100+ sipariş) |
+| `syncSingleOrderFees` | `amazon/sync.order-fees` event | Tek sipariş fee sync |
+| `scheduledFeeSync` | Cron `*/15 * * * *` | Her 15 dk otomatik sync |
+
+#### Kullanım:
+
+```typescript
+// Background sync tetikle (anında döner)
+import { inngest } from '@/inngest/client';
+
+await inngest.send({
+  name: 'amazon/sync.fees',
+  data: {
+    userId: 'xxx',
+    refreshToken: 'xxx',
+    hours: 720,  // 30 gün - TIMEOUT OLMAZ!
+    type: 'all'
+  }
+});
+```
+
+#### API Endpoint:
+
+```bash
+# Background mode (default) - anında döner
+POST /api/sync/fees?userId=xxx&hours=720&type=all
+
+# Direct mode (küçük sync'ler için)
+POST /api/sync/fees?userId=xxx&hours=24&type=shipped&sync=direct
+```
+
+#### Vercel Entegrasyonu:
+
+1. Vercel Dashboard → Integrations → Inngest ekle
+2. Otomatik olarak `INNGEST_SIGNING_KEY` eklenir
+3. Deploy sonrası Inngest otomatik function'ları keşfeder
+
+#### Özellikler:
+
+- ✅ **Timeout yok** - Saatlerce çalışabilir
+- ✅ **Otomatik retry** - Hata durumunda 3x tekrar
+- ✅ **Rate limiting** - Amazon API limitlerine uyum
+- ✅ **Concurrency** - Kullanıcı başına 1 sync
+- ✅ **Cron job** - Her 15 dk otomatik sync
+- ✅ **Step functions** - Her adım ayrı, hata izolasyonu
+
+---
+
 ### 🔗 İlgili Dosyalar
 
 | Dosya | Amaç |
