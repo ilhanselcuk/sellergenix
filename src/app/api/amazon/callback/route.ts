@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { exchangeAuthorizationCode, getSellerProfile } from '@/lib/amazon-sp-api'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { inngest } from '@/inngest'
 
 export async function GET(request: NextRequest) {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001'
@@ -114,8 +115,29 @@ export async function GET(request: NextRequest) {
 
     console.log('✅ Amazon connection saved successfully!')
 
-    // Redirect to dashboard with auto_sync flag to trigger sync
-    return NextResponse.redirect(`${baseUrl}/dashboard?auto_sync=true`)
+    // ========================================
+    // AUTO-SYNC: Trigger 2-year historical sync via Inngest
+    // This runs in background, won't timeout
+    // ========================================
+    try {
+      console.log('🚀 Triggering 2-year historical sync via Inngest...')
+      await inngest.send({
+        name: 'amazon/sync.historical',
+        data: {
+          userId: user.id,
+          refreshToken: refresh_token,
+          marketplaceIds: marketplaceIds.length > 0 ? marketplaceIds : ['ATVPDKIKX0DER'],
+          yearsBack: 2
+        }
+      })
+      console.log('✅ Historical sync triggered successfully!')
+    } catch (inngestError) {
+      console.error('⚠️ Failed to trigger Inngest sync (non-blocking):', inngestError)
+      // Don't fail the connection - sync can be triggered manually later
+    }
+
+    // Redirect to dashboard
+    return NextResponse.redirect(`${baseUrl}/dashboard?connected=true`)
   } catch (error: any) {
     console.error('❌ OAuth callback error:', error)
     return NextResponse.redirect(`${baseUrl}/dashboard/amazon?error=unknown`)

@@ -16,6 +16,7 @@ import {
 import { syncProductsWithHistory } from '@/lib/services/product-sync'
 import { syncOrdersWithHistory } from '@/lib/services/orders-sync'
 import { extractProductsFromOrders } from '@/lib/services/products-from-orders'
+import { inngest } from '@/inngest'
 
 // ============================================================================
 // TYPES
@@ -235,37 +236,25 @@ export async function connectWithManualTokenAction(
     }
 
     // ========================================
-    // AUTO-SYNC: Full 2-year historical sync on connection
+    // AUTO-SYNC: Trigger 2-year historical sync via Inngest
+    // Uses Inngest for reliable background processing (no timeout)
     // ========================================
-    console.log('🚀 Starting FULL historical sync (2 years)...')
-
-    // Run sync in background (don't await - let it complete async)
-    // This prevents timeout on the connection action
-    // Chain: Full orders sync (2 years) → Product extraction
-    syncOrdersWithHistory(
-      userId,
-      connection.id,
-      refreshToken,
-      marketplaceIds.length > 0 ? marketplaceIds : ['ATVPDKIKX0DER'],
-      730 // 2 YEARS of data - no more manual full sync needed!
-    ).then(async (result) => {
-      console.log(`✅ Full historical sync: ${result.ordersSync} orders synced (2 years)`)
-
-      // After orders are synced, extract ALL products from order items
-      console.log('📦 Starting product extraction from all orders...')
-      try {
-        const productResult = await extractProductsFromOrders(
+    try {
+      console.log('🚀 Triggering 2-year historical sync via Inngest...')
+      await inngest.send({
+        name: 'amazon/sync.historical',
+        data: {
           userId,
           refreshToken,
-          500 // Process up to 500 orders for complete product extraction
-        )
-        console.log(`✅ Product extraction: ${productResult.productsAdded} products added`)
-      } catch (err: any) {
-        console.error('❌ Product extraction failed:', err.message)
-      }
-    }).catch(err => {
-      console.error('❌ Full historical sync failed:', err.message)
-    })
+          marketplaceIds: marketplaceIds.length > 0 ? marketplaceIds : ['ATVPDKIKX0DER'],
+          yearsBack: 2
+        }
+      })
+      console.log('✅ Historical sync triggered successfully!')
+    } catch (inngestError) {
+      console.error('⚠️ Failed to trigger Inngest sync (non-blocking):', inngestError)
+      // Don't fail the connection - sync can be triggered manually later
+    }
 
     revalidatePath('/dashboard/amazon')
 
