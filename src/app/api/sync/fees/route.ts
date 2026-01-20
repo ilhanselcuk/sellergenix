@@ -1,18 +1,20 @@
 /**
  * Fee Sync API
  *
- * Syncs Amazon fees for orders:
- * - POST: Trigger fee sync for shipped orders + estimate pending orders
- * - GET: Get fee sync status (last sync time, stats)
+ * Syncs Amazon fees for orders using Inngest background jobs:
+ * - POST: Trigger fee sync in background (returns immediately)
+ * - GET: Get fee sync status (stats)
  *
  * Query Params:
  * - userId: Required user ID
  * - hours: Hours back to look for shipped orders (default: 24)
  * - type: 'shipped' | 'pending' | 'all' (default: 'all')
+ * - sync: 'background' (default) | 'direct' (for small syncs)
  */
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { inngest } from '@/inngest/client'
 import {
   syncRecentlyShippedOrderFees,
   estimateAllPendingOrderFees,
@@ -29,13 +31,12 @@ export async function POST(request: Request) {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
     const hours = parseInt(searchParams.get('hours') || '24')
-    const type = searchParams.get('type') || 'all'
+    const type = (searchParams.get('type') || 'all') as 'shipped' | 'pending' | 'all'
+    const syncMode = searchParams.get('sync') || 'background'
 
     if (!userId) {
       return NextResponse.json({ error: 'userId required' }, { status: 400 })
     }
-
-    console.log(`🔄 Fee sync triggered for user ${userId}, type: ${type}, hours: ${hours}`)
 
     // Get Amazon connection for refresh token
     const { data: connection, error: connError } = await supabase
@@ -52,9 +53,37 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
+    // Background mode: Use Inngest (recommended for large syncs)
+    if (syncMode === 'background') {
+      console.log(`🚀 Triggering background fee sync for user ${userId}, type: ${type}, hours: ${hours}`)
+
+      // Send event to Inngest - returns immediately
+      await inngest.send({
+        name: 'amazon/sync.fees',
+        data: {
+          userId,
+          refreshToken: connection.refresh_token,
+          hours,
+          type,
+        },
+      })
+
+      return NextResponse.json({
+        success: true,
+        mode: 'background',
+        message: 'Fee sync started in background. Check dashboard for updates.',
+        params: { userId, hours, type },
+        triggeredAt: new Date().toISOString(),
+      })
+    }
+
+    // Direct mode: Process synchronously (for small syncs only)
+    console.log(`🔄 Direct fee sync for user ${userId}, type: ${type}, hours: ${hours}`)
+
     const results: Record<string, unknown> = {
       startedAt: new Date().toISOString(),
       type,
+      mode: 'direct',
     }
 
     // 1. Sync fees for shipped orders
@@ -146,7 +175,7 @@ export async function GET(request: Request) {
         totalFees: totalFees.toFixed(2),
         productsWithAverages: productsWithAverages || 0,
       },
-      hint: 'POST to this endpoint to trigger fee sync',
+      hint: 'POST to trigger sync. Use ?sync=background (default) for large syncs, ?sync=direct for small syncs.',
     })
   } catch (error: unknown) {
     console.error('Fee sync status error:', error)
