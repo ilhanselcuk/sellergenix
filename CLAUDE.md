@@ -133,6 +133,82 @@ await updateProductAvgFee(item.asin, realFee)
 
 ---
 
+### 🚨🚨🚨 PST TIMEZONE FIX - KRİTİK BİLGİ (20 Ocak 2026) 🚨🚨🚨
+
+**⚠️ AYNI HATAYI TEKRARLAMA! BU FIX KALICI, DEĞİŞTİRME!**
+
+#### Sorun Ne İdi?
+Sellerboard ile SellerGenix dashboard'ında Today/Yesterday siparişleri farklı gösteriliyordu.
+- Örnek: `2026-01-20T01:05:58 UTC` tarihli sipariş (= Jan 19 17:05 PST = **DÜN**)
+- **YANLIŞ:** "Today" kartında gösteriliyordu
+- **DOĞRU:** "Yesterday" kartında gösterilmeli
+
+#### Kök Neden:
+```javascript
+// ❌ YANLIŞ - Local/UTC midnight kullanıyordu
+const todayStart = new Date(now)
+todayStart.setHours(0, 0, 0, 0)  // Server timezone'a bağlı!
+
+// ✅ DOĞRU - PST midnight kullanmalı
+const todayStart = createPSTMidnight(year, month, day)  // UTC 08:00
+```
+
+#### PST Timezone Matematiği:
+```
+PST = UTC - 8 saat
+
+Gece yarısı PST (00:00) = Sabah 08:00 UTC (aynı gün)
+Gün sonu PST (23:59:59) = Ertesi gün 07:59:59 UTC
+```
+
+#### Düzeltilen Dosyalar:
+1. **`/src/lib/amazon-sp-api/sales.ts`** - Sales API tarih aralıkları
+2. **`/src/app/api/dashboard/metrics/route.ts`** - Fee query tarih aralıkları
+
+#### Helper Fonksiyonlar (Her iki dosyada da var):
+```typescript
+// PST'de bugünün tarihini al
+function getPSTDate(utcDate: Date): { year: number; month: number; day: number } {
+  const pstTime = new Date(utcDate.getTime() - 8 * 60 * 60 * 1000)
+  return {
+    year: pstTime.getUTCFullYear(),
+    month: pstTime.getUTCMonth(),
+    day: pstTime.getUTCDate()
+  }
+}
+
+// PST gece yarısı = UTC 08:00
+function createPSTMidnight(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month, day, 8, 0, 0, 0))
+}
+
+// PST gün sonu = Ertesi gün UTC 07:59:59
+function createPSTEndOfDay(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month, day + 1, 7, 59, 59, 999))
+}
+```
+
+#### Düzeltilen Fonksiyonlar:
+- `getTodaySalesMetrics()` - ✅ PST ile düzeltildi
+- `getYesterdaySalesMetrics()` - ✅ PST ile düzeltildi
+- `getThisMonthSalesMetrics()` - ✅ PST ile düzeltildi
+- `getLastMonthSalesMetrics()` - ✅ PST ile düzeltildi
+- Dashboard metrics route (Today/Yesterday/ThisMonth/LastMonth fee queries) - ✅ PST ile düzeltildi
+
+#### ⚠️ SAKINCA YAPMA:
+- ❌ `setHours(0, 0, 0, 0)` KULLANMA - Server timezone'a bağlı
+- ❌ `new Date(year, month, day)` KULLANMA - Local timezone
+- ❌ PST helper fonksiyonlarını değiştirme
+- ❌ Sabit -8 offset'i değiştirme (DST için `granularityTimeZone: 'America/Los_Angeles'` zaten handle ediyor)
+
+#### Commit Referansı:
+```
+commit 4013b76
+fix: Correct PST to UTC date range conversion for order filtering
+```
+
+---
+
 #### 6️⃣ docs/ KLASÖRÜNDEKİ TÜM MD DOSYALARI
 ```
 docs/
