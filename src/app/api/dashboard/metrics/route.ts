@@ -17,6 +17,40 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// =============================================
+// PST TIMEZONE HELPERS
+// Amazon US marketplace uses PST (UTC-8) for daily boundaries
+// =============================================
+
+/**
+ * Get current date in PST timezone
+ */
+function getPSTDate(utcDate: Date): { year: number; month: number; day: number } {
+  // Convert UTC to PST by subtracting 8 hours
+  const pstTime = new Date(utcDate.getTime() - 8 * 60 * 60 * 1000)
+  return {
+    year: pstTime.getUTCFullYear(),
+    month: pstTime.getUTCMonth(),
+    day: pstTime.getUTCDate()
+  }
+}
+
+/**
+ * Create PST midnight date
+ * PST = UTC - 8 hours, so midnight PST = 08:00 UTC same day
+ */
+function createPSTMidnight(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month, day, 8, 0, 0, 0))
+}
+
+/**
+ * Create PST end of day (23:59:59.999 PST)
+ * 23:59:59 PST = next day 07:59:59 UTC
+ */
+function createPSTEndOfDay(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month, day + 1, 7, 59, 59, 999))
+}
+
 interface PeriodMetrics {
   sales: number
   units: number
@@ -298,28 +332,44 @@ export async function GET(request: Request) {
     // =============================================
     console.log('💰 Fetching real Amazon fees from database...')
 
-    // Calculate date ranges for each period
+    // Calculate date ranges for each period in PST timezone
+    // IMPORTANT: Amazon US uses PST (UTC-8) for daily boundaries!
     const now = new Date()
+    const pstToday = getPSTDate(now)
 
-    // Today
-    const todayStart = new Date(now)
-    todayStart.setHours(0, 0, 0, 0)
-    const todayEnd = new Date(now)
+    console.log(`📅 Current time in PST: ${pstToday.year}-${pstToday.month + 1}-${pstToday.day}`)
 
-    // Yesterday
-    const yesterdayStart = new Date(now)
-    yesterdayStart.setDate(yesterdayStart.getDate() - 1)
-    yesterdayStart.setHours(0, 0, 0, 0)
-    const yesterdayEnd = new Date(yesterdayStart)
-    yesterdayEnd.setHours(23, 59, 59, 999)
+    // Today (in PST)
+    const todayStart = createPSTMidnight(pstToday.year, pstToday.month, pstToday.day)
+    const todayEnd = now // Current moment
 
-    // This Month
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const thisMonthEnd = new Date(now)
+    // Yesterday (in PST)
+    const yesterdayDate = new Date(Date.UTC(pstToday.year, pstToday.month, pstToday.day - 1))
+    const pstYesterday = {
+      year: yesterdayDate.getUTCFullYear(),
+      month: yesterdayDate.getUTCMonth(),
+      day: yesterdayDate.getUTCDate()
+    }
+    const yesterdayStart = createPSTMidnight(pstYesterday.year, pstYesterday.month, pstYesterday.day)
+    const yesterdayEnd = createPSTEndOfDay(pstYesterday.year, pstYesterday.month, pstYesterday.day)
 
-    // Last Month
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+    // This Month (in PST)
+    const thisMonthStart = createPSTMidnight(pstToday.year, pstToday.month, 1)
+    const thisMonthEnd = now // Current moment
+
+    // Last Month (in PST)
+    let lastMonthYear = pstToday.year
+    let lastMonth = pstToday.month - 1
+    if (lastMonth < 0) {
+      lastMonth = 11 // December
+      lastMonthYear = pstToday.year - 1
+    }
+    const daysInLastMonth = new Date(lastMonthYear, lastMonth + 1, 0).getDate()
+    const lastMonthStart = createPSTMidnight(lastMonthYear, lastMonth, 1)
+    const lastMonthEnd = createPSTEndOfDay(lastMonthYear, lastMonth, daysInLastMonth)
+
+    console.log(`📅 Today range (UTC): ${todayStart.toISOString()} -- ${todayEnd.toISOString()}`)
+    console.log(`📅 Yesterday range (UTC): ${yesterdayStart.toISOString()} -- ${yesterdayEnd.toISOString()}`)
 
     // Fetch real fees for each period in parallel
     const [todayFees, yesterdayFees, thisMonthFees, lastMonthFees] = await Promise.all([

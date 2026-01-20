@@ -131,6 +131,36 @@ export function createInterval(startDate: Date, endDate: Date): string {
 }
 
 /**
+ * Helper: Create PST midnight date
+ * PST = UTC - 8 hours, so midnight PST = 08:00 UTC same day
+ */
+function createPSTMidnight(year: number, month: number, day: number): Date {
+  // Midnight PST = 08:00 UTC (PST is UTC-8)
+  return new Date(Date.UTC(year, month, day, 8, 0, 0, 0))
+}
+
+/**
+ * Helper: Create PST end of day (23:59:59.999 PST)
+ * 23:59:59 PST = next day 07:59:59 UTC
+ */
+function createPSTEndOfDay(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month, day + 1, 7, 59, 59, 999))
+}
+
+/**
+ * Helper: Get current date in PST timezone
+ */
+function getPSTDate(utcDate: Date): { year: number; month: number; day: number } {
+  // Convert UTC to PST by subtracting 8 hours
+  const pstTime = new Date(utcDate.getTime() - 8 * 60 * 60 * 1000)
+  return {
+    year: pstTime.getUTCFullYear(),
+    month: pstTime.getUTCMonth(),
+    day: pstTime.getUTCDate()
+  }
+}
+
+/**
  * Get Today's Sales Metrics
  *
  * @param refreshToken - Amazon refresh token
@@ -140,10 +170,16 @@ export async function getTodaySalesMetrics(
   refreshToken: string,
   marketplaceIds: string[]
 ): Promise<{ success: boolean; metrics?: OrderMetrics; error?: string }> {
-  // Today start (midnight PST) to now
+  // IMPORTANT: Calculate "today" in PST timezone, not UTC!
   const now = new Date()
-  const todayStart = new Date(now)
-  todayStart.setHours(0, 0, 0, 0)
+  const pstToday = getPSTDate(now)
+
+  // Today start = midnight PST = 08:00 UTC
+  const todayStart = createPSTMidnight(pstToday.year, pstToday.month, pstToday.day)
+
+  console.log(`📅 Today (PST): ${pstToday.year}-${pstToday.month + 1}-${pstToday.day}`)
+  console.log(`📅 Today start (UTC): ${todayStart.toISOString()}`)
+  console.log(`📅 Now (UTC): ${now.toISOString()}`)
 
   const result = await getOrderMetrics(refreshToken, {
     marketplaceIds,
@@ -169,13 +205,25 @@ export async function getYesterdaySalesMetrics(
   refreshToken: string,
   marketplaceIds: string[]
 ): Promise<{ success: boolean; metrics?: OrderMetrics; error?: string }> {
+  // IMPORTANT: Calculate "yesterday" in PST timezone, not UTC!
   const now = new Date()
-  const yesterdayStart = new Date(now)
-  yesterdayStart.setDate(yesterdayStart.getDate() - 1)
-  yesterdayStart.setHours(0, 0, 0, 0)
+  const pstToday = getPSTDate(now)
 
-  const yesterdayEnd = new Date(yesterdayStart)
-  yesterdayEnd.setHours(23, 59, 59, 999)
+  // Yesterday = today - 1 day in PST
+  const yesterdayDate = new Date(Date.UTC(pstToday.year, pstToday.month, pstToday.day - 1))
+  const pstYesterday = {
+    year: yesterdayDate.getUTCFullYear(),
+    month: yesterdayDate.getUTCMonth(),
+    day: yesterdayDate.getUTCDate()
+  }
+
+  // Yesterday start = midnight PST = 08:00 UTC
+  const yesterdayStart = createPSTMidnight(pstYesterday.year, pstYesterday.month, pstYesterday.day)
+  // Yesterday end = 23:59:59 PST = next day 07:59:59 UTC
+  const yesterdayEnd = createPSTEndOfDay(pstYesterday.year, pstYesterday.month, pstYesterday.day)
+
+  console.log(`📅 Yesterday (PST): ${pstYesterday.year}-${pstYesterday.month + 1}-${pstYesterday.day}`)
+  console.log(`📅 Yesterday range (UTC): ${yesterdayStart.toISOString()} -- ${yesterdayEnd.toISOString()}`)
 
   const result = await getOrderMetrics(refreshToken, {
     marketplaceIds,
@@ -201,8 +249,15 @@ export async function getThisMonthSalesMetrics(
   refreshToken: string,
   marketplaceIds: string[]
 ): Promise<{ success: boolean; metrics?: OrderMetrics; error?: string }> {
+  // IMPORTANT: Calculate month boundaries in PST timezone!
   const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const pstToday = getPSTDate(now)
+
+  // First day of this month at midnight PST
+  const monthStart = createPSTMidnight(pstToday.year, pstToday.month, 1)
+
+  console.log(`📅 This Month (PST): ${pstToday.year}-${pstToday.month + 1}`)
+  console.log(`📅 Month start (UTC): ${monthStart.toISOString()}`)
 
   const result = await getOrderMetrics(refreshToken, {
     marketplaceIds,
@@ -228,9 +283,30 @@ export async function getLastMonthSalesMetrics(
   refreshToken: string,
   marketplaceIds: string[]
 ): Promise<{ success: boolean; metrics?: OrderMetrics; error?: string }> {
+  // IMPORTANT: Calculate last month boundaries in PST timezone!
   const now = new Date()
-  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
-  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const pstToday = getPSTDate(now)
+
+  // Last month = current month - 1
+  // Handle year boundary (January -> December of previous year)
+  let lastMonthYear = pstToday.year
+  let lastMonth = pstToday.month - 1
+  if (lastMonth < 0) {
+    lastMonth = 11 // December
+    lastMonthYear = pstToday.year - 1
+  }
+
+  // First day of last month at midnight PST
+  const lastMonthStart = createPSTMidnight(lastMonthYear, lastMonth, 1)
+
+  // Last day of last month = day 0 of current month
+  // Get the number of days in last month
+  const daysInLastMonth = new Date(lastMonthYear, lastMonth + 1, 0).getDate()
+  // End of last month = 23:59:59 PST on the last day
+  const lastMonthEnd = createPSTEndOfDay(lastMonthYear, lastMonth, daysInLastMonth)
+
+  console.log(`📅 Last Month (PST): ${lastMonthYear}-${lastMonth + 1}`)
+  console.log(`📅 Last Month range (UTC): ${lastMonthStart.toISOString()} -- ${lastMonthEnd.toISOString()}`)
 
   const result = await getOrderMetrics(refreshToken, {
     marketplaceIds,

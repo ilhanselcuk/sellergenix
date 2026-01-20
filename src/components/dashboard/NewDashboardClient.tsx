@@ -34,6 +34,7 @@ interface PeriodMetrics {
   refunds: number
   adSpend: number
   amazonFees: number
+  cogs?: number  // Cost of Goods Sold
   grossProfit: number
   netProfit: number
   margin: number
@@ -357,6 +358,55 @@ export default function NewDashboardClient({
     return map
   }, [dashboardData?.products])
 
+  // Build historical price map from order_items (for pending orders with $0 price)
+  // CRITICAL: Amazon doesn't provide ItemPrice for Pending orders, so we use historical data
+  const historicalPriceMap = useMemo(() => {
+    const map = new Map<string, number>()
+    if (dashboardData?.orderItems) {
+      // Group by ASIN and calculate average price per unit
+      const priceData: { [asin: string]: { totalPrice: number; totalUnits: number } } = {}
+
+      for (const item of dashboardData.orderItems) {
+        const asin = item.asin
+        const price = item.item_price || 0
+        const qty = item.quantity_ordered || 1
+
+        // Only use items with actual prices (shipped orders)
+        if (asin && price > 0) {
+          if (!priceData[asin]) {
+            priceData[asin] = { totalPrice: 0, totalUnits: 0 }
+          }
+          priceData[asin].totalPrice += price
+          priceData[asin].totalUnits += qty
+        }
+      }
+
+      // Calculate average price per unit for each ASIN
+      for (const [asin, data] of Object.entries(priceData)) {
+        if (data.totalUnits > 0) {
+          map.set(asin, data.totalPrice / data.totalUnits)
+        }
+      }
+    }
+    console.log('💰 Historical price map loaded:', map.size, 'ASINs')
+    return map
+  }, [dashboardData?.orderItems])
+
+  // Build COGS map from products table
+  const cogsMap = useMemo(() => {
+    const map = new Map<string, number>()
+    if (dashboardData?.products) {
+      for (const product of dashboardData.products) {
+        const cogs = (product as any).cogs
+        if (cogs && cogs > 0 && product.asin) {
+          map.set(product.asin, cogs)
+        }
+      }
+    }
+    console.log('📦 COGS map loaded:', map.size, 'products')
+    return map
+  }, [dashboardData?.products])
+
   // Helper function to calculate fee for a single item using SKU lookup
   const calculateFeeForItem = (asin: string, sellerSku: string | null, itemPrice: number, quantity: number): number => {
     // Try lookup by ASIN first, then by SKU
@@ -413,21 +463,43 @@ export default function NewDashboardClient({
     )
 
     // Calculate metrics from filtered items
-    const totalSales = filteredItems.reduce((sum: number, item: any) => sum + (item.item_price || 0), 0)
-    const totalUnits = filteredItems.reduce((sum: number, item: any) => sum + (item.quantity_ordered || 0), 0)
-
-    // Calculate fees using SKU-based historical data (Sellerboard-style!)
+    // CRITICAL: Use historical price for items with $0 price (pending orders)
+    let totalSales = 0
+    let totalUnits = 0
+    let totalCogs = 0
     let totalFees = 0
+
     for (const item of filteredItems) {
       const asin = item.asin || ''
       const sellerSku = item.seller_sku || null
-      const itemPrice = item.item_price || 0
       const quantity = item.quantity_ordered || 1
+      let itemPrice = item.item_price || 0
+
+      // FIX: If price is $0, use historical average price for this ASIN
+      if (itemPrice === 0 && asin && historicalPriceMap.has(asin)) {
+        itemPrice = historicalPriceMap.get(asin)! * quantity
+        console.log(`💰 Using historical price for ${asin}: $${itemPrice.toFixed(2)}`)
+      }
+
+      totalSales += itemPrice
+      totalUnits += quantity
+
+      // Calculate Amazon fees (using historical data)
       totalFees += calculateFeeForItem(asin, sellerSku, itemPrice, quantity)
+
+      // Calculate COGS (if available in products table)
+      if (asin && cogsMap.has(asin)) {
+        totalCogs += cogsMap.get(asin)! * quantity
+      }
     }
 
-    const estimatedAdSpend = totalSales * 0.05
-    const grossProfit = totalSales - totalFees
+    // Ad Spend: Use Sales API data if available, otherwise estimate at 8%
+    // Note: Sellerboard uses real ad spend from Advertising API
+    const estimatedAdSpend = totalSales * 0.08
+
+    // CORRECT Net Profit formula (Sellerboard-style):
+    // Net Profit = Sales - COGS - Amazon Fees - Ad Spend
+    const grossProfit = totalSales - totalCogs - totalFees
     const netProfit = grossProfit - estimatedAdSpend
 
     return {
@@ -437,10 +509,11 @@ export default function NewDashboardClient({
       refunds: 0,
       adSpend: estimatedAdSpend,
       amazonFees: totalFees,
+      cogs: totalCogs,
       grossProfit: grossProfit,
       netProfit: netProfit,
       margin: totalSales > 0 ? (netProfit / totalSales) * 100 : 0,
-      roi: estimatedAdSpend > 0 ? (netProfit / estimatedAdSpend) * 100 : 0
+      roi: (totalCogs + estimatedAdSpend) > 0 ? (netProfit / (totalCogs + estimatedAdSpend)) * 100 : 0
     }
   }
 
@@ -491,7 +564,7 @@ export default function NewDashboardClient({
       const metrics = calculateMetricsForDateRange(period.startDate, period.endDate)
       return generateRealPeriodData(period.label, period.startDate, period.endDate, metrics)
     })
-  }, [selectedSetId, isCustomMode, customRange, dashboardData, salesApiMetrics])
+  }, [selectedSetId, isCustomMode, customRange, dashboardData, salesApiMetrics, historicalPriceMap, cogsMap, productFeeMap])
 
   // Selected period for product table
   const selectedPeriod = periodData[selectedPeriodIndex] || periodData[0]
