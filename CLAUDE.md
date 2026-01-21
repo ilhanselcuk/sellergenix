@@ -215,10 +215,12 @@ const startDay = startDate.getUTCDate()  // UTC'de gün
 - Eğer server PST (UTC-8) ise: Jan 21 00:00 UTC = Jan 20 16:00 PST
 - Bu yüzden `getDate()` **20** döndürür, **21** değil!
 
-**Düzeltilen Dosya:** `/src/lib/amazon-sp-api/sales.ts` - `getMetricsForDateRange()` fonksiyonu
+**Düzeltilen Dosyalar:**
+1. `/src/lib/amazon-sp-api/sales.ts` - `getMetricsForDateRange()` fonksiyonu (commit 03815f8)
+2. `/src/app/api/dashboard/metrics/route.ts` - POST handler fee query (commit 83860b2)
 
 ```typescript
-// ✅ DOĞRU KULLANIM (commit 03815f8)
+// ✅ DOĞRU KULLANIM
 const startYear = startDate.getUTCFullYear()
 const startMonth = startDate.getUTCMonth()
 const startDay = startDate.getUTCDate()
