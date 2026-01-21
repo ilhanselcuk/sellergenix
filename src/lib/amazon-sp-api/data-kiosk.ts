@@ -7,8 +7,20 @@
  * @see https://developer-docs.amazon.com/sp-api/docs/data-kiosk-api
  */
 
-import { getAccessToken } from './auth';
+import { refreshAccessToken } from './oauth';
 import { createClient } from '@supabase/supabase-js';
+
+/**
+ * Get access token from refresh token
+ * Wrapper around refreshAccessToken for simpler usage
+ */
+async function getAccessToken(refreshToken: string): Promise<string> {
+  const result = await refreshAccessToken(refreshToken);
+  if (!result.success || !result.data?.access_token) {
+    throw new Error(result.error || 'Failed to get access token');
+  }
+  return result.data.access_token;
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
