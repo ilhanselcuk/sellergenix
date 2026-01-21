@@ -363,13 +363,15 @@ export async function getMetricsForDateRange(
   startDate: Date,
   endDate: Date
 ): Promise<{ success: boolean; metrics?: OrderMetrics; error?: string }> {
-  // Extract year/month/day from input dates (treating them as PST dates)
-  const startYear = startDate.getFullYear()
-  const startMonth = startDate.getMonth()
-  const startDay = startDate.getDate()
-  const endYear = endDate.getFullYear()
-  const endMonth = endDate.getMonth()
-  const endDay = endDate.getDate()
+  // CRITICAL: Use UTC methods to extract date components!
+  // When Date is created from "YYYY-MM-DD" string, it's parsed as UTC midnight.
+  // Using getDate() (local) instead of getUTCDate() would give wrong day on non-UTC servers.
+  const startYear = startDate.getUTCFullYear()
+  const startMonth = startDate.getUTCMonth()
+  const startDay = startDate.getUTCDate()
+  const endYear = endDate.getUTCFullYear()
+  const endMonth = endDate.getUTCMonth()
+  const endDay = endDate.getUTCDate()
 
   // Convert PST dates to UTC for API call
   const pstStart = createPSTMidnight(startYear, startMonth, startDay)
