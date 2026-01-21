@@ -218,23 +218,49 @@ const startDay = startDate.getUTCDate()  // UTC'de gün
 **Düzeltilen Dosyalar:**
 1. `/src/lib/amazon-sp-api/sales.ts` - `getMetricsForDateRange()` fonksiyonu (commit 03815f8)
 2. `/src/app/api/dashboard/metrics/route.ts` - POST handler fee query (commit 83860b2)
+3. `/src/components/dashboard/PeriodSelector.tsx` - `createPSTDate()` ve `getDateRange()` fonksiyonları (commit a166a56)
+4. `/src/components/dashboard/NewDashboardClient.tsx` - `calculateMetricsForDateRange()` ve `filteredProducts` (commit a166a56)
 
 ```typescript
-// ✅ DOĞRU KULLANIM
+// ✅ DOĞRU KULLANIM - Date oluşturma
+function createPSTDate(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month, day))  // ✅ UTC kullan!
+}
+
+// ✅ DOĞRU KULLANIM - Date'den gün/ay/yıl çıkarma
 const startYear = startDate.getUTCFullYear()
 const startMonth = startDate.getUTCMonth()
 const startDay = startDate.getUTCDate()
-const endYear = endDate.getUTCFullYear()
-const endMonth = endDate.getUTCMonth()
-const endDay = endDate.getUTCDate()
+
+// ✅ DOĞRU KULLANIM - Gün ekleme/çıkarma
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date.getTime())
+  result.setUTCDate(result.getUTCDate() + days)  // ✅ setUTCDate kullan!
+  return result
+}
+
+// ✅ DOĞRU KULLANIM - Haftanın günü
+const dayOfWeek = date.getUTCDay()  // ✅ getUTCDay kullan!
 ```
 
 #### ⚠️ SAKINCA YAPMA:
+- ❌ `new Date(year, month, day)` KULLANMA - Local timezone, toISOString() yanlış tarih döndürür!
 - ❌ `setHours(0, 0, 0, 0)` KULLANMA - Server timezone'a bağlı
-- ❌ `new Date(year, month, day)` KULLANMA - Local timezone
-- ❌ `getDate()`, `getMonth()`, `getFullYear()` KULLANMA - Her zaman `getUTCDate()`, `getUTCMonth()`, `getUTCFullYear()` kullan!
+- ❌ `getDate()`, `getMonth()`, `getFullYear()` KULLANMA - Local timezone
+- ❌ `setDate()` KULLANMA - `setUTCDate()` kullan
+- ❌ `getDay()` KULLANMA - `getUTCDay()` kullan
 - ❌ PST helper fonksiyonlarını değiştirme
 - ❌ Sabit -8 offset'i değiştirme (DST için `granularityTimeZone: 'America/Los_Angeles'` zaten handle ediyor)
+
+#### Neden Önemli?
+Kullanıcı Türkiye'de (UTC+3) ise:
+```
+new Date(2026, 0, 21)           // = Jan 21 00:00 Turkey = Jan 20 21:00 UTC
+toISOString().split('T')[0]     // = "2026-01-20" ❌ YANLIŞ!
+
+new Date(Date.UTC(2026, 0, 21)) // = Jan 21 00:00 UTC
+toISOString().split('T')[0]     // = "2026-01-21" ✅ DOĞRU!
+```
 
 #### Commit Referansları:
 ```
@@ -243,6 +269,12 @@ fix: Correct PST to UTC date range conversion for order filtering
 
 commit 03815f8
 fix: Use UTC date methods in getMetricsForDateRange (getDate → getUTCDate)
+
+commit 83860b2
+fix: Use UTC date methods in API route POST handler
+
+commit a166a56
+fix: Complete UTC timezone fix for all date operations
 ```
 
 ---
