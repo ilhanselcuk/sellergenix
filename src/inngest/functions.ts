@@ -332,35 +332,36 @@ export const syncHistoricalData = inngest.createFunction(
 
     console.log(`📅 Syncing orders from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
-    // Split into monthly chunks to avoid overwhelming the API
-    // Amazon Orders API has rate limit of ~1 request per minute
-    const monthlyChunks: { start: Date; end: Date }[] = [];
+    // Split into 2-week chunks to avoid timeout on busy months
+    // Monthly chunks were timing out at chunk 16 (busy month with many orders)
+    const CHUNK_DAYS = 14; // 2 weeks instead of 1 month
+    const orderChunks: { start: Date; end: Date }[] = [];
     let chunkStart = new Date(startDate);
 
     while (chunkStart < endDate) {
       const chunkEnd = new Date(chunkStart);
-      chunkEnd.setMonth(chunkEnd.getMonth() + 1);
+      chunkEnd.setDate(chunkEnd.getDate() + CHUNK_DAYS);
       if (chunkEnd > endDate) {
         chunkEnd.setTime(endDate.getTime());
       }
 
-      monthlyChunks.push({ start: new Date(chunkStart), end: new Date(chunkEnd) });
+      orderChunks.push({ start: new Date(chunkStart), end: new Date(chunkEnd) });
       chunkStart = new Date(chunkEnd);
     }
 
-    console.log(`📊 Split into ${monthlyChunks.length} monthly chunks`);
+    console.log(`📊 Split into ${orderChunks.length} bi-weekly chunks (${CHUNK_DAYS} days each)`);
 
     let totalOrders = 0;
     let totalOrderItems = 0;
     let processedChunks = 0;
 
-    // Process each monthly chunk
-    for (let i = 0; i < monthlyChunks.length; i++) {
-      const chunk = monthlyChunks[i];
+    // Process each bi-weekly chunk
+    for (let i = 0; i < orderChunks.length; i++) {
+      const chunk = orderChunks[i];
       const chunkLabel = `${chunk.start.toISOString().split("T")[0]} to ${chunk.end.toISOString().split("T")[0]}`;
 
       const chunkResult = await step.run(`sync-chunk-${i}`, async () => {
-        console.log(`📦 Processing chunk ${i + 1}/${monthlyChunks.length}: ${chunkLabel}`);
+        console.log(`📦 Processing chunk ${i + 1}/${orderChunks.length}: ${chunkLabel}`);
 
         // Dynamic import to avoid circular dependencies
         const { getOrders, getOrderItems } = await import("@/lib/amazon-sp-api/orders");
@@ -500,28 +501,28 @@ export const syncHistoricalData = inngest.createFunction(
       processedChunks++;
 
       console.log(
-        `✅ Chunk ${i + 1}/${monthlyChunks.length} complete: ${chunkResult.orders} orders, ${chunkResult.items} items`
+        `✅ Chunk ${i + 1}/${orderChunks.length} complete: ${chunkResult.orders} orders, ${chunkResult.items} items`
       );
 
       // Small delay between chunks
-      if (i < monthlyChunks.length - 1) {
+      if (i < orderChunks.length - 1) {
         await step.sleep(`chunk-delay-${i}`, "2s");
       }
     }
 
     // =============================================
-    // NEW: Sync historical fees from Finances API
-    // Split into monthly chunks to avoid timeout
+    // Sync historical fees from Finances API
+    // Split into 2-week chunks to avoid timeout
     // =============================================
     const { bulkSyncFeesForDateRange } = await import("@/lib/amazon-sp-api/fee-service");
 
-    // Create monthly chunks for fee sync (same date range as order sync)
+    // Create 2-week chunks for fee sync (same as order chunks)
     const feeChunks: { start: Date; end: Date }[] = [];
     let feeChunkStart = new Date(startDate);
 
     while (feeChunkStart < endDate) {
       const feeChunkEnd = new Date(feeChunkStart);
-      feeChunkEnd.setMonth(feeChunkEnd.getMonth() + 1);
+      feeChunkEnd.setDate(feeChunkEnd.getDate() + CHUNK_DAYS); // 2 weeks
       if (feeChunkEnd > endDate) {
         feeChunkEnd.setTime(endDate.getTime());
       }
@@ -529,7 +530,7 @@ export const syncHistoricalData = inngest.createFunction(
       feeChunkStart = new Date(feeChunkEnd);
     }
 
-    console.log(`💰 [Inngest] Syncing fees for ${feeChunks.length} monthly chunks`);
+    console.log(`💰 [Inngest] Syncing fees for ${feeChunks.length} bi-weekly chunks`);
 
     let totalFeesOrders = 0;
     let totalFeesItems = 0;
