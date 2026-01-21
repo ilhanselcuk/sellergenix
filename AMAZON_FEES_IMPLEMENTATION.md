@@ -1,8 +1,8 @@
 # Amazon Fees Implementation - SellerGenix vs Sellerboard
 
 **Created:** January 21, 2026
-**Last Updated:** January 21, 2026
-**Status:** IN PROGRESS
+**Last Updated:** January 22, 2026
+**Status:** IN PROGRESS (Phase 1 Complete, Data Kiosk Ready)
 
 ---
 
@@ -16,6 +16,7 @@
 7. [DO NOT MODIFY List](#do-not-modify-list)
 8. [Completed Tasks](#completed-tasks)
 9. [Technical Reference](#technical-reference)
+10. [Data Kiosk API](#data-kiosk-api---scalable-bulk-data-solution)
 
 ---
 
@@ -948,6 +949,241 @@ Estimated Payout = Net Profit for the period
 
 ---
 
+## Data Kiosk API - Scalable Bulk Data Solution
+
+### Problem Statement
+
+**Historical sync sırasında karşılaşılan sorun:**
+- `syncHistoricalData` Inngest function 2 yıllık veri çekerken timeout hatası veriyordu
+- 30 günlük chunk'lar bile yetmiyordu (chunk 16'da hata)
+- 14 günlük chunk'larla bile 500K+ sipariş olan firmalar için çözüm yok
+
+**Scaling hesabı:**
+```
+500.000 sipariş × 200ms/API call = ~28 saat
+Inngest timeout: 5 dakika → FAIL!
+```
+
+**Reports API sorunları (arkadaş deneyimi):**
+- `FATAL` status alınıyor sık sık
+- `CANCELLED` olabiliyor
+- `IN_QUEUE` bazen saatlerce bekliyor
+- Güvenilir değil
+
+### Solution: Data Kiosk API
+
+**Nedir?**
+Amazon'un yeni GraphQL-based bulk data API'si. Reports API'yi replace ediyor.
+
+**Avantajları:**
+| Özellik | Reports API | Data Kiosk |
+|---------|-------------|------------|
+| Format | CSV, TSV, JSON | **JSONL (streaming)** |
+| Query Type | Fixed report types | **Dynamic GraphQL** |
+| Scalability | Limited | **500K+ records** |
+| Reliability | FATAL sık | **Daha stabil** |
+| API Calls | Multiple | **Single query** |
+| Field Selection | All or nothing | **Sadece ihtiyaç duyulan fields** |
+
+### GraphQL Query Örneği
+
+```graphql
+query SalesAndTraffic {
+  analytics_salesAndTraffic_2024_04_24 {
+    salesAndTrafficByDate(
+      startDate: "2024-01-01"
+      endDate: "2026-01-21"
+      aggregateBy: DAY
+    ) {
+      startDate
+      endDate
+      sales {
+        orderedProductSales { amount, currencyCode }
+        unitsOrdered
+        totalOrderItems
+      }
+      traffic {
+        sessions
+        pageViews
+        buyBoxPercentage
+        unitSessionPercentage
+      }
+    }
+  }
+}
+```
+
+**TEK QUERY ile 2 yıllık veri!**
+
+### Implementation Details
+
+**Date:** January 22, 2026
+**Status:** ✅ IMPLEMENTED
+
+#### Files Created/Modified:
+
+1. **`/src/lib/amazon-sp-api/data-kiosk.ts`** (NEW - 532 lines)
+   - Core API functions:
+     - `createDataKioskQuery()` - GraphQL query gönder
+     - `getDataKioskQuery()` - Query status kontrol
+     - `getDataKioskDocument()` - Sonuç document URL al
+     - `downloadDataKioskDocument()` - JSONL parse et
+     - `cancelDataKioskQuery()` - İptal et
+   - High-level workflows:
+     - `executeDataKioskQuery()` - Full workflow (create → poll → download)
+     - `syncSalesAndTrafficData()` - Daily metrics sync
+   - Query builders:
+     - `buildSalesAndTrafficQuery()` - Sales & Traffic by date
+     - `buildSalesAndTrafficByAsinQuery()` - Sales & Traffic by ASIN
+   - Helper:
+     - `getAccessToken()` - Token refresh wrapper
+     - `decompressGzip()` - GZIP decompression
+
+2. **`/src/inngest/functions.ts`** (MODIFIED)
+   - Added `syncHistoricalDataKiosk` function
+   - Event: `amazon/sync.historical-kiosk`
+   - Steps:
+     1. Create GraphQL query
+     2. Poll for completion (with sleeps)
+     3. Get document URL
+     4. Download and parse JSONL
+     5. Insert to database in chunks
+
+3. **`/src/app/api/amazon/data-kiosk-sync/route.ts`** (NEW)
+   - POST endpoint to trigger Data Kiosk sync
+   - Body: `{ yearsBack?: number }` (default: 2)
+   - Returns event IDs for tracking
+
+4. **`/src/lib/amazon-sp-api/index.ts`** (MODIFIED)
+   - Added all Data Kiosk exports
+
+### Data Kiosk API Endpoints
+
+**Base URL:** `https://sellingpartnerapi-na.amazon.com/dataKiosk/2023-11-15`
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/queries` | POST | Create new query |
+| `/queries/{queryId}` | GET | Get query status |
+| `/queries/{queryId}` | DELETE | Cancel query |
+| `/documents/{documentId}` | GET | Get document URL |
+
+### Query Status Flow
+
+```
+POST /queries
+  ↓
+IN_QUEUE (beklemede)
+  ↓
+IN_PROGRESS (işleniyor)
+  ↓
+DONE ✅ (dataDocumentId var)
+  or
+FATAL/CANCELLED ❌ (errorDocumentId var)
+```
+
+### Polling Strategy
+
+```typescript
+// Max 30 dakika bekle, her 30 saniyede bir kontrol et
+const maxWaitMs = 30 * 60 * 1000  // 30 min
+const pollIntervalMs = 30 * 1000  // 30 sec
+
+while (Date.now() - startTime < maxWaitMs) {
+  const status = await getDataKioskQuery(queryId)
+  if (status === 'DONE') break
+  if (status === 'FATAL' || status === 'CANCELLED') throw error
+  await sleep(pollIntervalMs)
+}
+```
+
+### JSONL Format
+
+Data Kiosk sonuçları JSONL (JSON Lines) formatında gelir:
+```jsonl
+{"analytics_salesAndTraffic_2024_04_24":{"salesAndTrafficByDate":[{"startDate":"2024-01-01",...}]}}
+{"analytics_salesAndTraffic_2024_04_24":{"salesAndTrafficByDate":[{"startDate":"2024-01-02",...}]}}
+{"analytics_salesAndTraffic_2024_04_24":{"salesAndTrafficByDate":[{"startDate":"2024-01-03",...}]}}
+```
+
+Her satır ayrı JSON object. Parse:
+```typescript
+const lines = text.trim().split('\n')
+const data = lines.map(line => JSON.parse(line))
+```
+
+### Available Datasets
+
+| Dataset | API Version | Description |
+|---------|-------------|-------------|
+| Seller Sales and Traffic | `analytics_salesAndTraffic_2024_04_24` | Daily/weekly/monthly metrics |
+| Seller Economics | Coming soon | P&L data |
+| Brand Analytics Search Terms | Coming soon | Search query data |
+
+### Required Amazon Role
+
+⚠️ **Brand Analytics rolü gerekli!**
+
+Data Kiosk API için Amazon Solution Provider Portal'da:
+- ✅ Brand Analytics rolü onaylı olmalı
+- 🔐 Seller, Brand Registry'de olmalı (bazı datasetler için)
+
+### Usage Example
+
+```typescript
+// API endpoint ile
+const response = await fetch('/api/amazon/data-kiosk-sync', {
+  method: 'POST',
+  body: JSON.stringify({ yearsBack: 2 })
+})
+
+// Direkt kullanım
+import { syncSalesAndTrafficData } from '@/lib/amazon-sp-api'
+
+const result = await syncSalesAndTrafficData(
+  userId,
+  refreshToken,
+  new Date('2024-01-01'),
+  new Date('2026-01-21')
+)
+// { success: true, recordsInserted: 750 }
+```
+
+### Comparison: Old vs New Approach
+
+| Aspect | Old (Orders API) | New (Data Kiosk) |
+|--------|------------------|------------------|
+| 2 yıl veri | ~730 API calls (günlük) | **1 GraphQL query** |
+| 500K order | ~28 saat | **~5-10 dakika** |
+| Timeout riski | Yüksek (chunk'lama gerekli) | **Düşük** |
+| Rate limiting | Sık (429 hatası) | **Nadir** |
+| Veri granularity | Order-level | **Day/Week/Month** |
+| Implementation | Karmaşık (pagination, retry) | **Basit** |
+
+### When to Use Which
+
+**Data Kiosk kullan:**
+- ✅ Historical sync (2+ yıl)
+- ✅ Aggregate metrics (sales, traffic)
+- ✅ Trend analysis
+- ✅ Dashboard daily metrics
+
+**Orders API kullan:**
+- ✅ Real-time order tracking
+- ✅ Individual order details
+- ✅ Order-level fee extraction
+- ✅ Shipment tracking
+
+### Current Status
+
+- ✅ Core API functions implemented
+- ✅ Inngest function created
+- ✅ API endpoint ready
+- ⏳ Awaiting Brand Analytics role approval for testing
+- ⏳ Integration with dashboard pending
+
+---
+
 ## Resources & Links
 
 - [Amazon SP-API Models GitHub](https://github.com/amzn/selling-partner-api-models)
@@ -958,6 +1194,8 @@ Estimated Payout = Net Profit for the period
 - [Advertising API Docs](https://advertising.amazon.com/API/docs/en-us)
 - [FBA Inventory API](https://developer-docs.amazon.com/sp-api/docs/fba-inventory-api-v1-use-case-guide)
 - [Replenishment API](https://developer-docs.amazon.com/sp-api/docs/replenishment-api-v2022-11-07-use-case-guide)
+- [Data Kiosk API Reference](https://developer-docs.amazon.com/sp-api/docs/data-kiosk-api)
+- [Data Kiosk Schema Reference](https://developer-docs.amazon.com/sp-api/docs/data-kiosk-api-v2023-11-15-reference)
 - [Shopkeeper 208 Amazon Fees List](https://shopkeeper.com/amazon-seller-fees-list)
 - [Sellerboard Fee Guide](https://blog.sellerboard.com/2023/07/12/a-comprehensive-guide-to-amazon-seller-fees/)
 
@@ -971,7 +1209,11 @@ Estimated Payout = Net Profit for the period
 | | | Root cause analysis completed |
 | | | Bulk fee sync functions implemented |
 | | | Sellerboard comparison analysis |
+| | | Phase 1 (1.1-1.9) completed - All fee types |
+| 2026-01-22 | 1.1 | Historical sync timeout fix (bi-weekly chunks) |
+| | | Data Kiosk API implementation |
+| | | Scalable bulk data solution for 500K+ orders |
 
 ---
 
-**Next Action:** Start Phase 1 - Expand Finances API fee type parsing
+**Next Action:** Test Data Kiosk API with Brand Analytics role (pending Amazon approval)
