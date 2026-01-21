@@ -194,17 +194,53 @@ function createPSTEndOfDay(year: number, month: number, day: number): Date {
 - `getThisMonthSalesMetrics()` - ✅ PST ile düzeltildi
 - `getLastMonthSalesMetrics()` - ✅ PST ile düzeltildi
 - Dashboard metrics route (Today/Yesterday/ThisMonth/LastMonth fee queries) - ✅ PST ile düzeltildi
+- `getMetricsForDateRange()` - ✅ UTC date extraction ile düzeltildi (21 Ocak 2026)
+
+#### 🚨 YENİ FIX: getDate() vs getUTCDate() (21 Ocak 2026)
+
+**Sorun:** "Today" kartı dünün verisini, "Yesterday" önceki günün verisini gösteriyordu.
+
+**Kök Neden:**
+```typescript
+// ❌ YANLIŞ - Local timezone kullanıyordu
+const startDay = startDate.getDate()  // Server timezone'da gün!
+
+// ✅ DOĞRU - UTC kullanmalı
+const startDay = startDate.getUTCDate()  // UTC'de gün
+```
+
+**Açıklama:**
+- `new Date("2026-01-21")` → **UTC midnight** olarak parse edilir
+- `getDate()` → LOCAL timezone'da gün döndürür
+- Eğer server PST (UTC-8) ise: Jan 21 00:00 UTC = Jan 20 16:00 PST
+- Bu yüzden `getDate()` **20** döndürür, **21** değil!
+
+**Düzeltilen Dosya:** `/src/lib/amazon-sp-api/sales.ts` - `getMetricsForDateRange()` fonksiyonu
+
+```typescript
+// ✅ DOĞRU KULLANIM (commit 03815f8)
+const startYear = startDate.getUTCFullYear()
+const startMonth = startDate.getUTCMonth()
+const startDay = startDate.getUTCDate()
+const endYear = endDate.getUTCFullYear()
+const endMonth = endDate.getUTCMonth()
+const endDay = endDate.getUTCDate()
+```
 
 #### ⚠️ SAKINCA YAPMA:
 - ❌ `setHours(0, 0, 0, 0)` KULLANMA - Server timezone'a bağlı
 - ❌ `new Date(year, month, day)` KULLANMA - Local timezone
+- ❌ `getDate()`, `getMonth()`, `getFullYear()` KULLANMA - Her zaman `getUTCDate()`, `getUTCMonth()`, `getUTCFullYear()` kullan!
 - ❌ PST helper fonksiyonlarını değiştirme
 - ❌ Sabit -8 offset'i değiştirme (DST için `granularityTimeZone: 'America/Los_Angeles'` zaten handle ediyor)
 
-#### Commit Referansı:
+#### Commit Referansları:
 ```
 commit 4013b76
 fix: Correct PST to UTC date range conversion for order filtering
+
+commit 03815f8
+fix: Use UTC date methods in getMetricsForDateRange (getDate → getUTCDate)
 ```
 
 ---
