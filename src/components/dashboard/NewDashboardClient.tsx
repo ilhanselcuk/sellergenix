@@ -39,6 +39,19 @@ interface PeriodMetrics {
   netProfit: number
   margin: number
   roi: number
+  // Fee source and breakdown (Phase 1.8)
+  feeSource?: 'real' | 'estimated' | 'mixed'
+  feeBreakdown?: {
+    fbaFulfillment: number
+    referral: number
+    storage: number
+    inbound: number
+    removal: number
+    returns: number
+    chargebacks: number
+    other: number
+    reimbursements: number
+  }
 }
 
 interface DatabaseProduct {
@@ -162,7 +175,10 @@ function generateRealPeriodData(
     refunds: metrics.refunds,
     amazonFees: metrics.amazonFees,
     cogs: 0, // Would need COGS from products
-    grossProfit: metrics.grossProfit
+    grossProfit: metrics.grossProfit,
+    // Fee source and breakdown (Phase 1.8 - Sellerboard-style)
+    feeSource: metrics.feeSource,
+    feeBreakdown: metrics.feeBreakdown
   }
 }
 
