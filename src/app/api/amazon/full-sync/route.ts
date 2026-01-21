@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { syncOrdersWithHistory } from '@/lib/services/orders-sync'
 import { extractProductsFromOrders } from '@/lib/services/products-from-orders'
+import { syncAllHistoricalFees } from '@/lib/amazon-sp-api'
 
 export const maxDuration = 300 // 5 minutes max for Vercel Pro
 
@@ -118,18 +119,32 @@ export async function POST(request: NextRequest) {
       results.errors.push(`Products: ${err.message}`)
     }
 
+    // Sync historical fees from Finances API
+    console.log('\n💰 Syncing historical fees from Finances API...')
+    let totalFeesSynced = 0
+    try {
+      const feeResult = await syncAllHistoricalFees(user.id, connection.refresh_token)
+      totalFeesSynced = feeResult.totalFees || 0
+      console.log(`✅ Fee sync complete: ${feeResult.totalOrders} orders, $${totalFeesSynced.toFixed(2)} fees`)
+    } catch (err: any) {
+      console.error('❌ Fee sync failed:', err.message)
+      results.errors.push(`Fees: ${err.message}`)
+    }
+
     const duration = Date.now() - startTime
 
     console.log(`\n✅ Full historical sync completed in ${duration}ms`)
     console.log(`   Orders: ${results.totalOrders}`)
     console.log(`   Products: ${results.totalProducts}`)
+    console.log(`   Fees: $${totalFeesSynced.toFixed(2)}`)
     console.log(`   Errors: ${results.errors.length}`)
 
     return NextResponse.json({
       success: true,
-      message: `Synced ${results.totalOrders} orders and ${results.totalProducts} products from last ${months} months`,
+      message: `Synced ${results.totalOrders} orders, ${results.totalProducts} products, and $${totalFeesSynced.toFixed(2)} fees from last ${months} months`,
       totalOrders: results.totalOrders,
       totalProducts: results.totalProducts,
+      totalFees: totalFeesSynced,
       monthsProcessed: results.monthsProcessed,
       errors: results.errors.slice(0, 10),
       duration
