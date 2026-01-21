@@ -107,9 +107,10 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
   const margin = data.sales > 0 ? (data.netProfit / data.sales) * 100 : 0
   // ROI calculated with COGS only (Ad Spend not available yet)
   const roi = data.cogs > 0 ? (data.netProfit / data.cogs) * 100 : 0
-  // Refund rate based on refund count vs units
-  const refundRate = data.units > 0 ? (data.refunds / data.units) * 100 : 0
-  const estPayout = data.sales - data.amazonFees - data.refunds
+  // Refund rate based on refund count vs units (handle undefined refunds)
+  const safeRefunds = data.refunds ?? 0
+  const refundRate = data.units > 0 ? (safeRefunds / data.units) * 100 : 0
+  const estPayout = data.sales - data.amazonFees - safeRefunds
 
   // Helper for "Coming Soon" display
   const comingSoon = (label: string) => `$0.00 (${label})`
@@ -259,7 +260,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                 <span className="text-gray-500">↩️</span>
                 <span className="font-medium text-gray-900">Refunds</span>
               </div>
-              <span className="font-semibold text-red-600">{formatCurrency(-data.refunds)}</span>
+              <span className="font-semibold text-red-600">{formatCurrency(-safeRefunds)}</span>
             </div>
 
             <div className="flex items-center justify-between py-3 px-4">
