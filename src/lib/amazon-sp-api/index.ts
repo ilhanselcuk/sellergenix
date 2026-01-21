@@ -86,6 +86,7 @@ export {
   getLastMonthSalesMetrics,
   getDailySalesMetrics,
   getAllPeriodSalesMetrics,
+  getMetricsForDateRange, // Generic function for any date range
   createInterval,
 } from './sales'
 export type { OrderMetrics, GetOrderMetricsParams } from './sales'

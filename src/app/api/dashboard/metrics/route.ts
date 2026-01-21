@@ -9,7 +9,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getAllPeriodSalesMetrics } from '@/lib/amazon-sp-api'
+import { getAllPeriodSalesMetrics, getMetricsForDateRange } from '@/lib/amazon-sp-api'
 
 // Initialize Supabase with service role for server-side access
 const supabase = createClient(
@@ -428,6 +428,135 @@ export async function GET(request: Request) {
 
   } catch (error: any) {
     console.error('❌ Dashboard metrics API error:', error)
+    return NextResponse.json({
+      success: false,
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    }, { status: 500 })
+  }
+}
+
+/**
+ * POST endpoint for fetching metrics for ANY period set
+ *
+ * Request body:
+ * {
+ *   userId: string,
+ *   periods: [
+ *     { label: "Today", startDate: "2026-01-21", endDate: "2026-01-21" },
+ *     { label: "7 Days Ago", startDate: "2026-01-14", endDate: "2026-01-14" },
+ *     ...
+ *   ]
+ * }
+ *
+ * This endpoint calls Amazon Sales API for EACH period in parallel!
+ * Much more accurate than database calculations.
+ */
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const { userId, periods } = body
+
+    if (!userId) {
+      return NextResponse.json({ error: 'userId required' }, { status: 400 })
+    }
+
+    if (!periods || !Array.isArray(periods) || periods.length === 0) {
+      return NextResponse.json({ error: 'periods array required' }, { status: 400 })
+    }
+
+    // Get active Amazon connection
+    const { data: connection, error: connError } = await supabase
+      .from('amazon_connections')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .single()
+
+    if (connError || !connection) {
+      console.log('No active Amazon connection for user:', userId)
+      return NextResponse.json({
+        success: false,
+        error: 'No active Amazon connection',
+        hasConnection: false
+      })
+    }
+
+    const marketplaceIds = ['ATVPDKIKX0DER'] // Force US marketplace
+
+    console.log(`📊 Fetching Sales API metrics for ${periods.length} periods...`)
+
+    // Fetch metrics for ALL periods in parallel
+    const metricsPromises = periods.map(async (period: { label: string; startDate: string; endDate: string }) => {
+      const startDate = new Date(period.startDate)
+      const endDate = new Date(period.endDate)
+
+      console.log(`📅 Fetching "${period.label}": ${period.startDate} to ${period.endDate}`)
+
+      const result = await getMetricsForDateRange(
+        connection.refresh_token,
+        marketplaceIds,
+        startDate,
+        endDate
+      )
+
+      // Also fetch real fees from database
+      // Convert dates to PST UTC range
+      const startYear = startDate.getFullYear()
+      const startMonth = startDate.getMonth()
+      const startDay = startDate.getDate()
+      const endYear = endDate.getFullYear()
+      const endMonth = endDate.getMonth()
+      const endDay = endDate.getDate()
+
+      const pstStart = createPSTMidnight(startYear, startMonth, startDay)
+      const pstEnd = createPSTEndOfDay(endYear, endMonth, endDay)
+
+      const feeData = await getRealFeesForPeriod(userId, pstStart, pstEnd)
+
+      return {
+        label: period.label,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        metrics: result.success ? formatMetrics(result.metrics, feeData) : null,
+        error: result.error || null
+      }
+    })
+
+    const results = await Promise.all(metricsPromises)
+
+    // Build response object with period labels as keys
+    const metricsMap: { [key: string]: any } = {}
+    for (const result of results) {
+      metricsMap[result.label] = result.metrics || {
+        sales: 0,
+        units: 0,
+        orders: 0,
+        avgOrderValue: 0,
+        netProfit: 0,
+        margin: 0,
+        adSpend: 0,
+        amazonFees: 0,
+        grossProfit: 0,
+        roi: 0,
+        feeSource: 'estimated',
+        error: result.error
+      }
+    }
+
+    console.log('✅ All period metrics fetched successfully')
+
+    return NextResponse.json({
+      success: true,
+      hasConnection: true,
+      metrics: metricsMap,
+      periodCount: periods.length,
+      source: 'amazon_sales_api',
+      fetchedAt: new Date().toISOString()
+    })
+
+  } catch (error: any) {
+    console.error('❌ Dashboard metrics POST API error:', error)
     return NextResponse.json({
       success: false,
       error: error.message,

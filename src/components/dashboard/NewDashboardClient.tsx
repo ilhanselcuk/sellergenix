@@ -75,12 +75,17 @@ interface NewDashboardClientProps {
   lastSyncAt?: string | null
 }
 
-// Sales API response type
+// Sales API response type (for default set - backwards compatibility)
 interface SalesApiMetrics {
   today: PeriodMetrics
   yesterday: PeriodMetrics
   thisMonth: PeriodMetrics
   lastMonth: PeriodMetrics
+}
+
+// Dynamic period metrics (for any period set)
+interface DynamicPeriodMetrics {
+  [label: string]: PeriodMetrics | null
 }
 
 // Helper function to format time ago
@@ -172,49 +177,7 @@ export default function NewDashboardClient({
   // Check if we have real data
   const hasRealData = dashboardData?.hasRealData || false
 
-  // Sales API metrics state - this is the SOURCE OF TRUTH for period cards
-  const [salesApiMetrics, setSalesApiMetrics] = useState<SalesApiMetrics | null>(null)
-  const [salesApiLoading, setSalesApiLoading] = useState(false)
-  const [salesApiError, setSalesApiError] = useState<string | null>(null)
-
-  // Fetch Sales API metrics on mount (more accurate than database calculations!)
-  useEffect(() => {
-    if (!hasAmazonConnection || !userId) return
-
-    const fetchSalesApiMetrics = async () => {
-      setSalesApiLoading(true)
-      setSalesApiError(null)
-
-      try {
-        const response = await fetch(`/api/dashboard/metrics?userId=${userId}`)
-        const data = await response.json()
-
-        if (data.success && data.metrics) {
-          console.log('📊 Sales API metrics loaded:', data.metrics)
-          setSalesApiMetrics(data.metrics)
-        } else if (data.fallbackToDatabase) {
-          console.log('⚠️ Sales API not available, using database')
-          setSalesApiError('Sales API unavailable, using cached data')
-        } else {
-          console.error('❌ Sales API error:', data.error)
-          setSalesApiError(data.error || 'Failed to fetch metrics')
-        }
-      } catch (error: any) {
-        console.error('❌ Sales API fetch error:', error)
-        setSalesApiError(error.message || 'Network error')
-      } finally {
-        setSalesApiLoading(false)
-      }
-    }
-
-    fetchSalesApiMetrics()
-  }, [userId, hasAmazonConnection])
-
-  // Marketplace state
-  const [selectedRegion, setSelectedRegion] = useState('north-america')
-  const [selectedCountry, setSelectedCountry] = useState('ATVPDKIKX0DER')
-
-  // Period state
+  // Period state (must be declared before useEffects that use them)
   const [selectedSetId, setSelectedSetId] = useState('default')
   const [selectedPeriodIndex, setSelectedPeriodIndex] = useState(0)
   const [isCustomMode, setIsCustomMode] = useState(false)
@@ -222,6 +185,133 @@ export default function NewDashboardClient({
     start: null,
     end: null
   })
+
+  // Sales API metrics state - this is the SOURCE OF TRUTH for period cards
+  const [salesApiMetrics, setSalesApiMetrics] = useState<SalesApiMetrics | null>(null)
+  const [dynamicPeriodMetrics, setDynamicPeriodMetrics] = useState<DynamicPeriodMetrics | null>(null)
+  const [salesApiLoading, setSalesApiLoading] = useState(false)
+  const [salesApiError, setSalesApiError] = useState<string | null>(null)
+
+  // Fetch Sales API metrics for the selected period set
+  // This uses the POST endpoint which supports ANY date range
+  useEffect(() => {
+    if (!hasAmazonConnection || !userId) return
+    if (isCustomMode) return // Custom mode handled separately
+
+    const fetchPeriodMetrics = async () => {
+      setSalesApiLoading(true)
+      setSalesApiError(null)
+
+      try {
+        // Get the selected period set
+        const selectedSet = PERIOD_SETS.find(s => s.id === selectedSetId) || PERIOD_SETS[0]
+
+        // Build periods array for POST request
+        const periodsPayload = selectedSet.periods.map(period => ({
+          label: period.label,
+          startDate: period.startDate.toISOString().split('T')[0], // YYYY-MM-DD
+          endDate: period.endDate.toISOString().split('T')[0]
+        }))
+
+        console.log(`📊 Fetching Sales API metrics for ${selectedSetId}:`, periodsPayload)
+
+        const response = await fetch('/api/dashboard/metrics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            periods: periodsPayload
+          })
+        })
+
+        const data = await response.json()
+
+        if (data.success && data.metrics) {
+          console.log('📊 Sales API metrics loaded:', data.metrics)
+          setDynamicPeriodMetrics(data.metrics)
+
+          // Also update the legacy salesApiMetrics if this is the default set
+          if (selectedSetId === 'default' && data.metrics) {
+            setSalesApiMetrics({
+              today: data.metrics['Today'] || null,
+              yesterday: data.metrics['Yesterday'] || null,
+              thisMonth: data.metrics['This Month'] || null,
+              lastMonth: data.metrics['Last Month'] || null
+            })
+          }
+        } else if (data.fallbackToDatabase) {
+          console.log('⚠️ Sales API not available, using database')
+          setSalesApiError('Sales API unavailable, using cached data')
+          setDynamicPeriodMetrics(null)
+        } else {
+          console.error('❌ Sales API error:', data.error)
+          setSalesApiError(data.error || 'Failed to fetch metrics')
+          setDynamicPeriodMetrics(null)
+        }
+      } catch (error: any) {
+        console.error('❌ Sales API fetch error:', error)
+        setSalesApiError(error.message || 'Network error')
+        setDynamicPeriodMetrics(null)
+      } finally {
+        setSalesApiLoading(false)
+      }
+    }
+
+    fetchPeriodMetrics()
+  }, [userId, hasAmazonConnection, selectedSetId, isCustomMode])
+
+  // Fetch Sales API metrics for custom date range
+  useEffect(() => {
+    if (!hasAmazonConnection || !userId) return
+    if (!isCustomMode || !customRange.start || !customRange.end) return
+
+    const fetchCustomRangeMetrics = async () => {
+      setSalesApiLoading(true)
+      setSalesApiError(null)
+
+      try {
+        const periodsPayload = [{
+          label: 'Custom Range',
+          startDate: customRange.start!.toISOString().split('T')[0],
+          endDate: customRange.end!.toISOString().split('T')[0]
+        }]
+
+        console.log('📊 Fetching Sales API metrics for custom range:', periodsPayload)
+
+        const response = await fetch('/api/dashboard/metrics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            periods: periodsPayload
+          })
+        })
+
+        const data = await response.json()
+
+        if (data.success && data.metrics) {
+          console.log('📊 Custom range Sales API metrics loaded:', data.metrics)
+          setDynamicPeriodMetrics(data.metrics)
+        } else {
+          console.error('❌ Custom range Sales API error:', data.error)
+          setSalesApiError(data.error || 'Failed to fetch custom range metrics')
+          setDynamicPeriodMetrics(null)
+        }
+      } catch (error: any) {
+        console.error('❌ Custom range Sales API fetch error:', error)
+        setSalesApiError(error.message || 'Network error')
+        setDynamicPeriodMetrics(null)
+      } finally {
+        setSalesApiLoading(false)
+      }
+    }
+
+    fetchCustomRangeMetrics()
+  }, [userId, hasAmazonConnection, isCustomMode, customRange.start, customRange.end])
+
+  // Marketplace state
+  const [selectedRegion, setSelectedRegion] = useState('north-america')
+  const [selectedCountry, setSelectedCountry] = useState('ATVPDKIKX0DER')
 
   // Modal state
   const [breakdownModalOpen, setBreakdownModalOpen] = useState(false)
@@ -518,41 +608,36 @@ export default function NewDashboardClient({
   }
 
   // Generate period data - PREFER Sales API data over database calculations!
+  // Now supports ALL period sets via dynamicPeriodMetrics (including custom range)
   const periodData = useMemo(() => {
     if (isCustomMode && customRange.start && customRange.end) {
-      // Custom range: Use database calculation (Sales API doesn't support custom ranges yet)
+      // Custom range: Use Sales API if available, otherwise database
+      if (dynamicPeriodMetrics && dynamicPeriodMetrics['Custom Range']) {
+        console.log('📊 Using Sales API metrics for custom range')
+        return [generateRealPeriodData('Custom Range', customRange.start, customRange.end, dynamicPeriodMetrics['Custom Range'])]
+      }
+      // Fallback to database calculation
+      console.log('📦 Using database calculation for custom range (Sales API not available)')
       const metrics = calculateMetricsForDateRange(customRange.start, customRange.end)
       return [generateRealPeriodData('Custom Range', customRange.start, customRange.end, metrics)]
     }
 
     const selectedSet = PERIOD_SETS.find(s => s.id === selectedSetId) || PERIOD_SETS[0]
 
-    // If Sales API metrics are available, use them for standard periods (more accurate!)
-    if (salesApiMetrics && selectedSetId === 'default') {
-      console.log('📊 Using Sales API metrics for period cards')
+    // If dynamic period metrics are available (from POST endpoint), use them for ALL period sets
+    if (dynamicPeriodMetrics) {
+      console.log(`📊 Using Sales API metrics for ${selectedSetId} period set`)
 
-      // Map Sales API metrics to period data
-      // default set has: Today, Yesterday, This Month, Last Month
       return selectedSet.periods.map(period => {
-        let metrics: PeriodMetrics | null = null
+        // Look up metrics by period label
+        const metrics = dynamicPeriodMetrics[period.label]
 
-        // Match period label to Sales API data
-        if (period.label === 'Today') {
-          metrics = salesApiMetrics.today
-        } else if (period.label === 'Yesterday') {
-          metrics = salesApiMetrics.yesterday
-        } else if (period.label === 'This Month') {
-          metrics = salesApiMetrics.thisMonth
-        } else if (period.label === 'Last Month') {
-          metrics = salesApiMetrics.lastMonth
-        }
-
-        // Use Sales API metrics if available, otherwise fall back to database
         if (metrics) {
           return generateRealPeriodData(period.label, period.startDate, period.endDate, metrics)
         }
 
-        // Fallback to database calculation
+        // Fallback to database calculation if API didn't return this period
+        console.log(`⚠️ No Sales API data for "${period.label}", using database`)
         const dbMetrics = calculateMetricsForDateRange(period.startDate, period.endDate)
         return generateRealPeriodData(period.label, period.startDate, period.endDate, dbMetrics)
       })
@@ -564,7 +649,7 @@ export default function NewDashboardClient({
       const metrics = calculateMetricsForDateRange(period.startDate, period.endDate)
       return generateRealPeriodData(period.label, period.startDate, period.endDate, metrics)
     })
-  }, [selectedSetId, isCustomMode, customRange, dashboardData, salesApiMetrics, historicalPriceMap, cogsMap, productFeeMap])
+  }, [selectedSetId, isCustomMode, customRange, dashboardData, dynamicPeriodMetrics, historicalPriceMap, cogsMap, productFeeMap])
 
   // Selected period for product table
   const selectedPeriod = periodData[selectedPeriodIndex] || periodData[0]

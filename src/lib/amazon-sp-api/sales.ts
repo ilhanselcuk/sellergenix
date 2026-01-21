@@ -347,6 +347,52 @@ export async function getDailySalesMetrics(
 }
 
 /**
+ * Get metrics for ANY date range (Generic function)
+ *
+ * This is the most flexible function - can be used for any period!
+ * Uses 'Total' granularity for aggregate metrics.
+ *
+ * @param refreshToken - Amazon refresh token
+ * @param marketplaceIds - List of marketplace IDs
+ * @param startDate - Start date (will be converted to PST)
+ * @param endDate - End date (will be converted to PST)
+ */
+export async function getMetricsForDateRange(
+  refreshToken: string,
+  marketplaceIds: string[],
+  startDate: Date,
+  endDate: Date
+): Promise<{ success: boolean; metrics?: OrderMetrics; error?: string }> {
+  // Extract year/month/day from input dates (treating them as PST dates)
+  const startYear = startDate.getFullYear()
+  const startMonth = startDate.getMonth()
+  const startDay = startDate.getDate()
+  const endYear = endDate.getFullYear()
+  const endMonth = endDate.getMonth()
+  const endDay = endDate.getDate()
+
+  // Convert PST dates to UTC for API call
+  const pstStart = createPSTMidnight(startYear, startMonth, startDay)
+  const pstEnd = createPSTEndOfDay(endYear, endMonth, endDay)
+
+  console.log(`📅 Date range (PST): ${startYear}-${startMonth + 1}-${startDay} to ${endYear}-${endMonth + 1}-${endDay}`)
+  console.log(`📅 Date range (UTC): ${pstStart.toISOString()} -- ${pstEnd.toISOString()}`)
+
+  const result = await getOrderMetrics(refreshToken, {
+    marketplaceIds,
+    interval: createInterval(pstStart, pstEnd),
+    granularity: 'Total',
+    granularityTimeZone: 'America/Los_Angeles',
+  })
+
+  return {
+    success: result.success,
+    metrics: result.metrics?.[0],
+    error: result.error,
+  }
+}
+
+/**
  * Get All Period Metrics
  *
  * Fetches Today, Yesterday, This Month, Last Month in parallel
