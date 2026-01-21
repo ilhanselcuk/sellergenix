@@ -511,19 +511,71 @@ export const syncHistoricalData = inngest.createFunction(
 
     // =============================================
     // NEW: Sync historical fees from Finances API
-    // This fetches REAL fees for all orders we just synced
+    // Split into monthly chunks to avoid timeout
     // =============================================
-    const feeResult = await step.run("sync-historical-fees", async () => {
-      try {
-        console.log("💰 [Inngest] Syncing historical fees from Finances API...");
-        const result = await syncAllHistoricalFees(userId, refreshToken);
-        console.log(`✅ [Inngest] Fee sync complete: ${result.totalOrders} orders, $${result.totalFees.toFixed(2)} fees`);
-        return result;
-      } catch (error) {
-        console.error("❌ [Inngest] Fee sync error:", error);
-        return { error: String(error), totalOrders: 0, totalItems: 0, totalFees: 0 };
+    const { bulkSyncFeesForDateRange } = await import("@/lib/amazon-sp-api/fee-service");
+
+    // Create monthly chunks for fee sync (same date range as order sync)
+    const feeChunks: { start: Date; end: Date }[] = [];
+    let feeChunkStart = new Date(startDate);
+
+    while (feeChunkStart < endDate) {
+      const feeChunkEnd = new Date(feeChunkStart);
+      feeChunkEnd.setMonth(feeChunkEnd.getMonth() + 1);
+      if (feeChunkEnd > endDate) {
+        feeChunkEnd.setTime(endDate.getTime());
       }
-    });
+      feeChunks.push({ start: new Date(feeChunkStart), end: new Date(feeChunkEnd) });
+      feeChunkStart = new Date(feeChunkEnd);
+    }
+
+    console.log(`💰 [Inngest] Syncing fees for ${feeChunks.length} monthly chunks`);
+
+    let totalFeesOrders = 0;
+    let totalFeesItems = 0;
+    let totalFeesAmount = 0;
+
+    // Process fee sync in chunks (each chunk is a separate step)
+    for (let f = 0; f < feeChunks.length; f++) {
+      const feeChunk = feeChunks[f];
+      const feeChunkLabel = `${feeChunk.start.toISOString().split("T")[0]} to ${feeChunk.end.toISOString().split("T")[0]}`;
+
+      const feeChunkResult = await step.run(`fee-chunk-${f}`, async () => {
+        console.log(`💰 Processing fee chunk ${f + 1}/${feeChunks.length}: ${feeChunkLabel}`);
+
+        try {
+          const result = await bulkSyncFeesForDateRange(
+            userId,
+            refreshToken,
+            feeChunk.start,
+            feeChunk.end
+          );
+
+          console.log(`✅ Fee chunk ${f + 1}: ${result.ordersUpdated} orders, $${result.totalFeesApplied.toFixed(2)}`);
+          return result;
+        } catch (error) {
+          console.error(`❌ Fee chunk ${f + 1} error:`, error);
+          return { success: false, ordersUpdated: 0, itemsUpdated: 0, totalFeesApplied: 0, errors: [String(error)] };
+        }
+      });
+
+      totalFeesOrders += feeChunkResult.ordersUpdated || 0;
+      totalFeesItems += feeChunkResult.itemsUpdated || 0;
+      totalFeesAmount += feeChunkResult.totalFeesApplied || 0;
+
+      // Small delay between fee chunks
+      if (f < feeChunks.length - 1) {
+        await step.sleep(`fee-delay-${f}`, "1s");
+      }
+    }
+
+    const feeResult = {
+      totalOrders: totalFeesOrders,
+      totalItems: totalFeesItems,
+      totalFees: totalFeesAmount
+    };
+
+    console.log(`✅ [Inngest] Fee sync complete: ${feeResult.totalOrders} orders, $${feeResult.totalFees.toFixed(2)} fees`);
 
     // Final step: Update product fee averages (will now use REAL fee data)
     await step.run("refresh-product-averages", async () => {
