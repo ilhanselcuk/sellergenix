@@ -102,6 +102,35 @@ Fee = Finances API'den ItemFeeList (FBA fee, Referral fee, Storage fee, etc.)
 #### ❌ YANLIŞ YAKLAŞIMLAR (YAPMA!):
 - ❌ Pending sipariş için fee tahmin etme (boyut/ağırlık hesabı)
 - ❌ Pending sipariş fiyatı için Orders API'ye güvenme ($0 döner)
+
+---
+
+### 🚨🚨🚨 AMAZON FEES SORUNU - DÜZELTİLMESİ GEREKİYOR! 🚨🚨🚨
+
+**Tarih:** 21 Ocak 2026
+**Durum:** ❌ **YANLIŞ ÇALIŞIYOR - DÜZELTME BEKLİYOR**
+
+**Sorun:** Amazon fee'leri yanlış hesaplanıyor/gösteriliyor.
+
+**Araştırılması Gerekenler:**
+1. Fee'ler nereden çekiliyor? (Finances API? Database? Tahmin?)
+2. Hangi fee'ler eksik veya yanlış?
+3. Sellerboard ile karşılaştırma yapılmalı
+4. Pending vs Shipped siparişler için fee mantığı doğru mu?
+
+**İlgili Dosyalar:**
+- `/src/lib/amazon-sp-api/finances.ts` - Finances API
+- `/src/lib/amazon-sp-api/fee-service.ts` - Fee service
+- `/src/app/api/dashboard/metrics/route.ts` - Dashboard metrics (fee hesaplama)
+- `/src/components/dashboard/NewDashboardClient.tsx` - Frontend fee gösterimi
+
+**ÇÖZÜM BEKLENEN DAVRANIŞLAR:**
+1. ✅ Shipped siparişler için GERÇEK fee (Finances API'den)
+2. ✅ Pending siparişler için AYNI ÜRÜNÜN geçmiş fee ortalaması
+3. ✅ Fee breakdown doğru (Referral, FBA, Storage, etc.)
+4. ✅ Sellerboard ile aynı değerler
+
+**NOT:** Bu sorun UTC timezone fix'ten sonra keşfedildi. Ayrı bir task olarak düzeltilmeli.
 - ❌ Canceled siparişleri sync etme (skip et, DB'den sil)
 
 #### ✅ DOĞRU YAKLAŞIM:
@@ -196,7 +225,9 @@ function createPSTEndOfDay(year: number, month: number, day: number): Date {
 - Dashboard metrics route (Today/Yesterday/ThisMonth/LastMonth fee queries) - ✅ PST ile düzeltildi
 - `getMetricsForDateRange()` - ✅ UTC date extraction ile düzeltildi (21 Ocak 2026)
 
-#### 🚨 YENİ FIX: getDate() vs getUTCDate() (21 Ocak 2026)
+#### 🚨 UTC TIMEZONE FIX (21 Ocak 2026) - ✅ DOĞRULANDI VE ÇALIŞIYOR
+
+**Durum:** ✅ **SELLERBOARD İLE AYNI DEĞERLER - DOĞRULANDI!**
 
 **Sorun:** "Today" kartı dünün verisini, "Yesterday" önceki günün verisini gösteriyordu.
 
