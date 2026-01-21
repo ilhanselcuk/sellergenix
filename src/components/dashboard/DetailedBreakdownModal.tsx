@@ -262,12 +262,12 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
               </>
             ) : (
               <>
-                <SubRow label="FBA per unit fulfilment fee (~55%)" value={formatCurrency(-data.amazonFees * 0.55)} valueColor="text-red-600" />
-                <SubRow label="Referral fee (~35%)" value={formatCurrency(-data.amazonFees * 0.35)} valueColor="text-red-600" />
-                <SubRow label="FBA storage fee (~5%)" value={formatCurrency(-data.amazonFees * 0.05)} valueColor="text-red-600" />
-                <SubRow label="Other fees (~5%)" value={formatCurrency(-data.amazonFees * 0.05)} valueColor="text-red-600" />
-                <div className="px-10 py-2 text-xs text-gray-400">
-                  * Breakdown is estimated. Syncing real fees...
+                <SubRow label="FBA per unit fulfilment fee" value={formatCurrency(-data.amazonFees * 0.55)} valueColor="text-red-600" />
+                <SubRow label="Referral fee" value={formatCurrency(-data.amazonFees * 0.35)} valueColor="text-red-600" />
+                <SubRow label="FBA storage fee" value={formatCurrency(-data.amazonFees * 0.05)} valueColor="text-red-600" />
+                <SubRow label="Other fees" value={formatCurrency(-data.amazonFees * 0.05)} valueColor="text-red-600" />
+                <div className="px-10 py-2 text-xs text-amber-500 italic">
+                  Estimated breakdown • Real fees syncing...
                 </div>
               </>
             )}
