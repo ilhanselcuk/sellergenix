@@ -36,106 +36,177 @@ function getPSTToday(): { year: number; month: number; day: number } {
 
 /**
  * Create a Date object representing a specific day in PST
- * The returned Date can be used for display and will be correctly
- * converted to UTC for API calls by calculateMetricsForDateRange
+ * CRITICAL: Must use Date.UTC to avoid timezone issues!
+ * When toISOString() is called, it returns the correct YYYY-MM-DD
  */
 function createPSTDate(year: number, month: number, day: number): Date {
-  // We create a local Date but the year/month/day represent PST calendar dates
-  // This works because calculateMetricsForDateRange extracts year/month/day
-  // and treats them as PST dates
-  return new Date(year, month, day)
+  // CRITICAL FIX: Use Date.UTC to create the date
+  // This ensures toISOString().split('T')[0] returns the correct date string
+  // regardless of the user's browser timezone
+  //
+  // Example without fix (user in Turkey, UTC+3):
+  //   new Date(2026, 0, 21) = Jan 21 00:00 Turkey = Jan 20 21:00 UTC
+  //   toISOString() = "2026-01-20T21:00:00.000Z" → split = "2026-01-20" ❌
+  //
+  // With fix:
+  //   new Date(Date.UTC(2026, 0, 21)) = Jan 21 00:00 UTC
+  //   toISOString() = "2026-01-21T00:00:00.000Z" → split = "2026-01-21" ✅
+  return new Date(Date.UTC(year, month, day))
 }
 
 /**
  * Get day of week in PST (0=Sunday, 1=Monday, etc.)
+ * CRITICAL: Use UTC methods for dates created with Date.UTC
  */
 function getPSTDayOfWeek(year: number, month: number, day: number): number {
-  return new Date(year, month, day).getDay()
+  return new Date(Date.UTC(year, month, day)).getUTCDay()
+}
+
+/**
+ * Add days to a PST date (using UTC internally)
+ */
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date.getTime())
+  result.setUTCDate(result.getUTCDate() + days)
+  return result
+}
+
+/**
+ * Get days in a month (1-based)
+ */
+function getDaysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
 }
 
 // Helper function to get date ranges (PST-aware)
+// CRITICAL: All operations must use UTC methods!
 const getDateRange = (type: string): { startDate: Date; endDate: Date } => {
   const pst = getPSTToday()
   const today = createPSTDate(pst.year, pst.month, pst.day)
+  const todayDayOfWeek = today.getUTCDay() // 0=Sunday, 1=Monday, etc.
 
   switch (type) {
     case 'today':
       return { startDate: today, endDate: today }
+
     case 'yesterday':
-      const yesterday = new Date(today)
-      yesterday.setDate(yesterday.getDate() - 1)
+      const yesterday = addDays(today, -1)
       return { startDate: yesterday, endDate: yesterday }
+
     case 'this-week':
-      const weekStart = new Date(today)
-      weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+      const weekStart = addDays(today, -todayDayOfWeek)
       return { startDate: weekStart, endDate: today }
+
     case 'last-week':
-      const lastWeekEnd = new Date(today)
-      lastWeekEnd.setDate(lastWeekEnd.getDate() - lastWeekEnd.getDay() - 1)
-      const lastWeekStart = new Date(lastWeekEnd)
-      lastWeekStart.setDate(lastWeekStart.getDate() - 6)
+      const lastWeekEnd = addDays(today, -todayDayOfWeek - 1)
+      const lastWeekStart = addDays(lastWeekEnd, -6)
       return { startDate: lastWeekStart, endDate: lastWeekEnd }
+
     case 'this-month':
-      return { startDate: new Date(today.getFullYear(), today.getMonth(), 1), endDate: today }
-    case 'last-month':
-      const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0)
-      const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
-      return { startDate: lastMonthStart, endDate: lastMonthEnd }
-    case '7-days-ago':
-      const sevenDaysAgo = new Date(today)
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-      return { startDate: sevenDaysAgo, endDate: sevenDaysAgo }
-    case '14-days-ago':
-      const fourteenDaysAgo = new Date(today)
-      fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
-      return { startDate: fourteenDaysAgo, endDate: fourteenDaysAgo }
-    case '30-days-ago':
-      const thirtyDaysAgo = new Date(today)
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-      return { startDate: thirtyDaysAgo, endDate: thirtyDaysAgo }
-    case '2-weeks-ago':
-      const twoWeeksAgoEnd = new Date(today)
-      twoWeeksAgoEnd.setDate(twoWeeksAgoEnd.getDate() - twoWeeksAgoEnd.getDay() - 8)
-      const twoWeeksAgoStart = new Date(twoWeeksAgoEnd)
-      twoWeeksAgoStart.setDate(twoWeeksAgoStart.getDate() - 6)
-      return { startDate: twoWeeksAgoStart, endDate: twoWeeksAgoEnd }
-    case '4-weeks-ago':
-      const fourWeeksAgoEnd = new Date(today)
-      fourWeeksAgoEnd.setDate(fourWeeksAgoEnd.getDate() - fourWeeksAgoEnd.getDay() - 22)
-      const fourWeeksAgoStart = new Date(fourWeeksAgoEnd)
-      fourWeeksAgoStart.setDate(fourWeeksAgoStart.getDate() - 6)
-      return { startDate: fourWeeksAgoStart, endDate: fourWeeksAgoEnd }
-    case '2-months-ago':
-      const twoMonthsAgoEnd = new Date(today.getFullYear(), today.getMonth() - 1, 0)
-      const twoMonthsAgoStart = new Date(today.getFullYear(), today.getMonth() - 2, 1)
-      return { startDate: twoMonthsAgoStart, endDate: twoMonthsAgoEnd }
-    case '3-months-ago':
-      const threeMonthsAgoEnd = new Date(today.getFullYear(), today.getMonth() - 2, 0)
-      const threeMonthsAgoStart = new Date(today.getFullYear(), today.getMonth() - 3, 1)
-      return { startDate: threeMonthsAgoStart, endDate: threeMonthsAgoEnd }
-    case 'this-quarter':
-      const quarterMonth = Math.floor(today.getMonth() / 3) * 3
-      return { startDate: new Date(today.getFullYear(), quarterMonth, 1), endDate: today }
-    case 'last-quarter':
-      const lastQuarterMonth = Math.floor(today.getMonth() / 3) * 3 - 3
-      const lastQuarterYear = lastQuarterMonth < 0 ? today.getFullYear() - 1 : today.getFullYear()
-      const adjustedMonth = lastQuarterMonth < 0 ? lastQuarterMonth + 12 : lastQuarterMonth
       return {
-        startDate: new Date(lastQuarterYear, adjustedMonth, 1),
-        endDate: new Date(lastQuarterYear, adjustedMonth + 3, 0)
+        startDate: createPSTDate(pst.year, pst.month, 1),
+        endDate: today
       }
+
+    case 'last-month': {
+      const lastMonth = pst.month === 0 ? 11 : pst.month - 1
+      const lastMonthYear = pst.month === 0 ? pst.year - 1 : pst.year
+      const daysInLastMonth = getDaysInMonth(lastMonthYear, lastMonth)
+      return {
+        startDate: createPSTDate(lastMonthYear, lastMonth, 1),
+        endDate: createPSTDate(lastMonthYear, lastMonth, daysInLastMonth)
+      }
+    }
+
+    case '7-days-ago':
+      const sevenDaysAgo = addDays(today, -7)
+      return { startDate: sevenDaysAgo, endDate: sevenDaysAgo }
+
+    case '14-days-ago':
+      const fourteenDaysAgo = addDays(today, -14)
+      return { startDate: fourteenDaysAgo, endDate: fourteenDaysAgo }
+
+    case '30-days-ago':
+      const thirtyDaysAgo = addDays(today, -30)
+      return { startDate: thirtyDaysAgo, endDate: thirtyDaysAgo }
+
+    case '2-weeks-ago': {
+      const twoWeeksAgoEnd = addDays(today, -todayDayOfWeek - 8)
+      const twoWeeksAgoStart = addDays(twoWeeksAgoEnd, -6)
+      return { startDate: twoWeeksAgoStart, endDate: twoWeeksAgoEnd }
+    }
+
+    case '4-weeks-ago': {
+      const fourWeeksAgoEnd = addDays(today, -todayDayOfWeek - 22)
+      const fourWeeksAgoStart = addDays(fourWeeksAgoEnd, -6)
+      return { startDate: fourWeeksAgoStart, endDate: fourWeeksAgoEnd }
+    }
+
+    case '2-months-ago': {
+      const twoMonthsAgo = pst.month < 2
+        ? { year: pst.year - 1, month: pst.month + 10 }
+        : { year: pst.year, month: pst.month - 2 }
+      const daysInTwoMonthsAgo = getDaysInMonth(twoMonthsAgo.year, twoMonthsAgo.month)
+      return {
+        startDate: createPSTDate(twoMonthsAgo.year, twoMonthsAgo.month, 1),
+        endDate: createPSTDate(twoMonthsAgo.year, twoMonthsAgo.month, daysInTwoMonthsAgo)
+      }
+    }
+
+    case '3-months-ago': {
+      const threeMonthsAgo = pst.month < 3
+        ? { year: pst.year - 1, month: pst.month + 9 }
+        : { year: pst.year, month: pst.month - 3 }
+      const daysInThreeMonthsAgo = getDaysInMonth(threeMonthsAgo.year, threeMonthsAgo.month)
+      return {
+        startDate: createPSTDate(threeMonthsAgo.year, threeMonthsAgo.month, 1),
+        endDate: createPSTDate(threeMonthsAgo.year, threeMonthsAgo.month, daysInThreeMonthsAgo)
+      }
+    }
+
+    case 'this-quarter': {
+      const quarterMonth = Math.floor(pst.month / 3) * 3
+      return {
+        startDate: createPSTDate(pst.year, quarterMonth, 1),
+        endDate: today
+      }
+    }
+
+    case 'last-quarter': {
+      let lastQuarterMonth = Math.floor(pst.month / 3) * 3 - 3
+      let lastQuarterYear = pst.year
+      if (lastQuarterMonth < 0) {
+        lastQuarterMonth += 12
+        lastQuarterYear -= 1
+      }
+      const lastQuarterEndMonth = lastQuarterMonth + 2
+      const daysInLastQuarterEnd = getDaysInMonth(lastQuarterYear, lastQuarterEndMonth)
+      return {
+        startDate: createPSTDate(lastQuarterYear, lastQuarterMonth, 1),
+        endDate: createPSTDate(lastQuarterYear, lastQuarterEndMonth, daysInLastQuarterEnd)
+      }
+    }
+
     case 'ytd':
-      return { startDate: new Date(today.getFullYear(), 0, 1), endDate: today }
+      return {
+        startDate: createPSTDate(pst.year, 0, 1),
+        endDate: today
+      }
+
     case 'last-year-ytd':
       return {
-        startDate: new Date(today.getFullYear() - 1, 0, 1),
-        endDate: new Date(today.getFullYear() - 1, today.getMonth(), today.getDate())
+        startDate: createPSTDate(pst.year - 1, 0, 1),
+        endDate: createPSTDate(pst.year - 1, pst.month, pst.day)
       }
-    case 'same-month-last-year':
+
+    case 'same-month-last-year': {
+      const daysInSameMonthLastYear = getDaysInMonth(pst.year - 1, pst.month)
       return {
-        startDate: new Date(today.getFullYear() - 1, today.getMonth(), 1),
-        endDate: new Date(today.getFullYear() - 1, today.getMonth() + 1, 0)
+        startDate: createPSTDate(pst.year - 1, pst.month, 1),
+        endDate: createPSTDate(pst.year - 1, pst.month, daysInSameMonthLastYear)
       }
+    }
+
     default:
       return { startDate: today, endDate: today }
   }

@@ -524,13 +524,14 @@ export default function NewDashboardClient({
     // And Jan 3 23:59:59 PST = Jan 4 07:59:59 UTC
 
     // Get year, month, day from the input dates (treating them as PST dates)
-    const startYear = startDate.getFullYear()
-    const startMonth = startDate.getMonth()
-    const startDay = startDate.getDate()
+    // CRITICAL: Use UTC methods! Dates are created with Date.UTC in PeriodSelector
+    const startYear = startDate.getUTCFullYear()
+    const startMonth = startDate.getUTCMonth()
+    const startDay = startDate.getUTCDate()
 
-    const endYear = endDate.getFullYear()
-    const endMonth = endDate.getMonth()
-    const endDay = endDate.getDate()
+    const endYear = endDate.getUTCFullYear()
+    const endMonth = endDate.getUTCMonth()
+    const endDay = endDate.getUTCDate()
 
     // Create UTC times that represent PST midnight and end of day
     // PST midnight = UTC 08:00 same day
@@ -661,12 +662,13 @@ export default function NewDashboardClient({
     }
 
     // PST date conversion (same as calculateMetricsForDateRange)
-    const startYear = selectedPeriod.startDate.getFullYear()
-    const startMonth = selectedPeriod.startDate.getMonth()
-    const startDay = selectedPeriod.startDate.getDate()
-    const endYear = selectedPeriod.endDate.getFullYear()
-    const endMonth = selectedPeriod.endDate.getMonth()
-    const endDay = selectedPeriod.endDate.getDate()
+    // CRITICAL: Use UTC methods! Dates are now created with Date.UTC in PeriodSelector
+    const startYear = selectedPeriod.startDate.getUTCFullYear()
+    const startMonth = selectedPeriod.startDate.getUTCMonth()
+    const startDay = selectedPeriod.startDate.getUTCDate()
+    const endYear = selectedPeriod.endDate.getUTCFullYear()
+    const endMonth = selectedPeriod.endDate.getUTCMonth()
+    const endDay = selectedPeriod.endDate.getUTCDate()
 
     const pstStartUTC = new Date(Date.UTC(startYear, startMonth, startDay, 8, 0, 0, 0))
     const pstEndUTC = new Date(Date.UTC(endYear, endMonth, endDay + 1, 7, 59, 59, 999))
