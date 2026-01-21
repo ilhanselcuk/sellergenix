@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { X, ChevronDown, ChevronRight, DollarSign, Package, ShoppingCart, TrendingUp, Percent, BarChart3 } from 'lucide-react'
+import { X, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react'
 import { PeriodData } from './PeriodCard'
 
 interface DetailedBreakdownModalProps {
@@ -10,33 +10,50 @@ interface DetailedBreakdownModalProps {
   data: PeriodData | null
 }
 
-interface CollapsibleSectionProps {
-  title: string
-  icon: React.ReactNode
-  total: number | string
-  totalColor?: string
-  children: React.ReactNode
+// Collapsible section component - Sellerboard style
+function CollapsibleRow({
+  label,
+  value,
+  valueColor = 'text-gray-900',
+  children,
+  defaultOpen = false,
+  hasWarning = false,
+  isBold = false,
+}: {
+  label: string
+  value: string
+  valueColor?: string
+  children?: React.ReactNode
   defaultOpen?: boolean
-}
-
-function CollapsibleSection({ title, icon, total, totalColor = 'text-gray-900', children, defaultOpen = false }: CollapsibleSectionProps) {
+  hasWarning?: boolean
+  isBold?: boolean
+}) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
+  const hasChildren = React.Children.count(children) > 0
 
   return (
     <div className="border-b border-gray-100 last:border-0">
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between py-3 px-4 hover:bg-gray-50 transition-colors"
+        onClick={() => hasChildren && setIsOpen(!isOpen)}
+        className={`w-full flex items-center justify-between py-2.5 px-4 ${hasChildren ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'} transition-colors`}
       >
-        <div className="flex items-center gap-3">
-          {isOpen ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-          <span className="text-gray-500">{icon}</span>
-          <span className="font-medium text-gray-900">{title}</span>
+        <div className="flex items-center gap-2">
+          {hasChildren ? (
+            isOpen ? (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            )
+          ) : (
+            <span className="w-4" />
+          )}
+          <span className={`${isBold ? 'font-semibold' : 'font-medium'} text-gray-900`}>{label}</span>
+          {hasWarning && <AlertCircle className="w-4 h-4 text-amber-500" />}
         </div>
-        <span className={`font-semibold ${totalColor}`}>{total}</span>
+        <span className={`${isBold ? 'font-bold' : 'font-semibold'} ${valueColor}`}>{value}</span>
       </button>
-      {isOpen && (
-        <div className="pb-3 pl-11 pr-4 space-y-2">
+      {isOpen && hasChildren && (
+        <div className="pb-2">
           {children}
         </div>
       )}
@@ -44,77 +61,81 @@ function CollapsibleSection({ title, icon, total, totalColor = 'text-gray-900', 
   )
 }
 
-function MetricRow({ label, value, valueColor = 'text-gray-700', indent = false }: { label: string; value: string; valueColor?: string; indent?: boolean }) {
+// Sub-item row (indented)
+function SubRow({
+  label,
+  value,
+  valueColor = 'text-gray-700',
+}: {
+  label: string
+  value: string
+  valueColor?: string
+}) {
   return (
-    <div className={`flex items-center justify-between py-1 ${indent ? 'pl-4 border-l-2 border-gray-200' : ''}`}>
+    <div className="flex items-center justify-between py-1.5 px-4 pl-10">
       <span className="text-sm text-gray-600">{label}</span>
       <span className={`text-sm font-medium ${valueColor}`}>{value}</span>
     </div>
   )
 }
 
+// Divider
+function Divider() {
+  return <div className="h-px bg-gray-200 my-2" />
+}
+
 export default function DetailedBreakdownModal({ isOpen, onClose, data }: DetailedBreakdownModalProps) {
   if (!isOpen || !data) return null
 
-  const formatCurrency = (value: number, showSign = false) => {
+  const formatCurrency = (value: number) => {
     const formatted = Math.abs(value).toLocaleString('en-US', {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2
     })
-    if (showSign && value !== 0) {
-      return value < 0 ? `-${formatted}` : `+${formatted}`
-    }
     return value < 0 ? `-${formatted}` : formatted
   }
 
-  const formatPercent = (value: number) => `${value.toFixed(1)}%`
+  const formatPercent = (value: number) => `${value.toFixed(2)}%`
 
-  // Amazon Fees breakdown - use real data when available (real or mixed), otherwise estimate
-  const hasRealFeeBreakdown = (data.feeSource === 'real' || data.feeSource === 'mixed') && data.feeBreakdown && (
-    data.feeBreakdown.fbaFulfillment > 0 || data.feeBreakdown.referral > 0 || data.feeBreakdown.chargebacks > 0
-  )
-
-  const amazonFeesBreakdown = hasRealFeeBreakdown
-    ? {
-        fbaFulfillment: data.feeBreakdown!.fbaFulfillment,
-        referralFee: data.feeBreakdown!.referral,
-        storageFee: data.feeBreakdown!.storage,
-        inboundFee: data.feeBreakdown!.inbound,
-        removalFee: data.feeBreakdown!.removal,
-        returnsFee: data.feeBreakdown!.returns,
-        chargebacksFee: data.feeBreakdown!.chargebacks,
-        otherFee: data.feeBreakdown!.other,
-        reimbursements: data.feeBreakdown!.reimbursements,
-      }
-    : {
-        // Estimated percentages (fallback)
-        fbaFulfillment: data.amazonFees * 0.55,
-        referralFee: data.amazonFees * 0.35,
-        storageFee: data.amazonFees * 0.05,
-        inboundFee: data.amazonFees * 0.03,
-        removalFee: 0,
-        returnsFee: data.amazonFees * 0.02,
-        chargebacksFee: 0,
-        otherFee: 0,
-        reimbursements: 0,
-      }
-
-  // Fee source indicator for UI
-  const feeSourceLabel = data.feeSource === 'real' ? '✓ Real' : data.feeSource === 'mixed' ? '⚠ Mixed' : '~ Est.'
-
-  // Calculated metrics (based on available data)
-  const margin = data.sales > 0 ? (data.netProfit / data.sales) * 100 : 0
-  // ROI calculated with COGS only (Ad Spend not available yet)
-  const roi = data.cogs > 0 ? (data.netProfit / data.cogs) * 100 : 0
-  // Refund rate based on refund count vs units (handle undefined refunds)
+  // Safe values
   const safeRefunds = data.refunds ?? 0
+  const safeCogs = data.cogs ?? 0
+  const safeAdSpend = data.adSpend ?? 0
+
+  // Amazon Fees breakdown - use real data when available
+  const hasRealFees = (data.feeSource === 'real' || data.feeSource === 'mixed') && data.feeBreakdown
+
+  const fees = hasRealFees
+    ? {
+        fbaFulfillment: data.feeBreakdown!.fbaFulfillment || 0,
+        referral: data.feeBreakdown!.referral || 0,
+        storage: data.feeBreakdown!.storage || 0,
+        inbound: data.feeBreakdown!.inbound || 0,
+        removal: data.feeBreakdown!.removal || 0,
+        returns: data.feeBreakdown!.returns || 0,
+        chargebacks: data.feeBreakdown!.chargebacks || 0,
+        other: data.feeBreakdown!.other || 0,
+        reimbursements: data.feeBreakdown!.reimbursements || 0,
+      }
+    : null
+
+  // Calculated metrics
+  const grossProfit = data.grossProfit ?? (data.sales - data.amazonFees - safeRefunds - safeCogs)
+  const netProfit = data.netProfit ?? (grossProfit - safeAdSpend)
+  const margin = data.sales > 0 ? (netProfit / data.sales) * 100 : 0
+  const roi = safeCogs > 0 ? (netProfit / safeCogs) * 100 : 0
   const refundRate = data.units > 0 ? (safeRefunds / data.units) * 100 : 0
+  const realAcos = data.sales > 0 ? (safeAdSpend / data.sales) * 100 : 0
   const estPayout = data.sales - data.amazonFees - safeRefunds
 
-  // Helper for "Coming Soon" display
-  const comingSoon = (label: string) => `$0.00 (${label})`
-  const comingSoonPercent = (label: string) => `0.0% (${label})`
+  // Format date range
+  const formatDateRange = () => {
+    const startStr = data.startDate.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
+    const endStr = data.endDate.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
+    if (startStr === endStr) return startStr
+    return `${data.startDate.toLocaleDateString('en-US', { day: 'numeric' })}-${endStr.replace(',', '')}`
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -125,17 +146,15 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Left accent border */}
+        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-blue-500 via-blue-400 to-blue-500 rounded-l-2xl" />
+
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">{data.label} - Full Breakdown</h2>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {data.startDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-              {data.startDate.toDateString() !== data.endDate.toDateString() && (
-                <> - {data.endDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</>
-              )}
-            </p>
+            <h2 className="text-lg font-bold text-gray-900">{data.label}</h2>
+            <p className="text-sm text-gray-500">{formatDateRange()}</p>
           </div>
           <button
             onClick={onClose}
@@ -145,209 +164,223 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           </button>
         </div>
 
-        {/* Content */}
+        {/* Content - Scrollable */}
         <div className="flex-1 overflow-y-auto">
-          {/* Revenue Section */}
-          <div className="px-2 py-4 border-b border-gray-200">
-            <h3 className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Revenue</h3>
+          {/* Sales - Expandable */}
+          <CollapsibleRow
+            label="Sales"
+            value={formatCurrency(data.sales)}
+            valueColor="text-gray-900"
+            defaultOpen={false}
+          >
+            <SubRow label="Organic" value={formatCurrency(data.sales)} />
+            <SubRow label="Sponsored Products (same day)" value="$0.00" valueColor="text-gray-400" />
+            <SubRow label="Sponsored Display (same day)" value="$0.00" valueColor="text-gray-400" />
+          </CollapsibleRow>
 
-            {/* Sales - Real data from Amazon Orders API */}
-            <div className="flex items-center justify-between py-3 px-4">
-              <div className="flex items-center gap-3">
-                <span className="w-4" />
-                <span className="text-gray-500"><DollarSign className="w-4 h-4" /></span>
-                <span className="font-medium text-gray-900">Sales</span>
-              </div>
-              <span className="font-semibold text-emerald-600">{formatCurrency(data.sales)}</span>
-            </div>
+          {/* Units - Expandable */}
+          <CollapsibleRow
+            label="Units"
+            value={data.units.toLocaleString()}
+            defaultOpen={false}
+          >
+            <SubRow label="Organic" value={data.units.toLocaleString()} />
+            <SubRow label="Sponsored Products (same day)" value="0" valueColor="text-gray-400" />
+            <SubRow label="Sponsored Display (same day)" value="0" valueColor="text-gray-400" />
+          </CollapsibleRow>
 
-            {/* Units - Real data from Amazon Orders API */}
-            <div className="flex items-center justify-between py-3 px-4">
-              <div className="flex items-center gap-3">
-                <span className="w-4" />
-                <span className="text-gray-500"><Package className="w-4 h-4" /></span>
-                <span className="font-medium text-gray-900">Units</span>
-              </div>
-              <span className="font-semibold text-gray-900">{data.units.toLocaleString()}</span>
-            </div>
+          {/* Promo */}
+          <CollapsibleRow label="Promo" value="$0.00" valueColor="text-gray-500" />
 
-            <div className="flex items-center justify-between py-3 px-4">
-              <div className="flex items-center gap-3">
-                <span className="w-4" />
-                <span className="text-gray-500"><ShoppingCart className="w-4 h-4" /></span>
-                <span className="font-medium text-gray-900">Orders</span>
-              </div>
-              <span className="font-semibold text-gray-900">{data.orders.toLocaleString()}</span>
-            </div>
-          </div>
+          {/* Advertising cost - Expandable */}
+          <CollapsibleRow
+            label="Advertising cost"
+            value={formatCurrency(-safeAdSpend)}
+            valueColor={safeAdSpend > 0 ? "text-red-600" : "text-gray-500"}
+            defaultOpen={false}
+          >
+            <SubRow label="Sponsored Products" value={formatCurrency(-safeAdSpend)} valueColor="text-red-600" />
+            <SubRow label="Sponsored Brands Video" value="$0.00" valueColor="text-gray-400" />
+            <SubRow label="Sponsored Display" value="$0.00" valueColor="text-gray-400" />
+            <SubRow label="Sponsored Brands" value="$0.00" valueColor="text-gray-400" />
+          </CollapsibleRow>
 
-          {/* Deductions Section */}
-          <div className="px-2 py-4 border-b border-gray-200">
-            <h3 className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Deductions</h3>
+          {/* Refund cost - Expandable */}
+          <CollapsibleRow
+            label="Refund cost"
+            value={formatCurrency(-safeRefunds)}
+            valueColor={safeRefunds > 0 ? "text-red-600" : "text-gray-500"}
+            defaultOpen={false}
+          >
+            <SubRow label="Refunded amount" value={formatCurrency(-safeRefunds)} valueColor="text-red-600" />
+            <SubRow label="Refund commission" value="$0.00" valueColor="text-gray-400" />
+            <SubRow label="Refunded referral fee" value="$0.00" valueColor="text-gray-400" />
+          </CollapsibleRow>
 
-            {/* Ad Spend - Requires Advertising API (Coming Soon) */}
-            <div className="flex items-center justify-between py-3 px-4 bg-amber-50/50 rounded-lg mx-2">
-              <div className="flex items-center gap-3">
-                <span className="w-4" />
-                <span className="text-gray-400"><BarChart3 className="w-4 h-4" /></span>
-                <span className="font-medium text-gray-500">Ad Spend</span>
-              </div>
-              <span className="font-medium text-amber-600">$0.00 <span className="text-xs">(Coming Soon)</span></span>
-            </div>
+          {/* Amazon fees - Expandable (DETAILED) */}
+          <CollapsibleRow
+            label="Amazon fees"
+            value={formatCurrency(-data.amazonFees)}
+            valueColor="text-red-600"
+            defaultOpen={true}
+          >
+            {hasRealFees && fees ? (
+              <>
+                {fees.fbaFulfillment > 0 && (
+                  <SubRow label="FBA per unit fulfilment fee" value={formatCurrency(-fees.fbaFulfillment)} valueColor="text-red-600" />
+                )}
+                {fees.referral > 0 && (
+                  <SubRow label="Referral fee" value={formatCurrency(-fees.referral)} valueColor="text-red-600" />
+                )}
+                {fees.storage > 0 && (
+                  <SubRow label="FBA storage fee" value={formatCurrency(-fees.storage)} valueColor="text-red-600" />
+                )}
+                {fees.inbound > 0 && (
+                  <SubRow label="Inbound transportation" value={formatCurrency(-fees.inbound)} valueColor="text-red-600" />
+                )}
+                {fees.removal > 0 && (
+                  <SubRow label="FBA removal fee" value={formatCurrency(-fees.removal)} valueColor="text-red-600" />
+                )}
+                {fees.returns > 0 && (
+                  <SubRow label="FBA customer return per unit fee" value={formatCurrency(-fees.returns)} valueColor="text-red-600" />
+                )}
+                {fees.chargebacks > 0 && (
+                  <SubRow label="Chargebacks" value={formatCurrency(-fees.chargebacks)} valueColor="text-red-600" />
+                )}
+                {fees.other > 0 && (
+                  <SubRow label="Other fees" value={formatCurrency(-fees.other)} valueColor="text-red-600" />
+                )}
+                {fees.reimbursements > 0 && (
+                  <SubRow label="Reversal reimbursement" value={formatCurrency(fees.reimbursements)} valueColor="text-green-600" />
+                )}
+                {/* Show message if all fees are 0 */}
+                {fees.fbaFulfillment === 0 && fees.referral === 0 && (
+                  <div className="px-10 py-2 text-xs text-gray-400">
+                    No fee details available yet
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <SubRow label="FBA per unit fulfilment fee (~55%)" value={formatCurrency(-data.amazonFees * 0.55)} valueColor="text-red-600" />
+                <SubRow label="Referral fee (~35%)" value={formatCurrency(-data.amazonFees * 0.35)} valueColor="text-red-600" />
+                <SubRow label="FBA storage fee (~5%)" value={formatCurrency(-data.amazonFees * 0.05)} valueColor="text-red-600" />
+                <SubRow label="Other fees (~5%)" value={formatCurrency(-data.amazonFees * 0.05)} valueColor="text-red-600" />
+                <div className="px-10 py-2 text-xs text-gray-400">
+                  * Breakdown is estimated. Syncing real fees...
+                </div>
+              </>
+            )}
+          </CollapsibleRow>
 
-            <CollapsibleSection
-              title={`Amazon Fees (${feeSourceLabel})`}
-              icon={<DollarSign className="w-4 h-4" />}
-              total={formatCurrency(-data.amazonFees)}
-              totalColor="text-red-600"
-            >
-              {/* Core fees */}
-              <MetricRow
-                label={hasRealFeeBreakdown ? "FBA Fulfillment" : "FBA Fulfillment (~55%)"}
-                value={formatCurrency(-amazonFeesBreakdown.fbaFulfillment)}
-                valueColor="text-red-600"
-                indent
-              />
-              <MetricRow
-                label={hasRealFeeBreakdown ? "Referral Fee" : "Referral Fee (~35%)"}
-                value={formatCurrency(-amazonFeesBreakdown.referralFee)}
-                valueColor="text-red-600"
-                indent
-              />
-              <MetricRow
-                label={hasRealFeeBreakdown ? "Storage Fee" : "Storage Fee (~5%)"}
-                value={formatCurrency(-amazonFeesBreakdown.storageFee)}
-                valueColor="text-red-600"
-                indent
-              />
-              <MetricRow
-                label={hasRealFeeBreakdown ? "Inbound Fee" : "Inbound Fee (~3%)"}
-                value={formatCurrency(-amazonFeesBreakdown.inboundFee)}
-                valueColor="text-red-600"
-                indent
-              />
+          <Divider />
 
-              {/* Additional fees (only shown when real data available) */}
-              {hasRealFeeBreakdown && amazonFeesBreakdown.removalFee > 0 && (
-                <MetricRow label="Removal Fee" value={formatCurrency(-amazonFeesBreakdown.removalFee)} valueColor="text-red-600" indent />
-              )}
-              {hasRealFeeBreakdown && amazonFeesBreakdown.returnsFee > 0 && (
-                <MetricRow label="Return Processing" value={formatCurrency(-amazonFeesBreakdown.returnsFee)} valueColor="text-red-600" indent />
-              )}
-              {hasRealFeeBreakdown && amazonFeesBreakdown.chargebacksFee > 0 && (
-                <MetricRow label="Chargebacks" value={formatCurrency(-amazonFeesBreakdown.chargebacksFee)} valueColor="text-red-600" indent />
-              )}
-              {hasRealFeeBreakdown && amazonFeesBreakdown.otherFee > 0 && (
-                <MetricRow label="Other Fees" value={formatCurrency(-amazonFeesBreakdown.otherFee)} valueColor="text-red-600" indent />
-              )}
+          {/* Cost of goods */}
+          <CollapsibleRow
+            label="Cost of goods"
+            value={formatCurrency(-safeCogs)}
+            valueColor={safeCogs > 0 ? "text-red-600" : "text-gray-500"}
+            hasWarning={safeCogs === 0}
+          />
 
-              {/* Reimbursements (positive, reduces total fees) */}
-              {hasRealFeeBreakdown && amazonFeesBreakdown.reimbursements > 0 && (
-                <MetricRow label="Reimbursements" value={formatCurrency(amazonFeesBreakdown.reimbursements)} valueColor="text-green-600" indent />
-              )}
+          {/* Gross profit */}
+          <CollapsibleRow
+            label="Gross profit"
+            value={formatCurrency(grossProfit)}
+            valueColor={grossProfit >= 0 ? "text-gray-900" : "text-red-600"}
+            hasWarning={grossProfit < 0}
+          />
 
-              {/* Fee source note */}
-              <p className="text-xs text-gray-400 mt-2 pl-4">
-                {hasRealFeeBreakdown
-                  ? '✓ Real fee data from Amazon Finances API'
-                  : '* Total fee is from Amazon. Breakdown is estimated.'}
-              </p>
-            </CollapsibleSection>
+          {/* Indirect expenses */}
+          <CollapsibleRow
+            label="Indirect expenses"
+            value="$0.00"
+            valueColor="text-gray-500"
+          />
 
-            <div className="flex items-center justify-between py-3 px-4">
-              <div className="flex items-center gap-3">
-                <span className="w-4" />
-                <span className="text-gray-500">↩️</span>
-                <span className="font-medium text-gray-900">Refunds</span>
-              </div>
-              <span className="font-semibold text-red-600">{formatCurrency(-safeRefunds)}</span>
-            </div>
+          {/* Net profit - BOLD */}
+          <CollapsibleRow
+            label="Net profit"
+            value={formatCurrency(netProfit)}
+            valueColor={netProfit >= 0 ? "text-green-600" : "text-red-600"}
+            isBold
+            hasWarning={netProfit < 0}
+          />
 
-            <div className="flex items-center justify-between py-3 px-4">
-              <div className="flex items-center gap-3">
-                <span className="w-4" />
-                <span className="text-gray-500">📦</span>
-                <span className="font-medium text-gray-900">COGS</span>
-              </div>
-              <span className="font-semibold text-red-600">{formatCurrency(-data.cogs)}</span>
-            </div>
-          </div>
+          {/* Estimated payout */}
+          <CollapsibleRow
+            label="Estimated payout"
+            value={formatCurrency(estPayout)}
+            valueColor="text-gray-900"
+          />
 
-          {/* Profit Section */}
-          <div className="px-2 py-4 border-b border-gray-200">
-            <h3 className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Profit</h3>
+          <Divider />
 
-            <div className="flex items-center justify-between py-3 px-4">
-              <div className="flex items-center gap-3">
-                <span className="w-4" />
-                <span className="text-gray-500">💰</span>
-                <span className="font-medium text-gray-900">Gross Profit</span>
-              </div>
-              <span className={`font-semibold ${data.grossProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                {formatCurrency(data.grossProfit)}
-              </span>
-            </div>
+          {/* Metrics Section */}
+          <CollapsibleRow
+            label="Real ACOS"
+            value={formatPercent(realAcos)}
+            valueColor="text-gray-900"
+          />
 
-            <div className="flex items-center justify-between py-3 px-4 bg-gradient-to-r from-emerald-50 to-transparent rounded-lg mx-2">
-              <div className="flex items-center gap-3">
-                <span className="w-4" />
-                <span className="text-emerald-600">⭐</span>
-                <span className="font-bold text-gray-900">Net Profit</span>
-              </div>
-              <span className={`text-xl font-bold ${data.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                {formatCurrency(data.netProfit)}
-              </span>
-            </div>
+          <CollapsibleRow
+            label="% Refunds"
+            value={formatPercent(refundRate)}
+            valueColor={refundRate > 10 ? "text-red-600" : "text-gray-900"}
+          />
 
-            <div className="flex items-center justify-between py-3 px-4">
-              <div className="flex items-center gap-3">
-                <span className="w-4" />
-                <span className="text-gray-500">🏦</span>
-                <span className="font-medium text-gray-900">Est. Payout</span>
-              </div>
-              <span className="font-semibold text-blue-600">{formatCurrency(estPayout)}</span>
-            </div>
-          </div>
+          <CollapsibleRow
+            label="Sellable returns"
+            value="0.00%"
+            valueColor="text-gray-500"
+          />
 
-          {/* Performance Metrics Section */}
-          <div className="px-2 py-4">
-            <h3 className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Performance Metrics</h3>
+          <CollapsibleRow
+            label="Margin"
+            value={formatPercent(margin)}
+            valueColor={margin >= 0 ? "text-gray-900" : "text-red-600"}
+          />
 
-            <div className="grid grid-cols-2 gap-4 px-4">
-              {/* Real ACOS - Requires Advertising API (Coming Soon) */}
-              <div className="bg-amber-50/50 rounded-xl p-4 border border-amber-200/50">
-                <p className="text-xs text-gray-400 mb-1">Real ACOS</p>
-                <p className="text-lg font-semibold text-amber-600">
-                  0.0% <span className="text-xs font-normal">(Coming Soon)</span>
-                </p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">Refund Rate</p>
-                <p className={`text-xl font-bold ${refundRate > 5 ? 'text-red-600' : refundRate > 2 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                  {formatPercent(refundRate)}
-                </p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">Margin</p>
-                <p className={`text-xl font-bold ${margin > 20 ? 'text-emerald-600' : margin > 10 ? 'text-amber-600' : 'text-red-600'}`}>
-                  {formatPercent(margin)}
-                </p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">ROI</p>
-                <p className={`text-xl font-bold ${roi > 50 ? 'text-emerald-600' : roi > 20 ? 'text-amber-600' : 'text-red-600'}`}>
-                  {formatPercent(roi)}
-                </p>
-              </div>
-            </div>
-          </div>
+          <CollapsibleRow
+            label="ROI"
+            value={formatPercent(roi)}
+            valueColor="text-gray-900"
+          />
+
+          <Divider />
+
+          {/* Additional Metrics */}
+          <CollapsibleRow
+            label="Active subscriptions (SnS)"
+            value="0"
+            valueColor="text-gray-500"
+          />
+
+          <CollapsibleRow
+            label="Sessions"
+            value="-"
+            valueColor="text-gray-400"
+            defaultOpen={false}
+          >
+            <SubRow label="Browser sessions" value="-" valueColor="text-gray-400" />
+            <SubRow label="Mobile app sessions" value="-" valueColor="text-gray-400" />
+          </CollapsibleRow>
+
+          <CollapsibleRow
+            label="Unit session percentage"
+            value="-"
+            valueColor="text-gray-400"
+          />
+
+          {/* Bottom padding */}
+          <div className="h-4" />
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
           <button
             onClick={onClose}
-            className="w-full py-2.5 bg-gray-900 text-white font-medium rounded-xl hover:bg-gray-800 transition-colors"
+            className="w-full py-3 bg-gray-900 text-white font-semibold rounded-xl hover:bg-gray-800 transition-colors"
           >
             Close
           </button>
