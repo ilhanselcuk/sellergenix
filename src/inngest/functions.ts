@@ -600,5 +600,205 @@ export const syncHistoricalData = inngest.createFunction(
   }
 );
 
+/**
+ * Data Kiosk Historical Sync Function
+ *
+ * Uses Amazon's GraphQL-based Data Kiosk API for scalable bulk data retrieval
+ * Much faster and more reliable than Orders API for large datasets
+ *
+ * Benefits:
+ * - Single query for entire date range (no pagination)
+ * - JSONL streaming format
+ * - Minimal API calls
+ * - Built for scale (500K+ orders)
+ */
+export const syncHistoricalDataKiosk = inngest.createFunction(
+  {
+    id: "sync-historical-data-kiosk",
+    retries: 3,
+    concurrency: {
+      limit: 1,
+      key: "event.data.userId",
+    },
+  },
+  { event: "amazon/sync.historical-kiosk" },
+  async ({ event, step }) => {
+    const { userId, refreshToken, yearsBack = 2 } = event.data;
+
+    console.log(`🚀 [Inngest] Starting Data Kiosk sync for user ${userId}, years: ${yearsBack}`);
+
+    const results: Record<string, unknown> = {
+      startedAt: new Date().toISOString(),
+      yearsBack,
+      method: "data-kiosk",
+    };
+
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setFullYear(startDate.getFullYear() - yearsBack);
+
+    const startStr = startDate.toISOString().split("T")[0];
+    const endStr = endDate.toISOString().split("T")[0];
+
+    // Dynamic import to avoid circular dependencies
+    const {
+      createDataKioskQuery,
+      getDataKioskQuery,
+      getDataKioskDocument,
+      downloadDataKioskDocument,
+      buildSalesAndTrafficQuery,
+    } = await import("@/lib/amazon-sp-api/data-kiosk");
+
+    // Step 1: Create Sales & Traffic query
+    const queryId = await step.run("create-sales-traffic-query", async () => {
+      const query = buildSalesAndTrafficQuery(startStr, endStr, undefined, "DAY");
+      console.log(`📊 [Data Kiosk] Creating query for ${startStr} to ${endStr}`);
+
+      const result = await createDataKioskQuery(refreshToken, query);
+      if (!result.success || !result.queryId) {
+        throw new Error(result.error || "Failed to create query");
+      }
+
+      console.log(`✅ [Data Kiosk] Query created: ${result.queryId}`);
+      return result.queryId;
+    });
+
+    // Step 2: Poll for completion (with sleeps between polls)
+    let processingComplete = false;
+    let dataDocumentId: string | null = null;
+    let pollCount = 0;
+    const maxPolls = 60; // 60 polls × 30s = 30 minutes max
+
+    while (!processingComplete && pollCount < maxPolls) {
+      const pollResult = await step.run(`poll-status-${pollCount}`, async () => {
+        const result = await getDataKioskQuery(refreshToken, queryId);
+        if (!result.success || !result.query) {
+          throw new Error(result.error || "Failed to get query status");
+        }
+
+        console.log(`📊 [Data Kiosk] Poll ${pollCount + 1}: Status = ${result.query.processingStatus}`);
+
+        return {
+          status: result.query.processingStatus,
+          dataDocumentId: result.query.dataDocumentId,
+          errorDocumentId: result.query.errorDocumentId,
+        };
+      });
+
+      if (pollResult.status === "DONE") {
+        processingComplete = true;
+        dataDocumentId = pollResult.dataDocumentId || null;
+        console.log(`✅ [Data Kiosk] Query completed!`);
+      } else if (pollResult.status === "CANCELLED" || pollResult.status === "FATAL") {
+        throw new Error(`Query ${pollResult.status}: Check errorDocumentId ${pollResult.errorDocumentId}`);
+      } else {
+        // Still processing, wait 30 seconds
+        await step.sleep(`wait-${pollCount}`, "30s");
+        pollCount++;
+      }
+    }
+
+    if (!processingComplete) {
+      throw new Error("Query timed out after 30 minutes");
+    }
+
+    if (!dataDocumentId) {
+      throw new Error("No data document ID returned");
+    }
+
+    // Step 3: Get document URL
+    const documentUrl = await step.run("get-document-url", async () => {
+      const result = await getDataKioskDocument(refreshToken, dataDocumentId!);
+      if (!result.success || !result.document) {
+        throw new Error(result.error || "Failed to get document");
+      }
+      return result.document.documentUrl;
+    });
+
+    // Step 4: Download and parse data
+    const downloadResult = await step.run("download-data", async () => {
+      const result = await downloadDataKioskDocument(documentUrl);
+      if (!result.success || !result.data) {
+        throw new Error(result.error || "Failed to download data");
+      }
+      return { recordCount: result.data.length, data: result.data };
+    });
+
+    console.log(`📊 [Data Kiosk] Downloaded ${downloadResult.recordCount} records`);
+
+    // Step 5: Insert data into database (in chunks)
+    const CHUNK_SIZE = 1000;
+    const data = downloadResult.data;
+    let totalInserted = 0;
+
+    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+      const chunk = data.slice(i, i + CHUNK_SIZE);
+      const chunkIndex = Math.floor(i / CHUNK_SIZE);
+
+      const insertResult = await step.run(`insert-chunk-${chunkIndex}`, async () => {
+        let inserted = 0;
+
+        for (const record of chunk) {
+          try {
+            // Extract from GraphQL response structure
+            const salesTrafficData = (record as any)?.analytics_salesAndTraffic_2024_04_24?.salesAndTrafficByDate || [];
+
+            for (const day of salesTrafficData) {
+              const { error } = await supabase
+                .from("daily_metrics")
+                .upsert(
+                  {
+                    user_id: userId,
+                    date: day.startDate,
+                    sales: day.sales?.orderedProductSales?.amount || 0,
+                    units_sold: day.sales?.unitsOrdered || 0,
+                    orders: day.sales?.totalOrderItems || 0,
+                    sessions: day.traffic?.sessions || 0,
+                    page_views: day.traffic?.pageViews || 0,
+                    buy_box_percentage: day.traffic?.buyBoxPercentage || 0,
+                    unit_session_percentage: day.traffic?.unitSessionPercentage || 0,
+                    data_source: "data_kiosk",
+                    synced_at: new Date().toISOString(),
+                  },
+                  { onConflict: "user_id,date" }
+                );
+
+              if (!error) {
+                inserted++;
+              }
+            }
+          } catch (err) {
+            console.error("[Data Kiosk] Insert error:", err);
+          }
+        }
+
+        return { inserted };
+      });
+
+      totalInserted += insertResult.inserted;
+
+      // Small delay between chunks
+      if (i + CHUNK_SIZE < data.length) {
+        await step.sleep(`insert-delay-${chunkIndex}`, "500ms");
+      }
+    }
+
+    results.totalRecords = downloadResult.recordCount;
+    results.totalInserted = totalInserted;
+    results.completedAt = new Date().toISOString();
+
+    console.log(`🎉 [Inngest] Data Kiosk sync completed: ${totalInserted} records inserted`);
+
+    return results;
+  }
+);
+
 // Export all functions
-export const functions = [syncAmazonFees, syncSingleOrderFees, scheduledFeeSync, syncHistoricalData];
+export const functions = [
+  syncAmazonFees,
+  syncSingleOrderFees,
+  scheduledFeeSync,
+  syncHistoricalData,
+  syncHistoricalDataKiosk,
+];

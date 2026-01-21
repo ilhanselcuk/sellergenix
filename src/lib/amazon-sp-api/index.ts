@@ -129,3 +129,18 @@ export {
   createInterval,
 } from './sales'
 export type { OrderMetrics, GetOrderMetricsParams } from './sales'
+
+// Data Kiosk API (GraphQL-based Bulk Data)
+export {
+  createDataKioskQuery,
+  getDataKioskQuery,
+  getDataKioskDocument,
+  downloadDataKioskDocument,
+  cancelDataKioskQuery,
+  executeDataKioskQuery,
+  syncSalesAndTrafficData,
+  // Query builders
+  buildSalesAndTrafficQuery,
+  buildSalesAndTrafficByAsinQuery,
+} from './data-kiosk'
+export type { QueryStatus, DataKioskQuery, DataKioskDocument } from './data-kiosk'
