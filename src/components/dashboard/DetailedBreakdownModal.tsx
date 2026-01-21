@@ -70,13 +70,38 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
 
   const formatPercent = (value: number) => `${value.toFixed(1)}%`
 
-  // Amazon Fees breakdown (estimated percentages - real breakdown requires Finance API approval)
-  const amazonFeesBreakdown = {
-    fbaFulfillment: data.amazonFees * 0.55,
-    referralFee: data.amazonFees * 0.35,
-    storageFee: data.amazonFees * 0.07,
-    inboundFee: data.amazonFees * 0.03,
-  }
+  // Amazon Fees breakdown - use real data when available (real or mixed), otherwise estimate
+  const hasRealFeeBreakdown = (data.feeSource === 'real' || data.feeSource === 'mixed') && data.feeBreakdown && (
+    data.feeBreakdown.fbaFulfillment > 0 || data.feeBreakdown.referral > 0 || data.feeBreakdown.chargebacks > 0
+  )
+
+  const amazonFeesBreakdown = hasRealFeeBreakdown
+    ? {
+        fbaFulfillment: data.feeBreakdown!.fbaFulfillment,
+        referralFee: data.feeBreakdown!.referral,
+        storageFee: data.feeBreakdown!.storage,
+        inboundFee: data.feeBreakdown!.inbound,
+        removalFee: data.feeBreakdown!.removal,
+        returnsFee: data.feeBreakdown!.returns,
+        chargebacksFee: data.feeBreakdown!.chargebacks,
+        otherFee: data.feeBreakdown!.other,
+        reimbursements: data.feeBreakdown!.reimbursements,
+      }
+    : {
+        // Estimated percentages (fallback)
+        fbaFulfillment: data.amazonFees * 0.55,
+        referralFee: data.amazonFees * 0.35,
+        storageFee: data.amazonFees * 0.05,
+        inboundFee: data.amazonFees * 0.03,
+        removalFee: 0,
+        returnsFee: data.amazonFees * 0.02,
+        chargebacksFee: 0,
+        otherFee: 0,
+        reimbursements: 0,
+      }
+
+  // Fee source indicator for UI
+  const feeSourceLabel = data.feeSource === 'real' ? '✓ Real' : data.feeSource === 'mixed' ? '⚠ Mixed' : '~ Est.'
 
   // Calculated metrics (based on available data)
   const margin = data.sales > 0 ? (data.netProfit / data.sales) * 100 : 0
@@ -170,16 +195,62 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
             </div>
 
             <CollapsibleSection
-              title="Amazon Fees"
+              title={`Amazon Fees (${feeSourceLabel})`}
               icon={<DollarSign className="w-4 h-4" />}
               total={formatCurrency(-data.amazonFees)}
               totalColor="text-red-600"
             >
-              <MetricRow label="FBA Fulfillment (~55%)" value={formatCurrency(-amazonFeesBreakdown.fbaFulfillment)} valueColor="text-red-600" indent />
-              <MetricRow label="Referral Fee (~35%)" value={formatCurrency(-amazonFeesBreakdown.referralFee)} valueColor="text-red-600" indent />
-              <MetricRow label="Storage Fee (~7%)" value={formatCurrency(-amazonFeesBreakdown.storageFee)} valueColor="text-red-600" indent />
-              <MetricRow label="Inbound Fee (~3%)" value={formatCurrency(-amazonFeesBreakdown.inboundFee)} valueColor="text-red-600" indent />
-              <p className="text-xs text-gray-400 mt-2 pl-4">* Total fee is from Amazon. Breakdown is estimated.</p>
+              {/* Core fees */}
+              <MetricRow
+                label={hasRealFeeBreakdown ? "FBA Fulfillment" : "FBA Fulfillment (~55%)"}
+                value={formatCurrency(-amazonFeesBreakdown.fbaFulfillment)}
+                valueColor="text-red-600"
+                indent
+              />
+              <MetricRow
+                label={hasRealFeeBreakdown ? "Referral Fee" : "Referral Fee (~35%)"}
+                value={formatCurrency(-amazonFeesBreakdown.referralFee)}
+                valueColor="text-red-600"
+                indent
+              />
+              <MetricRow
+                label={hasRealFeeBreakdown ? "Storage Fee" : "Storage Fee (~5%)"}
+                value={formatCurrency(-amazonFeesBreakdown.storageFee)}
+                valueColor="text-red-600"
+                indent
+              />
+              <MetricRow
+                label={hasRealFeeBreakdown ? "Inbound Fee" : "Inbound Fee (~3%)"}
+                value={formatCurrency(-amazonFeesBreakdown.inboundFee)}
+                valueColor="text-red-600"
+                indent
+              />
+
+              {/* Additional fees (only shown when real data available) */}
+              {hasRealFeeBreakdown && amazonFeesBreakdown.removalFee > 0 && (
+                <MetricRow label="Removal Fee" value={formatCurrency(-amazonFeesBreakdown.removalFee)} valueColor="text-red-600" indent />
+              )}
+              {hasRealFeeBreakdown && amazonFeesBreakdown.returnsFee > 0 && (
+                <MetricRow label="Return Processing" value={formatCurrency(-amazonFeesBreakdown.returnsFee)} valueColor="text-red-600" indent />
+              )}
+              {hasRealFeeBreakdown && amazonFeesBreakdown.chargebacksFee > 0 && (
+                <MetricRow label="Chargebacks" value={formatCurrency(-amazonFeesBreakdown.chargebacksFee)} valueColor="text-red-600" indent />
+              )}
+              {hasRealFeeBreakdown && amazonFeesBreakdown.otherFee > 0 && (
+                <MetricRow label="Other Fees" value={formatCurrency(-amazonFeesBreakdown.otherFee)} valueColor="text-red-600" indent />
+              )}
+
+              {/* Reimbursements (positive, reduces total fees) */}
+              {hasRealFeeBreakdown && amazonFeesBreakdown.reimbursements > 0 && (
+                <MetricRow label="Reimbursements" value={formatCurrency(amazonFeesBreakdown.reimbursements)} valueColor="text-green-600" indent />
+              )}
+
+              {/* Fee source note */}
+              <p className="text-xs text-gray-400 mt-2 pl-4">
+                {hasRealFeeBreakdown
+                  ? '✓ Real fee data from Amazon Finances API'
+                  : '* Total fee is from Amazon. Breakdown is estimated.'}
+              </p>
             </CollapsibleSection>
 
             <div className="flex items-center justify-between py-3 px-4">

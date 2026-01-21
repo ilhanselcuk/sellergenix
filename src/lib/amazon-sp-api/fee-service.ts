@@ -14,13 +14,85 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import { listFinancialEventsByOrderId, OrderFees, OrderItemFees } from './finances'
+import { listFinancialEventsByOrderId, OrderFees, OrderItemFees, extractOrderFees, extractRefundFees } from './finances'
 
 // Initialize Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+// =============================================
+// SKU -> ASIN MAPPING
+// =============================================
+
+/**
+ * Build SKU to ASIN mapping from user's products and order_items
+ *
+ * The Finances API often returns SKU but not ASIN.
+ * This function builds a map to resolve ASINs from SKUs.
+ *
+ * Sources (in priority order):
+ * 1. products table (seller_sku -> asin)
+ * 2. order_items table (seller_sku -> asin)
+ *
+ * @param userId - User ID
+ * @returns Map<sellerSku, asin>
+ */
+export async function buildSkuToAsinMap(userId: string): Promise<Map<string, string>> {
+  console.log(`🗺️ Building SKU->ASIN map for user ${userId}`)
+
+  const skuToAsin = new Map<string, string>()
+
+  try {
+    // Source 1: Products table
+    const { data: products, error: productsError } = await supabase
+      .from('products')
+      .select('asin, seller_sku, sku')
+      .eq('user_id', userId)
+
+    if (productsError) {
+      console.error('Failed to fetch products for SKU mapping:', productsError)
+    } else if (products) {
+      for (const product of products) {
+        // Use seller_sku first, then sku
+        const sku = product.seller_sku || product.sku
+        if (sku && product.asin) {
+          skuToAsin.set(sku, product.asin)
+        }
+      }
+      console.log(`   Found ${products.length} products with SKU->ASIN mappings`)
+    }
+
+    // Source 2: Order items table (for any SKUs not in products)
+    const { data: orderItems, error: itemsError } = await supabase
+      .from('order_items')
+      .select('asin, seller_sku')
+      .eq('user_id', userId)
+      .not('asin', 'is', null)
+      .not('seller_sku', 'is', null)
+
+    if (itemsError) {
+      console.error('Failed to fetch order_items for SKU mapping:', itemsError)
+    } else if (orderItems) {
+      let addedFromOrders = 0
+      for (const item of orderItems) {
+        if (item.seller_sku && item.asin && !skuToAsin.has(item.seller_sku)) {
+          skuToAsin.set(item.seller_sku, item.asin)
+          addedFromOrders++
+        }
+      }
+      console.log(`   Added ${addedFromOrders} additional SKU->ASIN mappings from order_items`)
+    }
+
+    console.log(`✅ SKU->ASIN map built with ${skuToAsin.size} total mappings`)
+
+  } catch (error) {
+    console.error('Error building SKU->ASIN map:', error)
+  }
+
+  return skuToAsin
+}
 
 // =============================================
 // TYPES
@@ -65,8 +137,11 @@ export async function syncShippedOrderFees(
   console.log(`💰 Syncing fees for shipped order: ${amazonOrderId}`)
 
   try {
-    // 1. Fetch real fees from Finances API
-    const feesResult = await listFinancialEventsByOrderId(refreshToken, amazonOrderId)
+    // 0. Build SKU->ASIN map for resolving ASINs from SKUs
+    const skuToAsinMap = await buildSkuToAsinMap(userId)
+
+    // 1. Fetch real fees from Finances API (with SKU->ASIN map)
+    const feesResult = await listFinancialEventsByOrderId(refreshToken, amazonOrderId, skuToAsinMap)
 
     if (!feesResult.success || !feesResult.data) {
       console.log(`⚠️ Could not fetch fees for ${amazonOrderId}: ${feesResult.error}`)
@@ -87,14 +162,85 @@ export async function syncShippedOrderFees(
     let totalFeesApplied = 0
 
     for (const itemFee of orderFees.items) {
-      // Calculate fee per unit
+      // Calculate fee per unit for backward compatibility
       const feePerUnit = itemFee.quantity > 0 ? itemFee.totalFee / itemFee.quantity : itemFee.totalFee
 
-      // Update order_item with real fee
+      // Calculate category totals from detailed fees
+      const totalFbaFulfillmentFees = itemFee.fbaPerUnitFulfillmentFee + itemFee.fbaPerOrderFulfillmentFee + itemFee.fbaWeightBasedFee
+      const totalReferralFees = itemFee.referralFee + itemFee.variableClosingFee
+      const totalStorageFees = itemFee.fbaStorageFee + itemFee.fbaLongTermStorageFee
+      const totalInboundFees = itemFee.fbaInboundTransportationFee + itemFee.fbaInboundConvenienceFee
+      const totalRemovalFees = itemFee.fbaRemovalFee + itemFee.fbaDisposalFee
+      const totalReturnFees = itemFee.fbaCustomerReturnPerUnitFee + itemFee.fbaCustomerReturnPerOrderFee + itemFee.fbaCustomerReturnWeightBasedFee
+      const totalChargebackFees = itemFee.shippingChargeback + itemFee.giftwrapChargeback + itemFee.shippingHB
+      const totalReimbursements = itemFee.reversalReimbursement + itemFee.safetReimbursement
+      const totalOtherFees = itemFee.subscriptionFee + itemFee.digitalServicesFee + itemFee.liquidationsBrokerageFee
+
+      // Update order_item with DETAILED fee breakdown
       const { error: updateError } = await supabase
         .from('order_items')
         .update({
+          // Legacy field (fee per unit)
           estimated_amazon_fee: feePerUnit,
+
+          // === INDIVIDUAL FEE FIELDS ===
+          // FBA Fulfillment
+          fee_fba_per_unit: itemFee.fbaPerUnitFulfillmentFee,
+          fee_fba_per_order: itemFee.fbaPerOrderFulfillmentFee,
+          fee_fba_weight_based: itemFee.fbaWeightBasedFee,
+
+          // Referral
+          fee_referral: itemFee.referralFee,
+          fee_variable_closing: itemFee.variableClosingFee,
+
+          // Storage
+          fee_storage: itemFee.fbaStorageFee,
+          fee_storage_long_term: itemFee.fbaLongTermStorageFee,
+
+          // Inbound
+          fee_inbound_transportation: itemFee.fbaInboundTransportationFee,
+          fee_inbound_convenience: itemFee.fbaInboundConvenienceFee,
+
+          // Removal
+          fee_removal: itemFee.fbaRemovalFee,
+          fee_disposal: itemFee.fbaDisposalFee,
+
+          // Return
+          fee_return_per_unit: itemFee.fbaCustomerReturnPerUnitFee,
+          fee_return_per_order: itemFee.fbaCustomerReturnPerOrderFee,
+          fee_return_weight_based: itemFee.fbaCustomerReturnWeightBasedFee,
+
+          // Chargebacks
+          fee_shipping_chargeback: itemFee.shippingChargeback,
+          fee_giftwrap_chargeback: itemFee.giftwrapChargeback,
+          fee_shipping_holdback: itemFee.shippingHB,
+
+          // Subscription & Other
+          fee_subscription: itemFee.subscriptionFee,
+          fee_liquidation: itemFee.liquidationsBrokerageFee,
+          liquidation_proceeds: itemFee.liquidationsRevenue,
+
+          // Reimbursements
+          reimbursement_other: itemFee.reversalReimbursement + itemFee.safetReimbursement,
+
+          // Refund Commission
+          fee_other: itemFee.refundCommission,
+
+          // === CATEGORY TOTALS (Sellerboard-style) ===
+          total_fba_fulfillment_fees: totalFbaFulfillmentFees,
+          total_referral_fees: totalReferralFees,
+          total_storage_fees: totalStorageFees,
+          total_inbound_fees: totalInboundFees,
+          total_removal_fees: totalRemovalFees,
+          total_return_fees: totalReturnFees,
+          total_chargeback_fees: totalChargebackFees,
+          total_reimbursements: totalReimbursements,
+          total_other_fees: totalOtherFees,
+          total_amazon_fees: itemFee.totalFee,
+
+          // Metadata
+          fees_synced_at: new Date().toISOString(),
+          fee_source: 'api',
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', userId)
@@ -576,5 +722,282 @@ export async function refreshAllProductFeeAverages(
   } catch (error) {
     console.error('Error refreshing product fee averages:', error)
     return { success: false, productsUpdated: 0 }
+  }
+}
+
+// =============================================
+// BULK FEE SYNC (For Historical Data)
+// =============================================
+
+/**
+ * Bulk sync fees from Finances API for a date range
+ *
+ * This is MUCH faster than order-by-order sync for historical data.
+ * Uses listFinancialEvents with date range, then maps to orders.
+ *
+ * @param userId - User ID
+ * @param refreshToken - Amazon refresh token
+ * @param startDate - Start date
+ * @param endDate - End date
+ */
+export async function bulkSyncFeesForDateRange(
+  userId: string,
+  refreshToken: string,
+  startDate: Date,
+  endDate: Date
+): Promise<{
+  success: boolean;
+  ordersUpdated: number;
+  itemsUpdated: number;
+  totalFeesApplied: number;
+  errors: string[]
+}> {
+  console.log(`📊 Bulk syncing fees from ${startDate.toISOString()} to ${endDate.toISOString()}`)
+
+  const errors: string[] = []
+  let ordersUpdated = 0
+  let itemsUpdated = 0
+  let totalFeesApplied = 0
+
+  try {
+    // Dynamic import to avoid circular dependencies
+    const { listFinancialEvents } = await import('./finances')
+
+    // Step 0: Build SKU->ASIN map for resolving ASINs from SKUs
+    console.log('🗺️ Building SKU->ASIN mapping...')
+    const skuToAsinMap = await buildSkuToAsinMap(userId)
+
+    // Step 1: Fetch all financial events for the date range
+    console.log('📥 Fetching financial events from Finances API...')
+
+    let allShipmentEvents: any[] = []
+    let nextToken: string | undefined
+    let pageCount = 0
+
+    do {
+      const result = await listFinancialEvents(refreshToken, startDate, endDate)
+
+      if (!result.success || !result.data) {
+        console.error('Failed to fetch financial events:', result.error)
+        errors.push(result.error || 'Failed to fetch financial events')
+        break
+      }
+
+      const shipmentEvents = result.data.shipmentEvents || []
+      allShipmentEvents = [...allShipmentEvents, ...shipmentEvents]
+      nextToken = result.nextToken
+      pageCount++
+
+      console.log(`   Page ${pageCount}: ${shipmentEvents.length} shipment events`)
+
+      // Rate limit
+      if (nextToken) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+    } while (nextToken && pageCount < 100) // Safety limit
+
+    console.log(`📦 Found ${allShipmentEvents.length} shipment events total`)
+
+    if (allShipmentEvents.length === 0) {
+      return {
+        success: true,
+        ordersUpdated: 0,
+        itemsUpdated: 0,
+        totalFeesApplied: 0,
+        errors: ['No shipment events found in date range']
+      }
+    }
+
+    // Step 2: Parse fees by order and build update map
+    const feesByOrderItem: Map<string, { fee: number; asin?: string }> = new Map()
+    const orderIdsWithFees: Set<string> = new Set()
+
+    for (const shipment of allShipmentEvents) {
+      const amazonOrderId = shipment.AmazonOrderId || shipment.amazonOrderId
+      if (!amazonOrderId) continue
+
+      orderIdsWithFees.add(amazonOrderId)
+
+      // Parse items from shipment
+      const items = shipment.ShipmentItemList || shipment.shipmentItemList || []
+
+      for (const item of items) {
+        const orderItemId = item.OrderItemId || item.orderItemId
+        const sellerSku = String(item.SellerSKU || item.sellerSKU || '')
+        // Try to get ASIN from: 1) Event data, 2) SKU->ASIN map
+        const asin = item.ASIN || item.asin || (sellerSku ? skuToAsinMap.get(sellerSku) : undefined)
+        const quantity = Number(item.QuantityShipped || item.quantityShipped || 1)
+
+        if (!orderItemId) continue
+
+        // Calculate total fee for this item
+        let itemTotalFee = 0
+        const feeList = item.ItemFeeList || item.itemFeeList || []
+
+        for (const fee of feeList) {
+          const feeAmountObj = fee.FeeAmount || fee.feeAmount
+          const amount = Math.abs(feeAmountObj?.CurrencyAmount || feeAmountObj?.currencyAmount || 0)
+          itemTotalFee += amount
+        }
+
+        // Calculate fee per unit
+        const feePerUnit = quantity > 0 ? itemTotalFee / quantity : itemTotalFee
+
+        feesByOrderItem.set(orderItemId, { fee: feePerUnit, asin })
+      }
+    }
+
+    console.log(`📊 Parsed fees for ${orderIdsWithFees.size} orders, ${feesByOrderItem.size} order items`)
+
+    // Step 3: Batch update order_items
+    console.log('💾 Updating order_items with real fees...')
+
+    // Process in batches to avoid overwhelming the database
+    const orderItemIds = Array.from(feesByOrderItem.keys())
+    const batchSize = 100
+
+    for (let i = 0; i < orderItemIds.length; i += batchSize) {
+      const batchIds = orderItemIds.slice(i, i + batchSize)
+
+      for (const orderItemId of batchIds) {
+        const feeData = feesByOrderItem.get(orderItemId)
+        if (!feeData) continue
+
+        const { error: updateError } = await supabase
+          .from('order_items')
+          .update({
+            estimated_amazon_fee: feeData.fee,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', userId)
+          .eq('order_item_id', orderItemId)
+
+        if (!updateError) {
+          itemsUpdated++
+          totalFeesApplied += feeData.fee
+        } else {
+          errors.push(`Failed to update item ${orderItemId}: ${updateError.message}`)
+        }
+      }
+
+      // Small delay between batches
+      if (i + batchSize < orderItemIds.length) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+    }
+
+    ordersUpdated = orderIdsWithFees.size
+
+    console.log(`✅ Bulk fee sync complete: ${ordersUpdated} orders, ${itemsUpdated} items, $${totalFeesApplied.toFixed(2)} fees`)
+
+    // Step 4: Refresh product fee averages
+    console.log('📈 Refreshing product fee averages...')
+    await refreshAllProductFeeAverages(userId)
+
+    return {
+      success: true,
+      ordersUpdated,
+      itemsUpdated,
+      totalFeesApplied,
+      errors
+    }
+  } catch (error) {
+    console.error('❌ Bulk fee sync error:', error)
+    return {
+      success: false,
+      ordersUpdated,
+      itemsUpdated,
+      totalFeesApplied,
+      errors: [error instanceof Error ? error.message : 'Unknown error']
+    }
+  }
+}
+
+/**
+ * Sync ALL historical fees (up to 2 years)
+ *
+ * Convenience function that syncs fees for the last 2 years
+ * in monthly chunks to avoid API limits.
+ *
+ * @param userId - User ID
+ * @param refreshToken - Amazon refresh token
+ */
+export async function syncAllHistoricalFees(
+  userId: string,
+  refreshToken: string
+): Promise<{
+  success: boolean;
+  totalOrders: number;
+  totalItems: number;
+  totalFees: number;
+  monthsProcessed: number;
+  errors: string[]
+}> {
+  console.log(`🚀 Starting full historical fee sync for user ${userId}`)
+
+  const endDate = new Date()
+  const startDate = new Date()
+  startDate.setFullYear(startDate.getFullYear() - 2) // 2 years back
+
+  // Split into monthly chunks
+  const monthlyChunks: { start: Date; end: Date }[] = []
+  let chunkStart = new Date(startDate)
+
+  while (chunkStart < endDate) {
+    const chunkEnd = new Date(chunkStart)
+    chunkEnd.setMonth(chunkEnd.getMonth() + 1)
+    if (chunkEnd > endDate) {
+      chunkEnd.setTime(endDate.getTime())
+    }
+
+    monthlyChunks.push({ start: new Date(chunkStart), end: new Date(chunkEnd) })
+    chunkStart = new Date(chunkEnd)
+  }
+
+  console.log(`📅 Processing ${monthlyChunks.length} monthly chunks`)
+
+  let totalOrders = 0
+  let totalItems = 0
+  let totalFees = 0
+  let monthsProcessed = 0
+  const errors: string[] = []
+
+  for (const chunk of monthlyChunks) {
+    const chunkLabel = `${chunk.start.toISOString().split('T')[0]} to ${chunk.end.toISOString().split('T')[0]}`
+    console.log(`📦 Processing chunk: ${chunkLabel}`)
+
+    const result = await bulkSyncFeesForDateRange(
+      userId,
+      refreshToken,
+      chunk.start,
+      chunk.end
+    )
+
+    if (result.success) {
+      totalOrders += result.ordersUpdated
+      totalItems += result.itemsUpdated
+      totalFees += result.totalFeesApplied
+      monthsProcessed++
+    }
+
+    errors.push(...result.errors)
+
+    // Rate limit between chunks
+    await new Promise(resolve => setTimeout(resolve, 1000))
+  }
+
+  console.log(`🎉 Historical fee sync complete:`)
+  console.log(`   Months processed: ${monthsProcessed}/${monthlyChunks.length}`)
+  console.log(`   Orders updated: ${totalOrders}`)
+  console.log(`   Items updated: ${totalItems}`)
+  console.log(`   Total fees: $${totalFees.toFixed(2)}`)
+
+  return {
+    success: monthsProcessed > 0,
+    totalOrders,
+    totalItems,
+    totalFees,
+    monthsProcessed,
+    errors
   }
 }

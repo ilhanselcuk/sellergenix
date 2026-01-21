@@ -18,6 +18,19 @@ export interface PeriodData {
   amazonFees: number
   cogs: number
   grossProfit: number
+  // Fee source and breakdown (Phase 1.8)
+  feeSource?: 'real' | 'estimated' | 'mixed'
+  feeBreakdown?: {
+    fbaFulfillment: number
+    referral: number
+    storage: number
+    inbound: number
+    removal: number
+    returns: number
+    chargebacks: number
+    other: number
+    reimbursements: number
+  }
 }
 
 interface PeriodCardProps {

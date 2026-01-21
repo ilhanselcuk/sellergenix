@@ -8,8 +8,12 @@
  * Query Params:
  * - userId: Required user ID
  * - hours: Hours back to look for shipped orders (default: 24)
- * - type: 'shipped' | 'pending' | 'all' (default: 'all')
+ * - type: 'shipped' | 'pending' | 'all' | 'bulk' | 'historical' (default: 'all')
+ *   - 'bulk': Fast bulk sync for a date range
+ *   - 'historical': Full 2-year historical fee sync
  * - sync: 'background' (default) | 'direct' (for small syncs)
+ * - startDate: For bulk sync - start date (ISO string)
+ * - endDate: For bulk sync - end date (ISO string)
  */
 
 import { NextResponse } from 'next/server'
@@ -19,6 +23,8 @@ import {
   syncRecentlyShippedOrderFees,
   estimateAllPendingOrderFees,
   refreshAllProductFeeAverages,
+  bulkSyncFeesForDateRange,
+  syncAllHistoricalFees,
 } from '@/lib/amazon-sp-api'
 
 const supabase = createClient(
@@ -31,8 +37,10 @@ export async function POST(request: Request) {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
     const hours = parseInt(searchParams.get('hours') || '24')
-    const type = (searchParams.get('type') || 'all') as 'shipped' | 'pending' | 'all'
+    const type = (searchParams.get('type') || 'all') as 'shipped' | 'pending' | 'all' | 'bulk' | 'historical'
     const syncMode = searchParams.get('sync') || 'background'
+    const startDateParam = searchParams.get('startDate')
+    const endDateParam = searchParams.get('endDate')
 
     if (!userId) {
       return NextResponse.json({ error: 'userId required' }, { status: 400 })
@@ -52,6 +60,69 @@ export async function POST(request: Request) {
         error: 'No active Amazon connection',
       }, { status: 400 })
     }
+
+    // =============================================
+    // BULK FEE SYNC (Fast, date-range based)
+    // =============================================
+    if (type === 'bulk') {
+      if (!startDateParam || !endDateParam) {
+        return NextResponse.json({
+          error: 'startDate and endDate required for bulk sync',
+          hint: 'Use ISO date strings: ?type=bulk&startDate=2024-01-01&endDate=2024-12-31',
+        }, { status: 400 })
+      }
+
+      console.log(`📊 Bulk fee sync for user ${userId}: ${startDateParam} to ${endDateParam}`)
+
+      const startDate = new Date(startDateParam)
+      const endDate = new Date(endDateParam)
+
+      const result = await bulkSyncFeesForDateRange(
+        userId,
+        connection.refresh_token,
+        startDate,
+        endDate
+      )
+
+      return NextResponse.json({
+        success: result.success,
+        mode: 'bulk',
+        results: {
+          ordersUpdated: result.ordersUpdated,
+          itemsUpdated: result.itemsUpdated,
+          totalFeesApplied: result.totalFeesApplied,
+          errors: result.errors,
+        },
+        dateRange: { startDate: startDateParam, endDate: endDateParam },
+        completedAt: new Date().toISOString(),
+      })
+    }
+
+    // =============================================
+    // HISTORICAL FEE SYNC (Full 2-year sync)
+    // =============================================
+    if (type === 'historical') {
+      console.log(`🚀 Historical fee sync for user ${userId} (2 years)`)
+
+      const result = await syncAllHistoricalFees(userId, connection.refresh_token)
+
+      return NextResponse.json({
+        success: result.success,
+        mode: 'historical',
+        results: {
+          totalOrders: result.totalOrders,
+          totalItems: result.totalItems,
+          totalFees: result.totalFees,
+          monthsProcessed: result.monthsProcessed,
+          errors: result.errors,
+        },
+        completedAt: new Date().toISOString(),
+      })
+    }
+
+    // =============================================
+    // ORIGINAL SYNC MODES (shipped, pending, all)
+    // =============================================
 
     // Background mode: Use Inngest (recommended for large syncs)
     if (syncMode === 'background') {

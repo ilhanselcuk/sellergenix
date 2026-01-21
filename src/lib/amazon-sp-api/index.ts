@@ -43,8 +43,42 @@ export {
   listFinancialEventsByOrderId,
   extractOrderFees,
   getFeePerUnit,
+  // Refund fee functions (Phase 1.2)
+  extractRefundFees,
+  listFinancialEventsByOrderIdWithRefunds,
+  // Service fee functions (Phase 1.3)
+  extractServiceFees,
+  getServiceFeesForPeriod,
+  // Adjustment fee functions (Phase 1.5)
+  extractAdjustmentFees,
+  getAdjustmentsForPeriod,
+  // Removal shipment functions (Phase 1.6)
+  extractRemovalShipmentFees,
+  getRemovalShipmentsForPeriod,
+  // FBA Liquidation functions (Phase 1.7)
+  extractFBALiquidationFees,
+  getFBALiquidationsForPeriod,
 } from './finances'
-export type { OrderItemFees, OrderFees } from './finances'
+export type {
+  OrderItemFees,
+  OrderFees,
+  RefundItemFees,
+  RefundFees,
+  ServiceFeeEvent,
+  ServiceFeeSummary,
+  // Adjustment types (Phase 1.5)
+  AdjustmentItem,
+  AdjustmentEvent,
+  AdjustmentSummary,
+  // Removal shipment types (Phase 1.6)
+  RemovalShipmentItem,
+  RemovalShipmentEvent,
+  RemovalShipmentSummary,
+  // FBA Liquidation types (Phase 1.7)
+  FBALiquidationItem,
+  FBALiquidationEvent,
+  FBALiquidationSummary,
+} from './finances'
 
 // Fee Service (Shipped & Pending Order Fees)
 export {
@@ -55,6 +89,11 @@ export {
   syncRecentlyShippedOrderFees,
   estimateAllPendingOrderFees,
   refreshAllProductFeeAverages,
+  // NEW: Bulk fee sync for historical data
+  bulkSyncFeesForDateRange,
+  syncAllHistoricalFees,
+  // NEW: SKU to ASIN mapping (Phase 1.5)
+  buildSkuToAsinMap,
 } from './fee-service'
 export type { ProductFeeAverages, FeeUpdateResult } from './fee-service'
 

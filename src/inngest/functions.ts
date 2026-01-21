@@ -11,6 +11,7 @@ import {
   syncShippedOrderFees,
   estimatePendingOrderFees,
   refreshAllProductFeeAverages,
+  syncAllHistoricalFees,
 } from "@/lib/amazon-sp-api";
 
 // Initialize Supabase
@@ -508,7 +509,23 @@ export const syncHistoricalData = inngest.createFunction(
       }
     }
 
-    // Final step: Update product fee averages
+    // =============================================
+    // NEW: Sync historical fees from Finances API
+    // This fetches REAL fees for all orders we just synced
+    // =============================================
+    const feeResult = await step.run("sync-historical-fees", async () => {
+      try {
+        console.log("💰 [Inngest] Syncing historical fees from Finances API...");
+        const result = await syncAllHistoricalFees(userId, refreshToken);
+        console.log(`✅ [Inngest] Fee sync complete: ${result.totalOrders} orders, $${result.totalFees.toFixed(2)} fees`);
+        return result;
+      } catch (error) {
+        console.error("❌ [Inngest] Fee sync error:", error);
+        return { error: String(error), totalOrders: 0, totalItems: 0, totalFees: 0 };
+      }
+    });
+
+    // Final step: Update product fee averages (will now use REAL fee data)
     await step.run("refresh-product-averages", async () => {
       try {
         const result = await refreshAllProductFeeAverages(userId);
@@ -521,6 +538,7 @@ export const syncHistoricalData = inngest.createFunction(
     results.totalOrders = totalOrders;
     results.totalOrderItems = totalOrderItems;
     results.processedChunks = processedChunks;
+    results.feeSync = feeResult;
     results.completedAt = new Date().toISOString();
 
     console.log(`🎉 [Inngest] Historical sync completed for user ${userId}:`, results);

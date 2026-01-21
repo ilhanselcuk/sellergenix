@@ -62,8 +62,20 @@ interface PeriodMetrics {
   amazonFees: number
   grossProfit: number
   roi: number
-  // New: fee source indicator
+  // Fee source indicator
   feeSource: 'real' | 'estimated' | 'mixed'
+  // Detailed fee breakdown (Sellerboard-style)
+  feeBreakdown: {
+    fbaFulfillment: number
+    referral: number
+    storage: number
+    inbound: number
+    removal: number
+    returns: number
+    chargebacks: number
+    other: number
+    reimbursements: number
+  }
 }
 
 interface RealFeeData {
@@ -71,6 +83,18 @@ interface RealFeeData {
   totalCogs: number
   orderCount: number
   feeSource: 'real' | 'estimated' | 'mixed'
+  // Detailed fee breakdown (Sellerboard-style)
+  feeBreakdown: {
+    fbaFulfillment: number
+    referral: number
+    storage: number
+    inbound: number
+    removal: number
+    returns: number
+    chargebacks: number
+    other: number
+    reimbursements: number
+  }
 }
 
 /**
@@ -95,23 +119,52 @@ async function getRealFeesForPeriod(
 
     if (ordersError || !orders || orders.length === 0) {
       console.log('⚠️ No orders found for fee calculation in date range:', ordersError?.message)
-      return { totalFees: 0, totalCogs: 0, orderCount: 0, feeSource: 'estimated' }
+      return {
+        totalFees: 0,
+        totalCogs: 0,
+        orderCount: 0,
+        feeSource: 'estimated',
+        feeBreakdown: { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0 }
+      }
     }
 
     const orderIds = orders.map(o => o.amazon_order_id)
     console.log(`📊 Found ${orderIds.length} orders in date range for fee calculation`)
 
     // Step 2: Get order items for these orders
-    // Include both quantity_shipped and quantity_ordered as fallback
+    // Include detailed fee breakdown columns
     const { data: items, error: itemsError } = await supabase
       .from('order_items')
-      .select('amazon_order_id, estimated_amazon_fee, quantity_shipped, quantity_ordered, asin')
+      .select(`
+        amazon_order_id,
+        estimated_amazon_fee,
+        quantity_shipped,
+        quantity_ordered,
+        asin,
+        total_fba_fulfillment_fees,
+        total_referral_fees,
+        total_storage_fees,
+        total_inbound_fees,
+        total_removal_fees,
+        total_return_fees,
+        total_chargeback_fees,
+        total_other_fees,
+        total_reimbursements,
+        total_amazon_fees,
+        fee_source
+      `)
       .eq('user_id', userId)
       .in('amazon_order_id', orderIds)
 
     if (itemsError) {
       console.log('⚠️ Could not fetch order items:', itemsError.message)
-      return { totalFees: 0, totalCogs: 0, orderCount: orders.length, feeSource: 'estimated' }
+      return {
+        totalFees: 0,
+        totalCogs: 0,
+        orderCount: orders.length,
+        feeSource: 'estimated',
+        feeBreakdown: { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0 }
+      }
     }
 
     // Group items by order
@@ -128,6 +181,19 @@ async function getRealFeesForPeriod(
     let ordersWithRealFees = 0
     let ordersWithEstimatedFees = 0
 
+    // Fee breakdown totals (Sellerboard-style)
+    const feeBreakdown = {
+      fbaFulfillment: 0,
+      referral: 0,
+      storage: 0,
+      inbound: 0,
+      removal: 0,
+      returns: 0,
+      chargebacks: 0,
+      other: 0,
+      reimbursements: 0
+    }
+
     for (const order of orders) {
       const orderItems = itemsByOrder.get(order.amazon_order_id) || []
       let orderHasRealFees = false
@@ -135,7 +201,23 @@ async function getRealFeesForPeriod(
       for (const item of orderItems) {
         // Use quantity_shipped if available, otherwise fall back to quantity_ordered
         const quantity = item.quantity_shipped || item.quantity_ordered || 1
-        if (item.estimated_amazon_fee) {
+
+        // Check if we have detailed fee breakdown (fee_source = 'api')
+        if (item.fee_source === 'api' && item.total_amazon_fees) {
+          // Use detailed breakdown
+          totalFees += (item.total_amazon_fees || 0) * quantity
+          feeBreakdown.fbaFulfillment += (item.total_fba_fulfillment_fees || 0) * quantity
+          feeBreakdown.referral += (item.total_referral_fees || 0) * quantity
+          feeBreakdown.storage += (item.total_storage_fees || 0) * quantity
+          feeBreakdown.inbound += (item.total_inbound_fees || 0) * quantity
+          feeBreakdown.removal += (item.total_removal_fees || 0) * quantity
+          feeBreakdown.returns += (item.total_return_fees || 0) * quantity
+          feeBreakdown.chargebacks += (item.total_chargeback_fees || 0) * quantity
+          feeBreakdown.other += (item.total_other_fees || 0) * quantity
+          feeBreakdown.reimbursements += (item.total_reimbursements || 0) * quantity
+          orderHasRealFees = true
+        } else if (item.estimated_amazon_fee) {
+          // Legacy: only total fee available
           totalFees += item.estimated_amazon_fee * quantity
           orderHasRealFees = true
         }
@@ -180,16 +262,24 @@ async function getRealFeesForPeriod(
     }
 
     console.log(`📊 Fee data for period: $${totalFees.toFixed(2)} fees, $${totalCogs.toFixed(2)} COGS, source: ${feeSource}`)
+    console.log(`   Breakdown: FBA=$${feeBreakdown.fbaFulfillment.toFixed(2)}, Referral=$${feeBreakdown.referral.toFixed(2)}, Storage=$${feeBreakdown.storage.toFixed(2)}`)
 
     return {
       totalFees,
       totalCogs,
       orderCount: orders.length,
-      feeSource
+      feeSource,
+      feeBreakdown
     }
   } catch (error) {
     console.error('Error fetching real fees:', error)
-    return { totalFees: 0, totalCogs: 0, orderCount: 0, feeSource: 'estimated' }
+    return {
+      totalFees: 0,
+      totalCogs: 0,
+      orderCount: 0,
+      feeSource: 'estimated',
+      feeBreakdown: { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0 }
+    }
   }
 }
 
@@ -202,6 +292,18 @@ function formatMetrics(
   realFeeData?: RealFeeData,
   adSpendEstimate: number = 0
 ): PeriodMetrics {
+  const emptyBreakdown = {
+    fbaFulfillment: 0,
+    referral: 0,
+    storage: 0,
+    inbound: 0,
+    removal: 0,
+    returns: 0,
+    chargebacks: 0,
+    other: 0,
+    reimbursements: 0
+  }
+
   if (!metrics) {
     return {
       sales: 0,
@@ -214,7 +316,8 @@ function formatMetrics(
       amazonFees: 0,
       grossProfit: 0,
       roi: 0,
-      feeSource: 'estimated'
+      feeSource: 'estimated',
+      feeBreakdown: emptyBreakdown
     }
   }
 
@@ -256,6 +359,24 @@ function formatMetrics(
   const margin = sales > 0 ? (netProfit / sales) * 100 : 0
   const roi = estimatedCogs > 0 ? (netProfit / estimatedCogs) * 100 : 0
 
+  // Use real fee breakdown if available, otherwise estimate based on typical ratios
+  let feeBreakdown = realFeeData?.feeBreakdown || emptyBreakdown
+
+  // If we only have total fees (legacy), estimate breakdown using typical ratios
+  if (feeSource === 'estimated' || (amazonFees > 0 && feeBreakdown.fbaFulfillment === 0 && feeBreakdown.referral === 0)) {
+    feeBreakdown = {
+      fbaFulfillment: amazonFees * 0.55,  // ~55% of total fees
+      referral: amazonFees * 0.35,         // ~35% of total fees
+      storage: amazonFees * 0.05,          // ~5% of total fees
+      inbound: amazonFees * 0.03,          // ~3% of total fees
+      removal: 0,
+      returns: amazonFees * 0.02,          // ~2% of total fees
+      chargebacks: 0,
+      other: 0,
+      reimbursements: 0
+    }
+  }
+
   return {
     sales,
     units,
@@ -267,7 +388,8 @@ function formatMetrics(
     amazonFees,
     grossProfit,
     roi,
-    feeSource
+    feeSource,
+    feeBreakdown
   }
 }
 
