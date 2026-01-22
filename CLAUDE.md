@@ -703,6 +703,100 @@ await estimateAllPendingOrderFees(userId)
 
 ---
 
+## 🔍 SELLERBOARD VERİ ÇEKME STRATEJİSİ (22 Ocak 2026)
+
+### 📊 Sellerboard'un Kullandığı API'ler
+
+Sellerboard sadece Finances API kullanmıyor, **Reports API** ile de raporları çekiyor:
+
+| Report Type | Amazon Report ID | Ne İçin? |
+|-------------|------------------|----------|
+| All Listings Report | `GET_MERCHANT_LISTINGS_ALL_DATA` | Ürün listesi, ASIN, SKU, fiyat |
+| Inventory Report | `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` | FBA stok seviyeleri |
+| **Monthly Storage Fees** | `GET_FBA_STORAGE_FEE_CHARGES_DATA` | **ASIN bazlı storage fee!** |
+| Fee Preview | `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` | Tahmini ücretler |
+| Amazon Fulfilled Shipments | `GET_AMAZON_FULFILLED_SHIPMENTS_DATA_GENERAL` | Gönderim detayları |
+
+### 💡 Kritik Bulgu: Monthly Storage Fees Raporu
+
+**`GET_FBA_STORAGE_FEE_CHARGES_DATA`** raporu ASIN bazlı storage fee kırılımı içerir:
+
+- Her ASIN için ayrı storage fee
+- Cubic feet (depolanan hacim)
+- Month of charge (hangi ay için)
+- Storage type (standard/oversize)
+- Long-term storage fees (6+ ay)
+
+**Bu yüzden Sellerboard storage fee'leri çok doğru gösteriyor** - Finances API yerine bu raporu kullanıyorlar!
+
+### 🎯 SellerGenix Hybrid Yaklaşımı
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    VERİ KAYNAKLARI                              │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. Finances API                                                 │
+│    ├─ ShipmentEventList → Order-level fees (FBA, referral)     │
+│    ├─ ServiceFeeEventList → Account fees (subscription)         │
+│    └─ RefundEventList → Refunds                                 │
+│                                                                 │
+│ 2. Reports API (Günde 1-2 kez çekilecek)                       │
+│    ├─ GET_FBA_STORAGE_FEE_CHARGES_DATA → Storage fees (ASIN)   │
+│    ├─ GET_MERCHANT_LISTINGS_ALL_DATA → Ürün listesi            │
+│    └─ GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA → FBA stok       │
+│                                                                 │
+│ 3. Orders API                                                   │
+│    └─ Sipariş detayları, fiyatlar                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### ⚠️ Şu An Aktif Olan
+
+**✅ Çalışıyor:**
+- Finances API → ShipmentEventList (FBA, referral fees)
+- Finances API → ServiceFeeEventList (subscription, storage - aggregate)
+- Finances API → RefundEventList (refunds)
+- Orders API → Sipariş detayları
+
+**❌ Henüz Yok (Gelecek):**
+- Reports API → Storage fee raporu (ASIN bazlı detay)
+- Reports API → Inventory raporu
+
+### 📋 Reports API Entegrasyonu TODO
+
+```typescript
+// Öncelik 1: Storage Fees Raporu
+const storageReport = await requestReport(
+  refreshToken,
+  'GET_FBA_STORAGE_FEE_CHARGES_DATA'
+)
+// → ASIN bazlı storage fee kırılımı
+
+// Öncelik 2: FBA Inventory
+const inventoryReport = await requestReport(
+  refreshToken,
+  'GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA'
+)
+// → Güncel FBA stok seviyeleri
+
+// Öncelik 3: Listings
+const listingsReport = await requestReport(
+  refreshToken,
+  'GET_MERCHANT_LISTINGS_ALL_DATA'
+)
+// → Tüm ürünler (Product Listing rolü onaylanınca)
+```
+
+### 🔄 Sellerboard Sync Frekansı
+
+- **Finances API:** Her 15 dakikada
+- **Reports API:** Günde 1-2 kez (storage fees, inventory)
+- **Orders API:** Her 15 dakikada
+
+Biz de aynısını yapmalıyız.
+
+---
+
 ### ✅ DASHBOARD FEE ENTEGRASYONU (19 Ocak 2026 - WORKING!)
 
 **Durum:** ✅ **PRODUCTION'DA ÇALIŞIYOR**
