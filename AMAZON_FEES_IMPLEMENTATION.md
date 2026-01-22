@@ -1128,6 +1128,49 @@ Data Kiosk API için Amazon Solution Provider Portal'da:
 - ✅ Brand Analytics rolü onaylı olmalı
 - 🔐 Seller, Brand Registry'de olmalı (bazı datasetler için)
 
+### Marketplace IDs (ZORUNLU!)
+
+⚠️ **marketplaceIds GraphQL query'de ZORUNLU argüman!**
+
+Amazon Data Kiosk API, `marketplaceIds` parametresini zorunlu kılıyor. Her marketplace için ayrı ID belirtilmeli:
+
+| Marketplace | ID | Region |
+|-------------|-----|--------|
+| **United States** | `ATVPDKIKX0DER` | NA |
+| Canada | `A2EUQ1WTGCTBG2` | NA |
+| Mexico | `A1AM78C64UM0Y8` | NA |
+| Brazil | `A2Q3Y263D00KWC` | NA |
+| United Kingdom | `A1F83G8C2ARO7P` | EU |
+| Germany | `A1PA6795UKMFR9` | EU |
+| France | `A13V1IB3VIYBER` | EU |
+| Italy | `APJ6JRA9NG5V4` | EU |
+| Spain | `A1RKKUPIHCS9HS` | EU |
+| Netherlands | `A1805IZSGTT6HS` | EU |
+| Japan | `A1VC38T7YXB528` | FE |
+| Australia | `A39IBJ37TRP1C6` | FE |
+
+**Mevcut Durum:**
+- ✅ Default olarak US marketplace (`ATVPDKIKX0DER`) kullanılıyor
+- 🔜 İleride multi-marketplace desteği için user'ın marketplace seçimi alınacak
+- 🔜 Her seller'ın bağlı olduğu marketplace'ler `amazon_connections` tablosundan çekilecek
+
+**GraphQL Query Örneği:**
+```graphql
+salesAndTrafficByDate(
+  startDate: "2024-01-01"
+  endDate: "2026-01-22"
+  aggregateBy: DAY
+  marketplaceIds: ["ATVPDKIKX0DER"]  # ← ZORUNLU!
+) {
+  ...
+}
+```
+
+**Kod Değişikliği (Jan 22, 2026):**
+- `buildSalesAndTrafficQuery()` → `marketplaceIds` default US
+- `buildSalesAndTrafficByAsinQuery()` → `marketplaceIds` default US
+- Commit: `5d0173b`
+
 ### Usage Example
 
 ```typescript
