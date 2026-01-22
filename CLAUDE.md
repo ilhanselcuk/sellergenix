@@ -52,18 +52,20 @@
 - **SAKIN** batch update yapma - her iş bitince hemen güncelle!
 
 #### 5️⃣ NEREDE KALDIĞIMIZI BİL
-**Amazon SP-API Durumu (16 Ocak 2026):**
+**Amazon SP-API Durumu (22 Ocak 2026):**
 - ✅ Finance and Accounting - ONAYLI
 - ✅ Selling Partner Insights - ONAYLI
 - ✅ Inventory and Order Tracking - ONAYLI
 - ✅ Brand Analytics - ONAYLI
-- ⏳ Product Listing - ONAY BEKLİYOR (15 Ocak gönderildi)
-- ⏳ Amazon Fulfillment - ONAY BEKLİYOR (15 Ocak gönderildi)
+- ✅ Product Listing - ONAYLI (22 Ocak 2026) - Publish bekliyor
+- ✅ Amazon Fulfillment - ONAYLI (22 Ocak 2026) - Publish bekliyor
 
-**⚠️ Product Listing ve Amazon Fulfillment rolleri onaylanmadan:**
-- Listings API çalışmaz (403 hatası)
-- FBA Inventory API çalışmaz (403 hatası)
-- Ürün sync yapılamaz
+**🎉 TÜM ROLLER ONAYLANDI! App publish bekliyor.**
+- App status: "Current edit is approved and pending publishing"
+- Publish tamamlandığında TÜM API'ler kullanılabilir olacak:
+  - ✅ Listings Items API → Ürün detayları
+  - ✅ FBA Inventory API → Stok seviyeleri
+  - ✅ Catalog Items API → Ürün kataloğu
 
 **Dashboard Durumu:**
 - ✅ 7/7 Dashboard view tamamlandı (Tiles, Chart, P&L, Map, Trends, Heatmap, Comparison)
@@ -6061,16 +6063,17 @@ const color = isImprovement ? 'green' : 'red'
 
 ---
 
-## 🚨 AMAZON SP-API ROL ONAY DURUMU (Ocak 16, 2026 - KRİTİK!)
+## 🎉 AMAZON SP-API ROL ONAY DURUMU (22 Ocak 2026 - TÜM ROLLER ONAYLI!)
 
-### ⚠️ YENİ CLAUDE INSTANCES İÇİN ÖNEMLİ - ÖNCE BUNU OKU!
+### ✅ TÜM ROLLER ONAYLANDI - PUBLISH BEKLİYOR
 
-**Son Güncelleme:** 16 Ocak 2026
-**Durum:** 2 rol Amazon onayı bekliyor (15 Ocak 2026 tarihinde gönderildi)
+**Son Güncelleme:** 22 Ocak 2026
+**Durum:** 🎉 Tüm roller onaylandı! App publish bekliyor.
+**App Status:** "Current edit is approved and pending publishing"
 
 ---
 
-### 📋 MEVCUT ROL DURUMU
+### 📋 ROL DURUMU (TÜMÜ ONAYLI)
 
 | Rol | Durum | Ne İçin Gerekli | API'ler |
 |-----|-------|-----------------|---------|
@@ -6078,58 +6081,29 @@ const color = isImprovement ? 'green' : 'red'
 | ✅ Selling Partner Insights | **ONAYLI** | Hesap performansı | Seller API |
 | ✅ Inventory and Order Tracking | **ONAYLI** | Siparişler, temel envanter | Orders API |
 | ✅ Brand Analytics | **ONAYLI** | Arama terimleri, market share | Brand Analytics API |
-| ⏳ **Product Listing** | **ONAY BEKLİYOR** | Ürün detayları, listeler | Listings Items API |
-| ⏳ **Amazon Fulfillment** | **ONAY BEKLİYOR** | FBA stok seviyeleri | FBA Inventory API |
+| ✅ **Product Listing** | **ONAYLI** (22 Ocak 2026) | Ürün detayları, listeler | Listings Items API |
+| ✅ **Amazon Fulfillment** | **ONAYLI** (22 Ocak 2026) | FBA stok seviyeleri | FBA Inventory API |
 
 ---
 
-### 🔴 NEDEN 403 HATASI ALIYORUZ?
+### 🚀 PUBLISH SONRASI TÜM API'LER ÇALIŞACAK
 
-```
-Listings Items API çağrısı → Product Listing rolü YOK → 403 Forbidden!
-FBA Inventory API çağrısı → Amazon Fulfillment rolü YOK → 403 Forbidden!
-```
+**Şu an çalışan:**
+- ✅ Orders API → Siparişler çekiliyor
+- ✅ Finances API → Fee'ler, payout'lar çekiliyor
+- ✅ Seller API → Hesap bilgisi çekiliyor
+- ✅ Brand Analytics API → Data Kiosk çalışıyor
 
-**Bu iki rol onaylanmadan:**
-- ❌ Ürün detayları çekilemez (ASIN, title, image, price)
-- ❌ FBA stok seviyeleri çekilemez
-- ❌ Dashboard'da gerçek ürün verileri gösterilemez
-- ❌ "Sync Products" butonu çalışmaz
-
----
-
-### ⏳ ONAY SÜRECİ
-
-**Gönderim Tarihi:** 15 Ocak 2026
-**Beklenen Onay:** 2-5 iş günü (Amazon SLA)
-**Tahmini Onay Tarihi:** 17-22 Ocak 2026
-
-**Onay geldiğinde yapılacaklar:**
-1. Solution Provider Portal'dan onayı kontrol et
-2. ZYRA TASTE (veya bağlı seller) hesabından SellerGenix'i **tekrar authorize** et
-3. Yeni izinleri onaylaması için consent akışını tamamla
-4. "Sync Products" butonuna tıkla
-5. Dashboard'da gerçek veriler görünecek!
+**Publish sonrası çalışacak:**
+- ✅ Listings Items API → Ürün detayları
+- ✅ FBA Inventory API → Stok seviyeleri
+- ✅ Catalog Items API → Ürün kataloğu
 
 ---
 
-### 📊 ŞU AN ÇALIŞAN vs ÇALIŞMAYAN API'LER
+### 🎯 PUBLISH TAMAMLANINCA YAPILACAKLAR
 
-**✅ ÇALIŞAN (Onaylı rollerle):**
-- Orders API → Siparişler çekiliyor ✅
-- Finances API → Fee'ler, payout'lar çekiliyor ✅
-- Seller API → Hesap bilgisi çekiliyor ✅
-
-**❌ ÇALIŞMAYAN (Onay bekleyen rollerle):**
-- Listings Items API → 403 Forbidden
-- FBA Inventory API → 403 Forbidden
-- Catalog Items API → 403 Forbidden (Product Listing rolü gerekli)
-
----
-
-### 🎯 ONAY GELİNCE YAPILACAKLAR
-
-1. **Seller'ı tekrar authorize et** (yeni izinler için)
+1. **Seller'ı tekrar authorize et** (yeni izinler için consent akışı)
 2. **products-sync.ts** servisini aktifleştir
 3. **Order Items API**'yi batch işleme ile aktifleştir
 4. **Reports API** entegrasyonunu tamamla
@@ -6137,10 +6111,19 @@ FBA Inventory API çağrısı → Amazon Fulfillment rolü YOK → 403 Forbidden
 
 ---
 
+### 📝 ZAMAN ÇİZELGESİ
+
+- **15 Ocak 2026:** Product Listing + Amazon Fulfillment rolleri için başvuru yapıldı
+- **22 Ocak 2026:** Tüm roller onaylandı, publish bekliyor
+- **Beklenen Publish:** 1-3 iş günü (Amazon SLA)
+
+---
+
 ### ⚠️ YENİ CLAUDE INSTANCE'LARA NOT
 
-- **SAKIN** "neden ürünler çekilmiyor" diye araştırma yapma - CEVAP: ROL ONAYI BEKLİYORUZ
-- **SAKIN** Listings API veya FBA Inventory API kodunu debug etme - ÇALIŞMAYACAK, ROL YOK
+- App publish tamamlanana kadar Listings API ve FBA Inventory API hala 403 dönebilir
+- Publish tamamlandığında seller'ı tekrar authorize etmek gerekecek
+- Her şey hazır - sadece Amazon'un publish işlemini bekle
 - **ÖNCE** kullanıcıya "Amazon rol onayı geldi mi?" diye sor
 - **EĞER** onay geldiyse, yukarıdaki adımları takip et
 
