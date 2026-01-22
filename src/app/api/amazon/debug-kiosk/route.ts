@@ -68,13 +68,13 @@ export async function GET() {
       queryResult = await getDataKioskQuery(refreshToken, createResult.queryId)
       console.log(`[Debug] Poll ${i}: status=${queryResult.query?.processingStatus}`)
 
-      if (queryResult.query?.processingStatus === 'Done') break
-      if (queryResult.query?.processingStatus === 'Cancelled' || queryResult.query?.processingStatus === 'Fatal') {
+      if (queryResult.query?.processingStatus === 'DONE') break
+      if (queryResult.query?.processingStatus === 'CANCELLED' || queryResult.query?.processingStatus === 'FATAL') {
         return NextResponse.json({ error: 'Query failed', status: queryResult.query?.processingStatus }, { status: 500 })
       }
     }
 
-    if (queryResult?.query?.processingStatus !== 'Done') {
+    if (queryResult?.query?.processingStatus !== 'DONE') {
       return NextResponse.json({ error: 'Query timeout', lastStatus: queryResult?.query?.processingStatus }, { status: 504 })
     }
 
