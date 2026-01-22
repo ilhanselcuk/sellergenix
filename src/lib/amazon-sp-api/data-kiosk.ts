@@ -266,23 +266,25 @@ export async function cancelDataKioskQuery(
 // GraphQL Query Builders
 // ============================================
 
+// Default US marketplace ID
+const DEFAULT_MARKETPLACE_ID = 'ATVPDKIKX0DER';
+
 /**
  * Build Sales and Traffic query for a date range
  *
  * @param startDate - Start date (YYYY-MM-DD)
  * @param endDate - End date (YYYY-MM-DD)
- * @param marketplaceIds - Optional marketplace filter
+ * @param marketplaceIds - Marketplace IDs (REQUIRED by Amazon API, defaults to US)
  * @param granularity - DAY, WEEK, or MONTH
  */
 export function buildSalesAndTrafficQuery(
   startDate: string,
   endDate: string,
-  marketplaceIds?: string[],
+  marketplaceIds: string[] = [DEFAULT_MARKETPLACE_ID],
   granularity: 'DAY' | 'WEEK' | 'MONTH' = 'DAY'
 ): string {
-  const marketplaceFilter = marketplaceIds?.length
-    ? `marketplaceIds: [${marketplaceIds.map(id => `"${id}"`).join(', ')}]`
-    : '';
+  // marketplaceIds is REQUIRED by Amazon Data Kiosk API
+  const marketplaceFilter = `marketplaceIds: [${marketplaceIds.map(id => `"${id}"`).join(', ')}]`;
 
   return `
     query SalesAndTraffic {
@@ -338,16 +340,21 @@ export function buildSalesAndTrafficQuery(
  *
  * @param startDate - Start date (YYYY-MM-DD)
  * @param endDate - End date (YYYY-MM-DD)
+ * @param marketplaceIds - Marketplace IDs (REQUIRED by Amazon API, defaults to US)
  * @param asins - Optional ASIN filter
  */
 export function buildSalesAndTrafficByAsinQuery(
   startDate: string,
   endDate: string,
+  marketplaceIds: string[] = [DEFAULT_MARKETPLACE_ID],
   asins?: string[]
 ): string {
   const asinFilter = asins?.length
     ? `asins: [${asins.map(a => `"${a}"`).join(', ')}]`
     : '';
+
+  // marketplaceIds is REQUIRED by Amazon Data Kiosk API
+  const marketplaceFilter = `marketplaceIds: [${marketplaceIds.map(id => `"${id}"`).join(', ')}]`;
 
   return `
     query SalesAndTrafficByAsin {
@@ -355,6 +362,7 @@ export function buildSalesAndTrafficByAsinQuery(
         salesAndTrafficByAsin(
           startDate: "${startDate}"
           endDate: "${endDate}"
+          ${marketplaceFilter}
           ${asinFilter}
         ) {
           parentAsin
