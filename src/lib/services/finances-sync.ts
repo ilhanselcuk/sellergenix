@@ -9,6 +9,7 @@ import {
   listFinancialEvents,
   listFinancialEventGroups,
   calculateProfitMetrics,
+  extractServiceFees,
 } from '@/lib/amazon-sp-api'
 
 export interface SyncFinancesResult {
@@ -22,6 +23,10 @@ export interface SyncFinancesResult {
     grossProfit: number
     netProfit: number
     totalUnits: number
+    // Service fees breakdown
+    subscriptionFees: number
+    storageFees: number
+    promotions: number
   } | null
   errors: string[]
   duration: number
@@ -77,6 +82,8 @@ export async function syncFinances(
     console.log(`   - Shipment events: ${events.shipmentEvents?.length || 0}`)
     console.log(`   - Refund events: ${events.refundEvents?.length || 0}`)
     console.log(`   - Service fee events: ${events.serviceFeeEvents?.length || 0}`)
+    console.log(`   - Adjustment events: ${events.adjustmentEvents?.length || 0}`)
+    console.log(`   - Chargeback events: ${events.chargebackEvents?.length || 0}`)
 
     // Step 2: Calculate metrics
     console.log('📊 Step 2: Calculating metrics...')
@@ -92,6 +99,10 @@ export async function syncFinances(
       refunds: number
       fees: number
       units: number
+      promotions: number
+      subscriptionFees: number
+      storageFees: number
+      otherServiceFees: number
     }>()
 
     // Process shipment events (sales)
@@ -104,7 +115,10 @@ export async function syncFinances(
         if (!postedDate) continue
 
         if (!dailySummaries.has(postedDate)) {
-          dailySummaries.set(postedDate, { sales: 0, refunds: 0, fees: 0, units: 0 })
+          dailySummaries.set(postedDate, {
+            sales: 0, refunds: 0, fees: 0, units: 0,
+            promotions: 0, subscriptionFees: 0, storageFees: 0, otherServiceFees: 0
+          })
         }
 
         const summary = dailySummaries.get(postedDate)!
@@ -132,6 +146,15 @@ export async function syncFinances(
 
           // Units - handle both cases
           summary.units += item.QuantityShipped || item.quantityShipped || 0
+
+          // Promotions - handle both cases
+          const promoList = item.PromotionList || item.promotionList || []
+          for (const promo of promoList) {
+            const promoAmount = promo.PromotionAmount || promo.promotionAmount
+            if (promoAmount?.CurrencyAmount || promoAmount?.currencyAmount) {
+              summary.promotions += Math.abs(parseFloat(promoAmount.CurrencyAmount || promoAmount.currencyAmount))
+            }
+          }
         }
       }
     }
@@ -146,15 +169,21 @@ export async function syncFinances(
         if (!postedDate) continue
 
         if (!dailySummaries.has(postedDate)) {
-          dailySummaries.set(postedDate, { sales: 0, refunds: 0, fees: 0, units: 0 })
+          dailySummaries.set(postedDate, {
+            sales: 0, refunds: 0, fees: 0, units: 0,
+            promotions: 0, subscriptionFees: 0, storageFees: 0, otherServiceFees: 0
+          })
         }
 
         const summary = dailySummaries.get(postedDate)!
-        const items = refund.ShipmentItemList || refund.shipmentItemList || []
+        // Refunds use ShipmentItemAdjustmentList not ShipmentItemList
+        const items = refund.ShipmentItemAdjustmentList || refund.shipmentItemAdjustmentList ||
+                      refund.ShipmentItemList || refund.shipmentItemList || []
 
         for (const item of items) {
           // Handle both PascalCase and camelCase
-          const chargeList = item.ItemChargeList || item.itemChargeList || []
+          const chargeList = item.ItemChargeAdjustmentList || item.itemChargeAdjustmentList ||
+                             item.ItemChargeList || item.itemChargeList || []
           const principal = chargeList.find((c: any) =>
             (c.ChargeType || c.chargeType) === 'Principal'
           )
@@ -166,10 +195,64 @@ export async function syncFinances(
       }
     }
 
+    // Process service fee events (subscription, storage, etc.)
+    // These are account-level fees, not order-level
+    console.log('💳 Processing service fee events...')
+    if (events.serviceFeeEvents) {
+      for (const event of events.serviceFeeEvents as any[]) {
+        const postedDateRaw = event.PostedDate || event.postedDate
+        const postedDate = postedDateRaw?.split('T')[0]
+        if (!postedDate) continue
+
+        if (!dailySummaries.has(postedDate)) {
+          dailySummaries.set(postedDate, {
+            sales: 0, refunds: 0, fees: 0, units: 0,
+            promotions: 0, subscriptionFees: 0, storageFees: 0, otherServiceFees: 0
+          })
+        }
+
+        const summary = dailySummaries.get(postedDate)!
+        const feeList = event.FeeList || event.feeList || []
+
+        for (const fee of feeList) {
+          const feeType = String(fee.FeeType || fee.feeType || '').toLowerCase()
+          const feeAmountObj = fee.FeeAmount || fee.feeAmount
+          const amount = Math.abs(parseFloat(feeAmountObj?.CurrencyAmount || feeAmountObj?.currencyAmount || 0))
+
+          // Categorize service fees
+          if (feeType.includes('subscription') || feeType.includes('professional') || feeType.includes('monthlysubscription')) {
+            summary.subscriptionFees += amount
+            summary.fees += amount  // Also add to total fees
+            console.log(`  📌 Subscription fee: $${amount.toFixed(2)} on ${postedDate}`)
+          } else if (feeType.includes('storage') || feeType.includes('longterm')) {
+            summary.storageFees += amount
+            summary.fees += amount  // Also add to total fees
+            console.log(`  📦 Storage fee: $${amount.toFixed(2)} on ${postedDate}`)
+          } else {
+            summary.otherServiceFees += amount
+            summary.fees += amount  // Also add to total fees
+            console.log(`  📋 Other service fee (${feeType}): $${amount.toFixed(2)} on ${postedDate}`)
+          }
+        }
+      }
+    }
+
+    // Calculate totals for all service fees
+    let totalSubscriptionFees = 0
+    let totalStorageFees = 0
+    let totalPromotions = 0
+    for (const [, summary] of dailySummaries) {
+      totalSubscriptionFees += summary.subscriptionFees
+      totalStorageFees += summary.storageFees
+      totalPromotions += summary.promotions
+    }
+    console.log(`📊 Service fee totals: Subscription=$${totalSubscriptionFees.toFixed(2)}, Storage=$${totalStorageFees.toFixed(2)}, Promotions=$${totalPromotions.toFixed(2)}`)
+
     // Save daily summaries to database
     for (const [date, summary] of dailySummaries) {
       try {
-        const grossProfit = summary.sales - summary.refunds - summary.fees
+        // Fees now include service fees (subscription, storage)
+        const grossProfit = summary.sales - summary.refunds - summary.fees - summary.promotions
         const margin = summary.sales > 0 ? (grossProfit / summary.sales) * 100 : 0
 
         const { error } = await supabase
@@ -181,7 +264,7 @@ export async function syncFinances(
               sales: summary.sales,
               units_sold: summary.units,
               refunds: summary.refunds,
-              amazon_fees: summary.fees,
+              amazon_fees: summary.fees,  // Now includes subscription + storage fees
               gross_profit: grossProfit,
               margin,
               updated_at: new Date().toISOString(),
@@ -250,10 +333,14 @@ export async function syncFinances(
       metrics: {
         totalSales: metrics.totalSales,
         totalRefunds: metrics.totalRefunds,
-        totalFees: metrics.totalFees,
+        totalFees: metrics.totalFees + totalSubscriptionFees + totalStorageFees,  // Include service fees
         grossProfit: metrics.grossProfit,
         netProfit: metrics.netProfit,
         totalUnits: metrics.totalUnits,
+        // Service fees breakdown
+        subscriptionFees: totalSubscriptionFees,
+        storageFees: totalStorageFees,
+        promotions: totalPromotions,
       },
       errors,
       duration,
