@@ -79,9 +79,9 @@ export async function GET() {
     }
 
     // Get document
-    const documentId = queryResult.query?.documentId
+    const documentId = queryResult.query?.dataDocumentId
     if (!documentId) {
-      return NextResponse.json({ error: 'No documentId in response' }, { status: 500 })
+      return NextResponse.json({ error: 'No dataDocumentId in response' }, { status: 500 })
     }
 
     const docResult = await getDataKioskDocument(refreshToken, documentId)
