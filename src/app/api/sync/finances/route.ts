@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
     log(`✅ Finance API returned data`)
     log(`   ShipmentEvents: ${events.shipmentEvents?.length || 0}`)
     log(`   RefundEvents: ${events.refundEvents?.length || 0}`)
+    log(`   ServiceFeeEvents: ${events.serviceFeeEvents?.length || 0}`)
 
     // =====================================================
     // STEP 1: Build order lookup map (amazonOrderId -> purchaseDate)
@@ -128,7 +129,13 @@ export async function POST(request: NextRequest) {
       units: number
       feeBreakdown: { [type: string]: number }
       orderCount: number
+      promotions: number
     }>()
+
+    // Account-level fees (not order-level - attributed to posted date)
+    let totalSubscriptionFees = 0
+    let totalStorageFees = 0
+    let totalOtherServiceFees = 0
 
     // =====================================================
     // STEP 3: Track per-ASIN fees for future estimation
@@ -163,7 +170,7 @@ export async function POST(request: NextRequest) {
         if (!dateKey) continue
 
         if (!dailySummaries.has(dateKey)) {
-          dailySummaries.set(dateKey, { sales: 0, refunds: 0, fees: 0, units: 0, feeBreakdown: {}, orderCount: 0 })
+          dailySummaries.set(dateKey, { sales: 0, refunds: 0, fees: 0, units: 0, feeBreakdown: {}, orderCount: 0, promotions: 0 })
         }
 
         const summary = dailySummaries.get(dateKey)!
@@ -212,6 +219,17 @@ export async function POST(request: NextRequest) {
           const quantity = item.QuantityShipped || item.quantityShipped || 0
           summary.units += quantity
 
+          // Promotions (order-level discounts)
+          const promoList = item.PromotionList || item.promotionList || []
+          for (const promo of promoList) {
+            const promoAmount = promo.PromotionAmount || promo.promotionAmount
+            if (promoAmount?.CurrencyAmount || promoAmount?.currencyAmount) {
+              const amount = Math.abs(parseFloat(promoAmount.CurrencyAmount || promoAmount.currencyAmount))
+              summary.promotions += amount
+              summary.feeBreakdown['Promotions'] = (summary.feeBreakdown['Promotions'] || 0) + amount
+            }
+          }
+
           // Track per-ASIN fee data
           if (asin && quantity > 0) {
             if (!asinFeeData.has(asin)) {
@@ -248,7 +266,7 @@ export async function POST(request: NextRequest) {
         if (!dateKey) continue
 
         if (!dailySummaries.has(dateKey)) {
-          dailySummaries.set(dateKey, { sales: 0, refunds: 0, fees: 0, units: 0, feeBreakdown: {}, orderCount: 0 })
+          dailySummaries.set(dateKey, { sales: 0, refunds: 0, fees: 0, units: 0, feeBreakdown: {}, orderCount: 0, promotions: 0 })
         }
 
         const summary = dailySummaries.get(dateKey)!
@@ -267,6 +285,59 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // =====================================================
+    // STEP 4: Process ServiceFeeEventList (Account-level fees)
+    // These are NOT order-level - subscription, storage, etc.
+    // Attributed to PostedDate since there's no order reference
+    // =====================================================
+    log(`\n💳 Processing service fee events...`)
+    if (events.serviceFeeEvents) {
+      for (const event of events.serviceFeeEvents as any[]) {
+        const postedDateRaw = event.PostedDate || event.postedDate
+        const dateKey = postedDateRaw?.split('T')[0]
+        if (!dateKey) continue
+
+        if (!dailySummaries.has(dateKey)) {
+          dailySummaries.set(dateKey, { sales: 0, refunds: 0, fees: 0, units: 0, feeBreakdown: {}, orderCount: 0, promotions: 0 })
+        }
+
+        const summary = dailySummaries.get(dateKey)!
+        const feeList = event.FeeList || event.feeList || []
+
+        for (const fee of feeList) {
+          const feeType = String(fee.FeeType || fee.feeType || '').toLowerCase()
+          const feeAmountObj = fee.FeeAmount || fee.feeAmount
+          const amount = Math.abs(parseFloat(feeAmountObj?.CurrencyAmount || feeAmountObj?.currencyAmount || 0))
+
+          if (amount === 0) continue
+
+          // Categorize service fees
+          if (feeType.includes('subscription') || feeType.includes('professional') || feeType.includes('monthlysubscription')) {
+            totalSubscriptionFees += amount
+            summary.fees += amount
+            summary.feeBreakdown['SubscriptionFee'] = (summary.feeBreakdown['SubscriptionFee'] || 0) + amount
+            log(`   📌 Subscription fee: $${amount.toFixed(2)} on ${dateKey}`)
+          } else if (feeType.includes('storage') || feeType.includes('longterm')) {
+            totalStorageFees += amount
+            summary.fees += amount
+            summary.feeBreakdown['StorageFee'] = (summary.feeBreakdown['StorageFee'] || 0) + amount
+            log(`   📦 Storage fee: $${amount.toFixed(2)} on ${dateKey} (${feeType})`)
+          } else {
+            totalOtherServiceFees += amount
+            summary.fees += amount
+            const normalizedType = (fee.FeeType || fee.feeType || 'OtherServiceFee')
+            summary.feeBreakdown[normalizedType] = (summary.feeBreakdown[normalizedType] || 0) + amount
+            log(`   📋 Other service fee (${feeType}): $${amount.toFixed(2)} on ${dateKey}`)
+          }
+        }
+      }
+    }
+
+    log(`\n📊 Service fee totals:`)
+    log(`   Subscription: $${totalSubscriptionFees.toFixed(2)}`)
+    log(`   Storage: $${totalStorageFees.toFixed(2)}`)
+    log(`   Other: $${totalOtherServiceFees.toFixed(2)}`)
+
     // Log daily summaries
     const sortedDates = [...dailySummaries.keys()].sort().reverse()
     log(`\n📊 Daily summaries (${sortedDates.length} days):`)
@@ -274,7 +345,7 @@ export async function POST(request: NextRequest) {
     const dailyData: any[] = []
     for (const date of sortedDates) {
       const summary = dailySummaries.get(date)!
-      log(`   ${date}: Sales=$${summary.sales.toFixed(2)}, Units=${summary.units}, Fees=$${summary.fees.toFixed(2)}, Refunds=$${summary.refunds.toFixed(2)}`)
+      log(`   ${date}: Sales=$${summary.sales.toFixed(2)}, Units=${summary.units}, Fees=$${summary.fees.toFixed(2)}, Promos=$${summary.promotions.toFixed(2)}, Refunds=$${summary.refunds.toFixed(2)}`)
 
       // Log fee breakdown for first few days
       if (sortedDates.indexOf(date) < 3 && Object.keys(summary.feeBreakdown).length > 0) {
@@ -287,14 +358,15 @@ export async function POST(request: NextRequest) {
       dailyData.push({
         date,
         ...summary,
-        grossProfit: summary.sales - summary.refunds - summary.fees
+        grossProfit: summary.sales - summary.refunds - summary.fees - summary.promotions
       })
     }
 
     // Save to daily_metrics
     let savedCount = 0
     for (const [date, summary] of dailySummaries) {
-      const grossProfit = summary.sales - summary.refunds - summary.fees
+      // Include promotions in gross_profit calculation (promotions reduce revenue)
+      const grossProfit = summary.sales - summary.refunds - summary.fees - summary.promotions
       const margin = summary.sales > 0 ? (grossProfit / summary.sales) * 100 : 0
 
       const { error } = await supabase
@@ -305,7 +377,7 @@ export async function POST(request: NextRequest) {
           sales: summary.sales,
           units_sold: summary.units,
           refunds: summary.refunds,
-          amazon_fees: summary.fees, // REAL FEES FROM AMAZON!
+          amazon_fees: summary.fees, // REAL FEES FROM AMAZON (including service fees!)
           gross_profit: grossProfit,
           margin,
           updated_at: new Date().toISOString(),
@@ -391,6 +463,12 @@ export async function POST(request: NextRequest) {
         date_range: {
           start: startDate.toISOString().split('T')[0],
           end: endDate.toISOString().split('T')[0]
+        },
+        service_fees: {
+          subscription: `$${totalSubscriptionFees.toFixed(2)}`,
+          storage: `$${totalStorageFees.toFixed(2)}`,
+          other: `$${totalOtherServiceFees.toFixed(2)}`,
+          total: `$${(totalSubscriptionFees + totalStorageFees + totalOtherServiceFees).toFixed(2)}`
         }
       },
       yesterday: yesterdaySummary ? {
@@ -399,6 +477,7 @@ export async function POST(request: NextRequest) {
         units: yesterdaySummary.units,
         orders: yesterdaySummary.orderCount,
         amazon_fees: `$${yesterdaySummary.fees.toFixed(2)}`,
+        promotions: `$${yesterdaySummary.promotions.toFixed(2)}`,
         refunds: `$${yesterdaySummary.refunds.toFixed(2)}`,
         fee_breakdown: yesterdaySummary.feeBreakdown,
         sellerboard_comparison: {
