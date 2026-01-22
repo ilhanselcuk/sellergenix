@@ -194,17 +194,33 @@ export async function downloadDataKioskDocument<T = any>(
       return { success: false, error: `Download failed: ${response.status}` };
     }
 
-    // Check if compressed
+    // Get content info
     const contentEncoding = response.headers.get('Content-Encoding');
+    const contentType = response.headers.get('Content-Type');
+    console.log(`[Data Kiosk] Content-Encoding: ${contentEncoding}, Content-Type: ${contentType}`);
+
+    // First try to get as text (most common case)
+    // The fetch API often handles decompression automatically
     let text: string;
 
-    if (contentEncoding === 'gzip') {
-      // Handle gzip decompression
+    try {
+      text = await response.clone().text();
+      console.log(`[Data Kiosk] Got text response, length: ${text.length}`);
+
+      // If text starts with valid JSON characters, use it directly
+      if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
+        console.log('[Data Kiosk] Response is already decompressed JSON');
+      } else if (contentEncoding === 'gzip' || text.charCodeAt(0) === 0x1f) {
+        // Looks like binary/gzip data, try to decompress
+        console.log('[Data Kiosk] Attempting gzip decompression...');
+        const buffer = await response.arrayBuffer();
+        text = await decompressGzip(buffer);
+      }
+    } catch (textError) {
+      // If text() fails, try as binary gzip
+      console.log('[Data Kiosk] Text read failed, trying binary gzip...');
       const buffer = await response.arrayBuffer();
-      const decompressed = await decompressGzip(buffer);
-      text = decompressed;
-    } else {
-      text = await response.text();
+      text = await decompressGzip(buffer);
     }
 
     // Parse JSONL (one JSON object per line)
