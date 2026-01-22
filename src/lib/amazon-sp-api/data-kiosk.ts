@@ -209,7 +209,24 @@ export async function downloadDataKioskDocument<T = any>(
 
     // Parse JSONL (one JSON object per line)
     const lines = text.trim().split('\n').filter(line => line.trim());
-    const data = lines.map(line => JSON.parse(line) as T);
+
+    console.log(`[Data Kiosk] Parsing ${lines.length} lines...`);
+
+    // Debug: Log first line preview
+    if (lines.length > 0) {
+      console.log(`[Data Kiosk] First line preview: ${lines[0].substring(0, 200)}...`);
+    }
+
+    const data: T[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      try {
+        const parsed = JSON.parse(lines[i]) as T;
+        data.push(parsed);
+      } catch (parseError) {
+        console.error(`[Data Kiosk] Failed to parse line ${i + 1}:`, lines[i].substring(0, 100));
+        // Continue with other lines
+      }
+    }
 
     console.log(`[Data Kiosk] Downloaded ${data.length} records`);
 
@@ -221,13 +238,14 @@ export async function downloadDataKioskDocument<T = any>(
 }
 
 /**
- * Decompress gzip data
+ * Decompress gzip data using Node.js zlib
  */
 async function decompressGzip(buffer: ArrayBuffer): Promise<string> {
-  const ds = new DecompressionStream('gzip');
-  const decompressedStream = new Response(buffer).body!.pipeThrough(ds);
-  const decompressedBuffer = await new Response(decompressedStream).arrayBuffer();
-  return new TextDecoder().decode(decompressedBuffer);
+  // Use Node.js zlib for server-side gzip decompression
+  const { gunzipSync } = await import('zlib');
+  const nodeBuffer = Buffer.from(buffer);
+  const decompressed = gunzipSync(nodeBuffer);
+  return decompressed.toString('utf-8');
 }
 
 /**
