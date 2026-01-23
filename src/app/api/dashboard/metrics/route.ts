@@ -439,10 +439,18 @@ function formatMetrics(
   const avgOrderValue = parseFloat(metrics.averageUnitPrice?.amount || '0')
 
   // Use REAL fees from database if available, otherwise estimate
+  // IMPORTANT: If sales = 0, fees should also be 0!
+  // Finance API fees are posted by PostedDate (when charged), not PurchaseDate (when ordered)
+  // This can cause fees to show up on wrong days (e.g., Today shows fees for Yesterday's orders)
   let amazonFees: number
   let feeSource: 'real' | 'estimated' | 'mixed'
 
-  if (realFeeData && realFeeData.totalFees > 0) {
+  if (sales === 0) {
+    // No sales = no fees (fees from Finance API likely belong to previous days' orders)
+    amazonFees = 0
+    feeSource = 'estimated'
+    console.log(`💰 Sales = $0, setting fees to $0 (Finance API fees would be misattributed)`)
+  } else if (realFeeData && realFeeData.totalFees > 0) {
     // Use real fees from Finances API (stored in database)
     amazonFees = realFeeData.totalFees
     feeSource = realFeeData.feeSource
@@ -474,8 +482,12 @@ function formatMetrics(
   // Use real fee breakdown if available, otherwise estimate based on typical ratios
   let feeBreakdown = realFeeData?.feeBreakdown || emptyBreakdown
 
+  // If sales = 0, clear fee breakdown (fees would be misattributed)
+  if (sales === 0) {
+    feeBreakdown = emptyBreakdown
+  }
   // If we only have total fees (legacy), estimate breakdown using typical ratios
-  if (feeSource === 'estimated' || (amazonFees > 0 && feeBreakdown.fbaFulfillment === 0 && feeBreakdown.referral === 0)) {
+  else if (feeSource === 'estimated' || (amazonFees > 0 && feeBreakdown.fbaFulfillment === 0 && feeBreakdown.referral === 0)) {
     feeBreakdown = {
       fbaFulfillment: amazonFees * 0.55,  // ~55% of total fees
       referral: amazonFees * 0.35,         // ~35% of total fees
@@ -502,8 +514,8 @@ function formatMetrics(
     roi,
     feeSource,
     feeBreakdown,
-    serviceFees: realFeeData?.serviceFees || emptyServiceFees,
-    refunds: realFeeData?.refunds || 0
+    serviceFees: sales === 0 ? emptyServiceFees : (realFeeData?.serviceFees || emptyServiceFees),
+    refunds: sales === 0 ? 0 : (realFeeData?.refunds || 0)
   }
 }
 
