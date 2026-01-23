@@ -403,11 +403,16 @@ async function getRealFeesForPeriod(
         const quantityShipped = item.quantity_shipped || 0
         const isShipped = quantityShipped > 0
 
-        // Check if we have detailed fee breakdown (fee_source = 'api')
+        // Check if we have detailed fee breakdown
         // IMPORTANT: Columns with "total_" prefix already contain TOTALS for all quantities!
         // Do NOT multiply by quantity again - that would double/triple count!
-        if (item.fee_source === 'api' && item.total_amazon_fees) {
-          // SHIPPED with real fees - use as-is
+        //
+        // CRITICAL: For pending orders (quantity_shipped=0), we must use historical ASIN estimates
+        // because Finance API only returns real fees AFTER order ships!
+        // The fee_source='api' on pending orders is misleading - those are estimates, not real fees.
+
+        if (isShipped && item.fee_source === 'api' && item.total_amazon_fees) {
+          // SHIPPED with real fees - use as-is (Finance API confirmed)
           totalFees += (item.total_amazon_fees || 0)
           feeBreakdown.fbaFulfillment += (item.total_fba_fulfillment_fees || 0)
           feeBreakdown.referral += (item.total_referral_fees || 0)
@@ -420,7 +425,8 @@ async function getRealFeesForPeriod(
           feeBreakdown.reimbursements += (item.total_reimbursements || 0)
           orderHasRealFees = true
         } else if (!isShipped && item.asin && asinFeeHistory.has(item.asin)) {
-          // PENDING order - use historical per-unit fee from same ASIN
+          // PENDING order - ALWAYS use historical per-unit fee from same ASIN
+          // This ensures pending orders have estimated fees until they ship
           const history = asinFeeHistory.get(item.asin)!
           const qty = quantityOrdered
           totalFees += history.perUnitFee * qty
@@ -431,7 +437,12 @@ async function getRealFeesForPeriod(
           feeBreakdown.returns += history.perUnitReturns * qty
           feeBreakdown.other += history.perUnitOther * qty
           orderHasRealFees = true // Treated as "real" since it's based on actual historical data
-          console.log(`  📦 Pending order ${order.amazon_order_id}: estimated $${(history.perUnitFee * qty).toFixed(2)} from historical ASIN data`)
+          console.log(`  📦 Pending order ${order.amazon_order_id}: estimated $${(history.perUnitFee * qty).toFixed(2)} from historical ASIN ${item.asin}`)
+        } else if (!isShipped && item.total_amazon_fees) {
+          // PENDING with pre-estimated fees (from fee sync) - use those
+          totalFees += (item.total_amazon_fees || 0)
+          feeBreakdown.fbaFulfillment += (item.total_fba_fulfillment_fees || 0)
+          orderHasRealFees = true
         } else if (item.estimated_amazon_fee) {
           // Legacy: estimated_amazon_fee is PER UNIT, so multiply by quantity
           totalFees += item.estimated_amazon_fee * quantityOrdered
@@ -471,27 +482,28 @@ async function getRealFeesForPeriod(
     }
 
     // =====================================================
-    // CRITICAL: Use REAL fees from daily_metrics (Finance API) if available!
-    // Only fall back to order_items estimated fees if no Finance data
+    // CRITICAL: Use totalFees from order_items (already includes shipped + pending)
+    // The first loop above correctly calculates:
+    // - Shipped orders: Real fees from Finance API (fee_source='api')
+    // - Pending orders: Historical ASIN estimates
+    // This matches Sellerboard's approach!
     // =====================================================
+
     let finalFees: number
     let feeSource: 'real' | 'estimated' | 'mixed' = 'estimated'
 
-    if (hasRealFinanceData) {
-      // USE REAL FEES FROM FINANCE API (daily_metrics table)
-      finalFees = realFeesFromFinanceAPI
-      feeSource = 'real'
-      console.log(`✅ Using REAL fees from Finance API: $${finalFees.toFixed(2)}`)
-    } else if (ordersWithRealFees > 0) {
-      // Fall back to order_items fees
+    if (ordersWithRealFees > 0) {
+      // Use totalFees which already combines shipped + pending estimates
       finalFees = totalFees
-      feeSource = ordersWithEstimatedFees === 0 ? 'real' : 'mixed'
-      console.log(`⚠️ No Finance API data, using order_items fees: $${finalFees.toFixed(2)}`)
+      feeSource = ordersWithEstimatedFees > 0 ? 'mixed' : 'real'
+      console.log(`✅ Order fees (shipped + pending): $${finalFees.toFixed(2)}`)
+      console.log(`   - Orders with real/estimated fees: ${ordersWithRealFees}`)
+      console.log(`   - Orders without fee data: ${ordersWithEstimatedFees}`)
     } else {
-      // Estimated fees
+      // No fee data at all
       finalFees = totalFees
       feeSource = 'estimated'
-      console.log(`⚠️ Using ESTIMATED fees: $${finalFees.toFixed(2)}`)
+      console.log(`⚠️ No fee data available, total: $${finalFees.toFixed(2)}`)
     }
 
     // Add service fees to total

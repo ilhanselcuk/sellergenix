@@ -39,10 +39,12 @@ export async function POST(request: NextRequest) {
     const connection = connections[0]
     log(`✅ Found connection for seller: ${connection.seller_id}`)
 
-    // Fetch last 14 days of financial data (more data for testing)
+    // Fetch last 60 days of financial data
+    // Storage fees are posted around the 7th-15th of each month for previous month
+    // Need wider range to capture monthly service fees (subscription, storage)
     const endDate = new Date()
     const startDate = new Date()
-    startDate.setDate(startDate.getDate() - 14)
+    startDate.setDate(startDate.getDate() - 60)
 
     log(`📅 Fetching financial events from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`)
 
