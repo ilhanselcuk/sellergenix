@@ -808,8 +808,23 @@ export async function bulkSyncFeesForDateRange(
       }
     }
 
-    // Step 2: Parse fees by order and build update map
-    const feesByOrderItem: Map<string, { fee: number; asin?: string }> = new Map()
+    // Step 2: Parse fees by order and build update map with DETAILED breakdown
+    interface DetailedFeeData {
+      totalFee: number
+      asin?: string
+      quantity: number
+      // Individual fees
+      fbaPerUnitFee: number
+      fbaPerOrderFee: number
+      fbaWeightBasedFee: number
+      referralFee: number
+      variableClosingFee: number
+      // Totals
+      totalFbaFees: number
+      totalReferralFees: number
+    }
+
+    const feesByOrderItem: Map<string, DetailedFeeData> = new Map()
     const orderIdsWithFees: Set<string> = new Set()
 
     for (const shipment of allShipmentEvents) {
@@ -830,27 +845,59 @@ export async function bulkSyncFeesForDateRange(
 
         if (!orderItemId) continue
 
-        // Calculate total fee for this item
+        // Initialize detailed fee breakdown
         let itemTotalFee = 0
+        let fbaPerUnitFee = 0
+        let fbaPerOrderFee = 0
+        let fbaWeightBasedFee = 0
+        let referralFee = 0
+        let variableClosingFee = 0
+
         const feeList = item.ItemFeeList || item.itemFeeList || []
 
         for (const fee of feeList) {
+          const feeType = String(fee.FeeType || fee.feeType || '').toLowerCase()
           const feeAmountObj = fee.FeeAmount || fee.feeAmount
-          const amount = Math.abs(feeAmountObj?.CurrencyAmount || feeAmountObj?.currencyAmount || 0)
+          const amount = Math.abs(parseFloat(feeAmountObj?.CurrencyAmount || feeAmountObj?.currencyAmount || '0'))
+
           itemTotalFee += amount
+
+          // Categorize fees by type
+          if (feeType.includes('fbaperunitfulfillment') || feeType.includes('fulfillmentfee') || feeType === 'fbaperunitfulfillmentfee') {
+            fbaPerUnitFee += amount
+          } else if (feeType.includes('fbaperorder') || feeType === 'fbaperorderfulfillmentfee') {
+            fbaPerOrderFee += amount
+          } else if (feeType.includes('fbaweightbased') || feeType === 'fbaweightbasedfee') {
+            fbaWeightBasedFee += amount
+          } else if (feeType.includes('commission') || feeType.includes('referral') || feeType === 'commission') {
+            referralFee += amount
+          } else if (feeType.includes('variableclosing') || feeType === 'variableclosingfee') {
+            variableClosingFee += amount
+          }
         }
 
-        // Calculate fee per unit
-        const feePerUnit = quantity > 0 ? itemTotalFee / quantity : itemTotalFee
+        const totalFbaFees = fbaPerUnitFee + fbaPerOrderFee + fbaWeightBasedFee
+        const totalReferralFees = referralFee + variableClosingFee
 
-        feesByOrderItem.set(orderItemId, { fee: feePerUnit, asin })
+        feesByOrderItem.set(orderItemId, {
+          totalFee: itemTotalFee,
+          asin,
+          quantity,
+          fbaPerUnitFee,
+          fbaPerOrderFee,
+          fbaWeightBasedFee,
+          referralFee,
+          variableClosingFee,
+          totalFbaFees,
+          totalReferralFees,
+        })
       }
     }
 
     console.log(`📊 Parsed fees for ${orderIdsWithFees.size} orders, ${feesByOrderItem.size} order items`)
 
-    // Step 3: Batch update order_items
-    console.log('💾 Updating order_items with real fees...')
+    // Step 3: Batch update order_items with DETAILED fee breakdown
+    console.log('💾 Updating order_items with detailed fee breakdown...')
 
     // Process in batches to avoid overwhelming the database
     const orderItemIds = Array.from(feesByOrderItem.keys())
@@ -863,10 +910,33 @@ export async function bulkSyncFeesForDateRange(
         const feeData = feesByOrderItem.get(orderItemId)
         if (!feeData) continue
 
+        // Calculate fee per unit for backward compatibility
+        const feePerUnit = feeData.quantity > 0 ? feeData.totalFee / feeData.quantity : feeData.totalFee
+
         const { error: updateError } = await supabase
           .from('order_items')
           .update({
-            estimated_amazon_fee: feeData.fee,
+            // Legacy field (fee per unit)
+            estimated_amazon_fee: feePerUnit,
+
+            // === INDIVIDUAL FEE FIELDS ===
+            // FBA Fulfillment
+            fee_fba_per_unit: feeData.fbaPerUnitFee,
+            fee_fba_per_order: feeData.fbaPerOrderFee,
+            fee_fba_weight_based: feeData.fbaWeightBasedFee,
+
+            // Referral
+            fee_referral: feeData.referralFee,
+            fee_variable_closing: feeData.variableClosingFee,
+
+            // === CATEGORY TOTALS ===
+            total_fba_fulfillment_fees: feeData.totalFbaFees,
+            total_referral_fees: feeData.totalReferralFees,
+            total_amazon_fees: feeData.totalFee,
+
+            // Metadata
+            fees_synced_at: new Date().toISOString(),
+            fee_source: 'api',
             updated_at: new Date().toISOString(),
           })
           .eq('user_id', userId)
@@ -874,7 +944,7 @@ export async function bulkSyncFeesForDateRange(
 
         if (!updateError) {
           itemsUpdated++
-          totalFeesApplied += feeData.fee
+          totalFeesApplied += feeData.totalFee
         } else {
           errors.push(`Failed to update item ${orderItemId}: ${updateError.message}`)
         }
