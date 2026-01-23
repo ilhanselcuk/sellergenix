@@ -356,6 +356,91 @@ export async function POST(request: NextRequest) {
     log(`   Storage: $${totalStorageFees.toFixed(2)}`)
     log(`   Other: $${totalOtherServiceFees.toFixed(2)}`)
 
+    // =====================================================
+    // STEP 4.5: Save service fees to service_fees table
+    // This allows dashboard to include account-level fees!
+    // =====================================================
+    log(`\n💾 Saving service fees to database...`)
+
+    const serviceFeesSaved: string[] = []
+
+    // Save subscription fee
+    if (totalSubscriptionFees > 0) {
+      const { error } = await supabase
+        .from('service_fees')
+        .upsert({
+          user_id: connection.user_id,
+          period_start: startDate.toISOString().split('T')[0],
+          period_end: endDate.toISOString().split('T')[0],
+          fee_type: 'subscription',
+          amount: totalSubscriptionFees,
+          description: 'Professional Seller Subscription Fee',
+          source: 'finances_api',
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'user_id,period_start,period_end,fee_type',
+        })
+
+      if (error) {
+        log(`   ⚠️ Error saving subscription fee: ${error.message}`)
+      } else {
+        serviceFeesSaved.push(`subscription: $${totalSubscriptionFees.toFixed(2)}`)
+        log(`   ✅ Saved subscription fee: $${totalSubscriptionFees.toFixed(2)}`)
+      }
+    }
+
+    // Save storage fee
+    if (totalStorageFees > 0) {
+      const { error } = await supabase
+        .from('service_fees')
+        .upsert({
+          user_id: connection.user_id,
+          period_start: startDate.toISOString().split('T')[0],
+          period_end: endDate.toISOString().split('T')[0],
+          fee_type: 'storage',
+          amount: totalStorageFees,
+          description: 'FBA Storage Fees (Monthly + Long-term)',
+          source: 'finances_api',
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'user_id,period_start,period_end,fee_type',
+        })
+
+      if (error) {
+        log(`   ⚠️ Error saving storage fee: ${error.message}`)
+      } else {
+        serviceFeesSaved.push(`storage: $${totalStorageFees.toFixed(2)}`)
+        log(`   ✅ Saved storage fee: $${totalStorageFees.toFixed(2)}`)
+      }
+    }
+
+    // Save other service fees
+    if (totalOtherServiceFees > 0) {
+      const { error } = await supabase
+        .from('service_fees')
+        .upsert({
+          user_id: connection.user_id,
+          period_start: startDate.toISOString().split('T')[0],
+          period_end: endDate.toISOString().split('T')[0],
+          fee_type: 'other',
+          amount: totalOtherServiceFees,
+          description: 'Other Account-Level Service Fees',
+          source: 'finances_api',
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'user_id,period_start,period_end,fee_type',
+        })
+
+      if (error) {
+        log(`   ⚠️ Error saving other fees: ${error.message}`)
+      } else {
+        serviceFeesSaved.push(`other: $${totalOtherServiceFees.toFixed(2)}`)
+        log(`   ✅ Saved other fees: $${totalOtherServiceFees.toFixed(2)}`)
+      }
+    }
+
+    log(`   Saved ${serviceFeesSaved.length} service fee records: ${serviceFeesSaved.join(', ') || 'none'}`)
+
     // Log daily summaries
     const sortedDates = [...dailySummaries.keys()].sort().reverse()
     log(`\n📊 Daily summaries (${sortedDates.length} days):`)

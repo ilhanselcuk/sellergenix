@@ -76,6 +76,15 @@ interface PeriodMetrics {
     other: number
     reimbursements: number
   }
+  // Account-level service fees (subscription, storage, etc.)
+  serviceFees: {
+    subscription: number
+    storage: number
+    other: number
+    total: number
+  }
+  // Refund data from Finance API
+  refunds: number
 }
 
 interface RealFeeData {
@@ -95,6 +104,15 @@ interface RealFeeData {
     other: number
     reimbursements: number
   }
+  // Account-level service fees (not tied to orders)
+  serviceFees: {
+    subscription: number
+    storage: number
+    other: number
+    total: number
+  }
+  // Refund data from Finance API
+  refunds: number
 }
 
 /**
@@ -108,8 +126,66 @@ async function getRealFeesForPeriod(
   startDate: Date,
   endDate: Date
 ): Promise<RealFeeData> {
+  const emptyServiceFees = { subscription: 0, storage: 0, other: 0, total: 0 }
+  const emptyFeeBreakdown = { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0 }
+
   try {
-    // Step 1: Get order IDs in the date range
+    // =====================================================
+    // Step 0: Get account-level service fees from service_fees table
+    // These are NOT tied to orders (subscription, storage, etc.)
+    // =====================================================
+    const startDateStr = startDate.toISOString().split('T')[0]
+    const endDateStr = endDate.toISOString().split('T')[0]
+
+    const { data: serviceFees, error: serviceFeesError } = await supabase
+      .from('service_fees')
+      .select('fee_type, amount')
+      .eq('user_id', userId)
+      .lte('period_start', endDateStr)
+      .gte('period_end', startDateStr)
+
+    let accountServiceFees = { subscription: 0, storage: 0, other: 0, total: 0 }
+
+    if (serviceFees && serviceFees.length > 0) {
+      for (const fee of serviceFees) {
+        const amount = parseFloat(String(fee.amount)) || 0
+        if (fee.fee_type === 'subscription') {
+          accountServiceFees.subscription += amount
+        } else if (fee.fee_type === 'storage') {
+          accountServiceFees.storage += amount
+        } else {
+          accountServiceFees.other += amount
+        }
+        accountServiceFees.total += amount
+      }
+      console.log(`💳 Service fees found: $${accountServiceFees.total.toFixed(2)} (Subscription: $${accountServiceFees.subscription.toFixed(2)}, Storage: $${accountServiceFees.storage.toFixed(2)})`)
+    }
+
+    // =====================================================
+    // Step 1: Get REAL fees from daily_metrics table (Finance API data!)
+    // This is the PRIMARY source - Finance sync writes here with real fees
+    // =====================================================
+    const { data: dailyMetrics, error: dailyMetricsError } = await supabase
+      .from('daily_metrics')
+      .select('date, amazon_fees, refunds, sales, units_sold')
+      .eq('user_id', userId)
+      .gte('date', startDateStr)
+      .lte('date', endDateStr)
+
+    let realFeesFromFinanceAPI = 0
+    let realRefundsFromFinanceAPI = 0
+    let hasRealFinanceData = false
+
+    if (dailyMetrics && dailyMetrics.length > 0) {
+      for (const day of dailyMetrics) {
+        realFeesFromFinanceAPI += parseFloat(String(day.amazon_fees)) || 0
+        realRefundsFromFinanceAPI += parseFloat(String(day.refunds)) || 0
+      }
+      hasRealFinanceData = realFeesFromFinanceAPI > 0
+      console.log(`💰 REAL fees from daily_metrics (Finance API): $${realFeesFromFinanceAPI.toFixed(2)}, Refunds: $${realRefundsFromFinanceAPI.toFixed(2)}`)
+    }
+
+    // Step 2: Get order IDs in the date range
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
       .select('amazon_order_id, order_status')
@@ -119,12 +195,16 @@ async function getRealFeesForPeriod(
 
     if (ordersError || !orders || orders.length === 0) {
       console.log('⚠️ No orders found for fee calculation in date range:', ordersError?.message)
+      // Still return real fees from daily_metrics if available
+      const totalFees = hasRealFinanceData ? realFeesFromFinanceAPI : accountServiceFees.total
       return {
-        totalFees: 0,
+        totalFees: totalFees + accountServiceFees.total,
         totalCogs: 0,
         orderCount: 0,
-        feeSource: 'estimated',
-        feeBreakdown: { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0 }
+        feeSource: hasRealFinanceData ? 'real' : (accountServiceFees.total > 0 ? 'real' : 'estimated'),
+        feeBreakdown: emptyFeeBreakdown,
+        serviceFees: accountServiceFees,
+        refunds: realRefundsFromFinanceAPI
       }
     }
 
@@ -159,11 +239,13 @@ async function getRealFeesForPeriod(
     if (itemsError) {
       console.log('⚠️ Could not fetch order items:', itemsError.message)
       return {
-        totalFees: 0,
+        totalFees: accountServiceFees.total,
         totalCogs: 0,
         orderCount: orders.length,
-        feeSource: 'estimated',
-        feeBreakdown: { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0 }
+        feeSource: accountServiceFees.total > 0 ? 'real' : 'estimated',
+        feeBreakdown: emptyFeeBreakdown,
+        serviceFees: accountServiceFees,
+        refunds: realRefundsFromFinanceAPI
       }
     }
 
@@ -253,23 +335,48 @@ async function getRealFeesForPeriod(
       }
     }
 
-    // Determine fee source
+    // =====================================================
+    // CRITICAL: Use REAL fees from daily_metrics (Finance API) if available!
+    // Only fall back to order_items estimated fees if no Finance data
+    // =====================================================
+    let finalFees: number
     let feeSource: 'real' | 'estimated' | 'mixed' = 'estimated'
-    if (ordersWithRealFees > 0 && ordersWithEstimatedFees === 0) {
+
+    if (hasRealFinanceData) {
+      // USE REAL FEES FROM FINANCE API (daily_metrics table)
+      finalFees = realFeesFromFinanceAPI
       feeSource = 'real'
-    } else if (ordersWithRealFees > 0 && ordersWithEstimatedFees > 0) {
-      feeSource = 'mixed'
+      console.log(`✅ Using REAL fees from Finance API: $${finalFees.toFixed(2)}`)
+    } else if (ordersWithRealFees > 0) {
+      // Fall back to order_items fees
+      finalFees = totalFees
+      feeSource = ordersWithEstimatedFees === 0 ? 'real' : 'mixed'
+      console.log(`⚠️ No Finance API data, using order_items fees: $${finalFees.toFixed(2)}`)
+    } else {
+      // Estimated fees
+      finalFees = totalFees
+      feeSource = 'estimated'
+      console.log(`⚠️ Using ESTIMATED fees: $${finalFees.toFixed(2)}`)
     }
 
-    console.log(`📊 Fee data for period: $${totalFees.toFixed(2)} fees, $${totalCogs.toFixed(2)} COGS, source: ${feeSource}`)
-    console.log(`   Breakdown: FBA=$${feeBreakdown.fbaFulfillment.toFixed(2)}, Referral=$${feeBreakdown.referral.toFixed(2)}, Storage=$${feeBreakdown.storage.toFixed(2)}`)
+    // Add service fees to total
+    const totalFeesWithService = finalFees + accountServiceFees.total
+
+    console.log(`📊 Fee data for period:`)
+    console.log(`   Order fees: $${finalFees.toFixed(2)} (source: ${feeSource})`)
+    console.log(`   Service fees: $${accountServiceFees.total.toFixed(2)} (Subscription: $${accountServiceFees.subscription.toFixed(2)}, Storage: $${accountServiceFees.storage.toFixed(2)})`)
+    console.log(`   TOTAL FEES: $${totalFeesWithService.toFixed(2)}`)
+    console.log(`   Refunds: $${realRefundsFromFinanceAPI.toFixed(2)}`)
+    console.log(`   COGS: $${totalCogs.toFixed(2)}`)
 
     return {
-      totalFees,
+      totalFees: totalFeesWithService, // REAL fees from Finance API + service fees!
       totalCogs,
       orderCount: orders.length,
       feeSource,
-      feeBreakdown
+      feeBreakdown,
+      serviceFees: accountServiceFees,
+      refunds: realRefundsFromFinanceAPI
     }
   } catch (error) {
     console.error('Error fetching real fees:', error)
@@ -278,7 +385,9 @@ async function getRealFeesForPeriod(
       totalCogs: 0,
       orderCount: 0,
       feeSource: 'estimated',
-      feeBreakdown: { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0 }
+      feeBreakdown: { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0 },
+      serviceFees: { subscription: 0, storage: 0, other: 0, total: 0 },
+      refunds: 0
     }
   }
 }
@@ -303,6 +412,7 @@ function formatMetrics(
     other: 0,
     reimbursements: 0
   }
+  const emptyServiceFees = { subscription: 0, storage: 0, other: 0, total: 0 }
 
   if (!metrics) {
     return {
@@ -317,7 +427,9 @@ function formatMetrics(
       grossProfit: 0,
       roi: 0,
       feeSource: 'estimated',
-      feeBreakdown: emptyBreakdown
+      feeBreakdown: emptyBreakdown,
+      serviceFees: emptyServiceFees,
+      refunds: 0
     }
   }
 
@@ -389,7 +501,9 @@ function formatMetrics(
     grossProfit,
     roi,
     feeSource,
-    feeBreakdown
+    feeBreakdown,
+    serviceFees: realFeeData?.serviceFees || emptyServiceFees,
+    refunds: realFeeData?.refunds || 0
   }
 }
 
@@ -663,6 +777,7 @@ export async function POST(request: Request) {
         grossProfit: 0,
         roi: 0,
         feeSource: 'estimated',
+        refunds: 0,
         error: result.error
       }
     }
