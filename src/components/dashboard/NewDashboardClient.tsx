@@ -52,6 +52,12 @@ interface PeriodMetrics {
     other: number
     reimbursements: number
   }
+  serviceFees?: {
+    subscription: number
+    storage: number
+    other: number
+    total: number
+  }
 }
 
 interface DatabaseProduct {
@@ -178,7 +184,8 @@ function generateRealPeriodData(
     grossProfit: metrics.grossProfit,
     // Fee source and breakdown (Phase 1.8 - Sellerboard-style)
     feeSource: metrics.feeSource,
-    feeBreakdown: metrics.feeBreakdown
+    feeBreakdown: metrics.feeBreakdown,
+    serviceFees: metrics.serviceFees
   }
 }
 

@@ -226,15 +226,23 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           >
             {hasRealFees && fees ? (
               <>
-                {fees.fbaFulfillment > 0 && (
-                  <SubRow label="FBA per unit fulfilment fee" value={formatCurrency(-fees.fbaFulfillment)} valueColor="text-red-600" />
-                )}
-                {fees.referral > 0 && (
-                  <SubRow label="Referral fee" value={formatCurrency(-fees.referral)} valueColor="text-red-600" />
-                )}
-                {fees.storage > 0 && (
-                  <SubRow label="FBA storage fee" value={formatCurrency(-fees.storage)} valueColor="text-red-600" />
-                )}
+                {/* Always show main fee types, even if $0 */}
+                <SubRow
+                  label="FBA per unit fulfilment fee"
+                  value={formatCurrency(-fees.fbaFulfillment)}
+                  valueColor={fees.fbaFulfillment > 0 ? "text-red-600" : "text-gray-400"}
+                />
+                <SubRow
+                  label="Referral fee"
+                  value={formatCurrency(-fees.referral)}
+                  valueColor={fees.referral > 0 ? "text-red-600" : "text-gray-400"}
+                />
+                <SubRow
+                  label="FBA storage fee"
+                  value={formatCurrency(-fees.storage)}
+                  valueColor={fees.storage > 0 ? "text-red-600" : "text-gray-400"}
+                />
+                {/* Show these only if > 0 */}
                 {fees.inbound > 0 && (
                   <SubRow label="Inbound transportation" value={formatCurrency(-fees.inbound)} valueColor="text-red-600" />
                 )}
@@ -253,11 +261,27 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                 {fees.reimbursements > 0 && (
                   <SubRow label="Reversal reimbursement" value={formatCurrency(fees.reimbursements)} valueColor="text-green-600" />
                 )}
-                {/* Show message if all fees are 0 */}
-                {fees.fbaFulfillment === 0 && fees.referral === 0 && (
-                  <div className="px-10 py-2 text-xs text-gray-400">
-                    No fee details available yet
-                  </div>
+                {/* Service fees (subscription, etc.) */}
+                {data.serviceFees && data.serviceFees.subscription > 0 && (
+                  <SubRow
+                    label="Monthly subscription fee"
+                    value={formatCurrency(-data.serviceFees.subscription)}
+                    valueColor="text-red-600"
+                  />
+                )}
+                {data.serviceFees && data.serviceFees.storage > 0 && (
+                  <SubRow
+                    label="Monthly storage fee"
+                    value={formatCurrency(-data.serviceFees.storage)}
+                    valueColor="text-red-600"
+                  />
+                )}
+                {data.serviceFees && data.serviceFees.other > 0 && (
+                  <SubRow
+                    label="Other service fees"
+                    value={formatCurrency(-data.serviceFees.other)}
+                    valueColor="text-red-600"
+                  />
                 )}
               </>
             ) : (

@@ -32,6 +32,12 @@ export interface PeriodData {
     other: number
     reimbursements: number
   }
+  serviceFees?: {
+    subscription: number
+    storage: number
+    other: number
+    total: number
+  }
 }
 
 interface PeriodCardProps {
