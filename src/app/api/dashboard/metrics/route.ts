@@ -255,6 +255,15 @@ async function getRealFeesForPeriod(
     const orderIds = orders.map(o => o.amazon_order_id)
     console.log(`📊 Found ${orderIds.length} orders in date range for fee calculation`)
 
+    // Create order status lookup map
+    const orderStatusMap = new Map<string, string>()
+    for (const order of orders) {
+      orderStatusMap.set(order.amazon_order_id, order.order_status || 'Unknown')
+    }
+    const shippedCount = orders.filter(o => o.order_status === 'Shipped').length
+    const pendingCount = orders.filter(o => o.order_status === 'Pending').length
+    console.log(`   Shipped: ${shippedCount}, Pending: ${pendingCount}`)
+
     // Step 2: Get order items for these orders
     // Include detailed fee breakdown columns
     const { data: items, error: itemsError } = await supabase
@@ -311,7 +320,9 @@ async function getRealFeesForPeriod(
     // Collect ASINs that need historical fee lookup (pending items with no fees)
     const pendingAsins = new Set<string>()
     for (const item of items || []) {
-      const isShipped = (item.quantity_shipped || 0) > 0
+      // Use order_status from orders table instead of quantity_shipped (which is often 0)
+      const orderStatus = orderStatusMap.get(item.amazon_order_id)
+      const isShipped = orderStatus === 'Shipped'
       const hasRealFees = item.fee_source === 'api' && item.total_amazon_fees
       if (!isShipped && !hasRealFees && item.asin) {
         pendingAsins.add(item.asin)
@@ -332,12 +343,14 @@ async function getRealFeesForPeriod(
     if (pendingAsins.size > 0) {
       console.log(`📦 Looking up historical fees for ${pendingAsins.size} pending ASINs...`)
 
-      // For each ASIN, get the most recent shipped order_item with real fee data
+      // For each ASIN, get the most recent order_item with real fee data from Finance API
+      // NOTE: We use fee_source='api' and total_amazon_fees > 0 to find items with real fees
+      // instead of quantity_shipped > 0 because quantity_shipped is often not populated
       const { data: historicalItems } = await supabase
         .from('order_items')
         .select(`
           asin,
-          quantity_shipped,
+          quantity_ordered,
           total_amazon_fees,
           total_fba_fulfillment_fees,
           total_referral_fees,
@@ -351,15 +364,15 @@ async function getRealFeesForPeriod(
         .eq('user_id', userId)
         .in('asin', Array.from(pendingAsins))
         .eq('fee_source', 'api')
-        .gt('quantity_shipped', 0)
         .gt('total_amazon_fees', 0)
         .order('created_at', { ascending: false })
 
       if (historicalItems && historicalItems.length > 0) {
         // Group by ASIN and take the most recent one
         for (const item of historicalItems) {
-          if (item.asin && !asinFeeHistory.has(item.asin) && item.quantity_shipped > 0) {
-            const qty = item.quantity_shipped
+          // Use quantity_ordered since quantity_shipped is often 0
+          const qty = item.quantity_ordered || 1
+          if (item.asin && !asinFeeHistory.has(item.asin) && qty > 0) {
             asinFeeHistory.set(item.asin, {
               perUnitFee: (item.total_amazon_fees || 0) / qty,
               perUnitFba: (item.total_fba_fulfillment_fees || 0) / qty,
@@ -400,8 +413,9 @@ async function getRealFeesForPeriod(
 
       for (const item of orderItems) {
         const quantityOrdered = item.quantity_ordered || 1
-        const quantityShipped = item.quantity_shipped || 0
-        const isShipped = quantityShipped > 0
+        // Use order_status from orders table instead of quantity_shipped (which is often 0)
+        const orderStatus = orderStatusMap.get(order.amazon_order_id)
+        const isShipped = orderStatus === 'Shipped'
 
         // Check if we have detailed fee breakdown
         // IMPORTANT: Columns with "total_" prefix already contain TOTALS for all quantities!
