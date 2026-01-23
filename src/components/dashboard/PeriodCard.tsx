@@ -14,7 +14,8 @@ export interface PeriodData {
   units: number
   acos: number
   adSpend: number
-  refunds: number
+  refunds: number // Dollar amount of refunds
+  refundCount?: number // Number of refunded units (optional, can be estimated)
   amazonFees: number
   cogs: number
   grossProfit: number
@@ -114,8 +115,8 @@ export default function PeriodCard({ data, isSelected, onClick, onMoreClick }: P
           </p>
         </div>
 
-        {/* Mini Stats Grid */}
-        <div className="grid grid-cols-2 gap-3 text-sm">
+        {/* Mini Stats Grid - 3 rows x 2 cols */}
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
           <div>
             <p className="text-xs text-gray-500">Sales</p>
             <p className="font-semibold text-gray-900">{formatCurrency(data.sales)}</p>
@@ -132,6 +133,33 @@ export default function PeriodCard({ data, isSelected, onClick, onMoreClick }: P
             <p className="text-xs text-gray-500">ACOS</p>
             <p className={`font-semibold ${data.acos > 30 ? 'text-red-600' : data.acos > 20 ? 'text-amber-600' : 'text-emerald-600'}`}>
               {data.acos.toFixed(1)}%
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Refunds</p>
+            <p className={`font-semibold ${data.refunds > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+              {(() => {
+                // Calculate estimated refund count from $ amount
+                const avgUnitPrice = data.units > 0 ? data.sales / data.units : 0
+                const estimatedCount = data.refundCount ?? (avgUnitPrice > 0 ? Math.round(data.refunds / avgUnitPrice) : 0)
+                return estimatedCount
+              })()}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Refund %</p>
+            <p className={`font-semibold ${(() => {
+              const avgUnitPrice = data.units > 0 ? data.sales / data.units : 0
+              const estimatedCount = data.refundCount ?? (avgUnitPrice > 0 ? Math.round(data.refunds / avgUnitPrice) : 0)
+              const rate = data.units > 0 ? (estimatedCount / data.units) * 100 : 0
+              return rate > 5 ? 'text-red-600' : rate > 2 ? 'text-amber-600' : 'text-emerald-600'
+            })()}`}>
+              {(() => {
+                const avgUnitPrice = data.units > 0 ? data.sales / data.units : 0
+                const estimatedCount = data.refundCount ?? (avgUnitPrice > 0 ? Math.round(data.refunds / avgUnitPrice) : 0)
+                const rate = data.units > 0 ? (estimatedCount / data.units) * 100 : 0
+                return rate.toFixed(1) + '%'
+              })()}
             </p>
           </div>
         </div>
