@@ -139,38 +139,82 @@ async function getRealFeesForPeriod(
 
     const { data: serviceFees, error: serviceFeesError } = await supabase
       .from('service_fees')
-      .select('fee_type, amount')
+      .select('fee_type, amount, period_start, period_end')
       .eq('user_id', userId)
       .lte('period_start', endDateStr)
       .gte('period_end', startDateStr)
 
     let accountServiceFees = { subscription: 0, storage: 0, other: 0, total: 0 }
 
+    // Calculate the number of days in the requested period
+    const requestedDays = Math.max(1, Math.ceil(
+      (new Date(endDateStr).getTime() - new Date(startDateStr).getTime()) / (1000 * 60 * 60 * 24)
+    ) + 1)
+
     if (serviceFees && serviceFees.length > 0) {
       for (const fee of serviceFees) {
-        const amount = parseFloat(String(fee.amount)) || 0
-        if (fee.fee_type === 'subscription') {
-          accountServiceFees.subscription += amount
-        } else if (fee.fee_type === 'storage') {
-          accountServiceFees.storage += amount
+        const totalAmount = parseFloat(String(fee.amount)) || 0
+
+        // Calculate the fee period length (days)
+        const feePeriodStart = new Date(fee.period_start)
+        const feePeriodEnd = new Date(fee.period_end)
+        const feePeriodDays = Math.max(1, Math.ceil(
+          (feePeriodEnd.getTime() - feePeriodStart.getTime()) / (1000 * 60 * 60 * 24)
+        ) + 1)
+
+        // Prorate the fee: if requesting 1 day out of a 15-day period, only include 1/15 of the fee
+        // For monthly periods (This Month, Last Month), include the full amount
+        let proratedAmount: number
+        if (requestedDays >= feePeriodDays * 0.8) {
+          // Requesting most of the period, include full amount
+          proratedAmount = totalAmount
         } else {
-          accountServiceFees.other += amount
+          // Prorate: (requested days / fee period days) * amount
+          proratedAmount = (requestedDays / feePeriodDays) * totalAmount
         }
-        accountServiceFees.total += amount
+
+        if (fee.fee_type === 'subscription') {
+          accountServiceFees.subscription += proratedAmount
+        } else if (fee.fee_type === 'storage') {
+          accountServiceFees.storage += proratedAmount
+        } else {
+          accountServiceFees.other += proratedAmount
+        }
+        accountServiceFees.total += proratedAmount
+        console.log(`💳 Service fee "${fee.fee_type}": $${totalAmount.toFixed(2)} for ${feePeriodDays} days, prorated to $${proratedAmount.toFixed(2)} for ${requestedDays} day(s)`)
       }
-      console.log(`💳 Service fees found: $${accountServiceFees.total.toFixed(2)} (Subscription: $${accountServiceFees.subscription.toFixed(2)}, Storage: $${accountServiceFees.storage.toFixed(2)})`)
     }
 
     // =====================================================
     // Step 1: Get REAL fees from daily_metrics table (Finance API data!)
     // This is the PRIMARY source - Finance sync writes here with real fees
+    // IMPORTANT: Use exact date match, not range! Otherwise PST conversion
+    // causes endDate to be next day and we'd pull 2 days of data.
     // =====================================================
-    const { data: dailyMetrics, error: dailyMetricsError } = await supabase
+
+    // For single-day periods, use exact date match
+    // For multi-day periods (This Month, Last Month), use range
+    const isSingleDay = startDateStr === endDateStr ||
+      (new Date(endDateStr).getTime() - new Date(startDateStr).getTime()) < 2 * 24 * 60 * 60 * 1000
+
+    let dailyMetricsQuery = supabase
       .from('daily_metrics')
       .select('date, amazon_fees, refunds, sales, units_sold')
       .eq('user_id', userId)
-      .gte('date', startDateStr)
-      .lte('date', endDateStr)
+
+    if (isSingleDay) {
+      // Single day: use exact date match (startDateStr only)
+      dailyMetricsQuery = dailyMetricsQuery.eq('date', startDateStr)
+      console.log(`📅 Single day query: date = ${startDateStr}`)
+    } else {
+      // Multi-day: use range but with correct end date
+      dailyMetricsQuery = dailyMetricsQuery
+        .gte('date', startDateStr)
+        .lte('date', endDateStr)
+      console.log(`📅 Multi-day query: ${startDateStr} to ${endDateStr}`)
+    }
+
+    const { data: dailyMetrics, error: dailyMetricsError } = await dailyMetricsQuery
 
     let realFeesFromFinanceAPI = 0
     let realRefundsFromFinanceAPI = 0
