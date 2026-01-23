@@ -300,11 +300,14 @@ export async function POST(request: NextRequest) {
       }
 
       for (const event of events.serviceFeeEvents as any[]) {
-        const postedDateRaw = event.PostedDate || event.postedDate
-        const dateKey = postedDateRaw?.split('T')[0]
+        // ServiceFeeEvents often don't have PostedDate - use endDate as fallback
+        const postedDateRaw = event.PostedDate || event.postedDate || event.EventDate || event.eventDate
+        let dateKey = postedDateRaw?.split('T')[0]
+
         if (!dateKey) {
-          log(`   ⚠️ No PostedDate in event: ${JSON.stringify(event).substring(0, 200)}`)
-          continue
+          // Use the end date of our range as fallback for service fees
+          dateKey = endDate.toISOString().split('T')[0]
+          log(`   ℹ️ No PostedDate in event, using ${dateKey}: ${JSON.stringify(event).substring(0, 150)}`)
         }
 
         if (!dailySummaries.has(dateKey)) {
