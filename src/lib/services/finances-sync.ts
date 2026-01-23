@@ -93,54 +93,6 @@ export async function syncFinances(
     // Step 3: Save daily financial summaries
     console.log('💾 Step 3: Saving financial summaries...')
 
-    // ============================================================
-    // CRITICAL: Attribute fees/refunds to ORDER's purchase_date, NOT PostedDate!
-    // Sellerboard uses purchase_date, so we must too for accurate comparison.
-    // ============================================================
-
-    // First, collect all AmazonOrderIds from events
-    const orderIdsFromEvents = new Set<string>()
-
-    if (events.shipmentEvents) {
-      for (const shipment of events.shipmentEvents as any[]) {
-        const orderId = shipment.AmazonOrderId || shipment.amazonOrderId
-        if (orderId) orderIdsFromEvents.add(orderId)
-      }
-    }
-    if (events.refundEvents) {
-      for (const refund of events.refundEvents as any[]) {
-        const orderId = refund.AmazonOrderId || refund.amazonOrderId
-        if (orderId) orderIdsFromEvents.add(orderId)
-      }
-    }
-
-    console.log(`📋 Found ${orderIdsFromEvents.size} unique order IDs in Finance events`)
-
-    // Look up purchase_date for each order from our database
-    const orderIdToPurchaseDate = new Map<string, string>()
-
-    if (orderIdsFromEvents.size > 0) {
-      const { data: ordersData } = await supabase
-        .from('orders')
-        .select('amazon_order_id, purchase_date')
-        .eq('user_id', userId)
-        .in('amazon_order_id', Array.from(orderIdsFromEvents))
-
-      if (ordersData) {
-        for (const order of ordersData) {
-          if (order.purchase_date) {
-            // Convert to YYYY-MM-DD format (PST date from purchase_date)
-            const purchaseDate = new Date(order.purchase_date)
-            // Adjust to PST (UTC-8)
-            const pstDate = new Date(purchaseDate.getTime() - 8 * 60 * 60 * 1000)
-            const dateStr = pstDate.toISOString().split('T')[0]
-            orderIdToPurchaseDate.set(order.amazon_order_id, dateStr)
-          }
-        }
-      }
-      console.log(`📅 Mapped ${orderIdToPurchaseDate.size} orders to their purchase dates`)
-    }
-
     // Group events by date and save daily summaries
     const dailySummaries = new Map<string, {
       sales: number
@@ -153,36 +105,23 @@ export async function syncFinances(
       otherServiceFees: number
     }>()
 
-    // Helper function to get the date to use for an event
-    const getEventDate = (orderId: string | undefined, postedDateRaw: string | undefined): string | null => {
-      // If we have the order's purchase_date, use it (Sellerboard-style)
-      if (orderId && orderIdToPurchaseDate.has(orderId)) {
-        return orderIdToPurchaseDate.get(orderId)!
-      }
-      // Fall back to PostedDate if order not found
-      if (postedDateRaw) {
-        return postedDateRaw.split('T')[0]
-      }
-      return null
-    }
-
     // Process shipment events (sales)
     // Amazon API returns PascalCase field names, but our types use camelCase
     if (events.shipmentEvents) {
       for (const shipment of events.shipmentEvents as any[]) {
-        const orderId = shipment.AmazonOrderId || shipment.amazonOrderId
+        // Handle both PascalCase and camelCase field names
         const postedDateRaw = shipment.PostedDate || shipment.postedDate
-        const eventDate = getEventDate(orderId, postedDateRaw)
-        if (!eventDate) continue
+        const postedDate = postedDateRaw?.split('T')[0]
+        if (!postedDate) continue
 
-        if (!dailySummaries.has(eventDate)) {
-          dailySummaries.set(eventDate, {
+        if (!dailySummaries.has(postedDate)) {
+          dailySummaries.set(postedDate, {
             sales: 0, refunds: 0, fees: 0, units: 0,
             promotions: 0, subscriptionFees: 0, storageFees: 0, otherServiceFees: 0
           })
         }
 
-        const summary = dailySummaries.get(eventDate)!
+        const summary = dailySummaries.get(postedDate)!
         const items = shipment.ShipmentItemList || shipment.shipmentItemList || []
 
         for (const item of items) {
@@ -224,19 +163,19 @@ export async function syncFinances(
     // Amazon API returns PascalCase field names, but our types use camelCase
     if (events.refundEvents) {
       for (const refund of events.refundEvents as any[]) {
-        const orderId = refund.AmazonOrderId || refund.amazonOrderId
+        // Handle both PascalCase and camelCase field names
         const postedDateRaw = refund.PostedDate || refund.postedDate
-        const eventDate = getEventDate(orderId, postedDateRaw)
-        if (!eventDate) continue
+        const postedDate = postedDateRaw?.split('T')[0]
+        if (!postedDate) continue
 
-        if (!dailySummaries.has(eventDate)) {
-          dailySummaries.set(eventDate, {
+        if (!dailySummaries.has(postedDate)) {
+          dailySummaries.set(postedDate, {
             sales: 0, refunds: 0, fees: 0, units: 0,
             promotions: 0, subscriptionFees: 0, storageFees: 0, otherServiceFees: 0
           })
         }
 
-        const summary = dailySummaries.get(eventDate)!
+        const summary = dailySummaries.get(postedDate)!
         // Refunds use ShipmentItemAdjustmentList not ShipmentItemList
         const items = refund.ShipmentItemAdjustmentList || refund.shipmentItemAdjustmentList ||
                       refund.ShipmentItemList || refund.shipmentItemList || []
