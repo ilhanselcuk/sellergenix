@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { syncOrdersWithHistory } from '@/lib/services/orders-sync'
 import { extractProductsFromOrders } from '@/lib/services/products-from-orders'
+import { syncOrderItems } from '@/lib/services/order-items-sync'
 import { syncAllHistoricalFees } from '@/lib/amazon-sp-api'
 
 export const maxDuration = 300 // 5 minutes max for Vercel Pro
@@ -119,7 +120,26 @@ export async function POST(request: NextRequest) {
       results.errors.push(`Products: ${err.message}`)
     }
 
+    // NEW: Sync order items (line items) from Orders API
+    // This MUST happen BEFORE fee sync, because fee sync updates order_items table
+    console.log('\n📋 Syncing order items from Orders API...')
+    let totalItemsSynced = 0
+    try {
+      const itemsResult = await syncOrderItems(
+        user.id,
+        connection.refresh_token,
+        months * 30, // Same period as orders
+        500 // Process up to 500 orders
+      )
+      totalItemsSynced = itemsResult.itemsSynced
+      console.log(`✅ Synced ${itemsResult.itemsSynced} order items from ${itemsResult.ordersProcessed} orders`)
+    } catch (err: any) {
+      console.error('❌ Order items sync failed:', err.message)
+      results.errors.push(`Order items: ${err.message}`)
+    }
+
     // Sync historical fees from Finances API
+    // This updates the order_items rows created above with real fee data
     console.log('\n💰 Syncing historical fees from Finances API...')
     let totalFeesSynced = 0
     try {
@@ -135,14 +155,16 @@ export async function POST(request: NextRequest) {
 
     console.log(`\n✅ Full historical sync completed in ${duration}ms`)
     console.log(`   Orders: ${results.totalOrders}`)
+    console.log(`   Order Items: ${totalItemsSynced}`)
     console.log(`   Products: ${results.totalProducts}`)
     console.log(`   Fees: $${totalFeesSynced.toFixed(2)}`)
     console.log(`   Errors: ${results.errors.length}`)
 
     return NextResponse.json({
       success: true,
-      message: `Synced ${results.totalOrders} orders, ${results.totalProducts} products, and $${totalFeesSynced.toFixed(2)} fees from last ${months} months`,
+      message: `Synced ${results.totalOrders} orders, ${totalItemsSynced} items, ${results.totalProducts} products, and $${totalFeesSynced.toFixed(2)} fees from last ${months} months`,
       totalOrders: results.totalOrders,
+      totalOrderItems: totalItemsSynced,
       totalProducts: results.totalProducts,
       totalFees: totalFeesSynced,
       monthsProcessed: results.monthsProcessed,
