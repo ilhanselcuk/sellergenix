@@ -302,6 +302,80 @@ async function getRealFeesForPeriod(
       itemsByOrder.get(item.amazon_order_id)!.push(item)
     }
 
+    // =====================================================
+    // Step 2.5: Get historical fee data for pending orders
+    // For items that haven't shipped yet, estimate fees from
+    // the most recent shipped order with the same ASIN
+    // =====================================================
+
+    // Collect ASINs that need historical fee lookup (pending items with no fees)
+    const pendingAsins = new Set<string>()
+    for (const item of items || []) {
+      const isShipped = (item.quantity_shipped || 0) > 0
+      const hasRealFees = item.fee_source === 'api' && item.total_amazon_fees
+      if (!isShipped && !hasRealFees && item.asin) {
+        pendingAsins.add(item.asin)
+      }
+    }
+
+    // Fetch historical per-unit fees for these ASINs (from most recent shipped orders)
+    const asinFeeHistory = new Map<string, {
+      perUnitFee: number
+      perUnitFba: number
+      perUnitReferral: number
+      perUnitStorage: number
+      perUnitInbound: number
+      perUnitReturns: number
+      perUnitOther: number
+    }>()
+
+    if (pendingAsins.size > 0) {
+      console.log(`📦 Looking up historical fees for ${pendingAsins.size} pending ASINs...`)
+
+      // For each ASIN, get the most recent shipped order_item with real fee data
+      const { data: historicalItems } = await supabase
+        .from('order_items')
+        .select(`
+          asin,
+          quantity_shipped,
+          total_amazon_fees,
+          total_fba_fulfillment_fees,
+          total_referral_fees,
+          total_storage_fees,
+          total_inbound_fees,
+          total_return_fees,
+          total_other_fees,
+          fee_source,
+          created_at
+        `)
+        .eq('user_id', userId)
+        .in('asin', Array.from(pendingAsins))
+        .eq('fee_source', 'api')
+        .gt('quantity_shipped', 0)
+        .gt('total_amazon_fees', 0)
+        .order('created_at', { ascending: false })
+
+      if (historicalItems && historicalItems.length > 0) {
+        // Group by ASIN and take the most recent one
+        for (const item of historicalItems) {
+          if (item.asin && !asinFeeHistory.has(item.asin) && item.quantity_shipped > 0) {
+            const qty = item.quantity_shipped
+            asinFeeHistory.set(item.asin, {
+              perUnitFee: (item.total_amazon_fees || 0) / qty,
+              perUnitFba: (item.total_fba_fulfillment_fees || 0) / qty,
+              perUnitReferral: (item.total_referral_fees || 0) / qty,
+              perUnitStorage: (item.total_storage_fees || 0) / qty,
+              perUnitInbound: (item.total_inbound_fees || 0) / qty,
+              perUnitReturns: (item.total_return_fees || 0) / qty,
+              perUnitOther: (item.total_other_fees || 0) / qty,
+            })
+            console.log(`  ✅ Found historical fee for ${item.asin}: $${(item.total_amazon_fees / qty).toFixed(2)}/unit`)
+          }
+        }
+      }
+      console.log(`📦 Found historical fees for ${asinFeeHistory.size}/${pendingAsins.size} ASINs`)
+    }
+
     let totalFees = 0
     let totalCogs = 0
     let ordersWithRealFees = 0
@@ -325,14 +399,15 @@ async function getRealFeesForPeriod(
       let orderHasRealFees = false
 
       for (const item of orderItems) {
-        // Use quantity_shipped if available, otherwise fall back to quantity_ordered
-        const quantity = item.quantity_shipped || item.quantity_ordered || 1
+        const quantityOrdered = item.quantity_ordered || 1
+        const quantityShipped = item.quantity_shipped || 0
+        const isShipped = quantityShipped > 0
 
         // Check if we have detailed fee breakdown (fee_source = 'api')
         // IMPORTANT: Columns with "total_" prefix already contain TOTALS for all quantities!
         // Do NOT multiply by quantity again - that would double/triple count!
         if (item.fee_source === 'api' && item.total_amazon_fees) {
-          // Use detailed breakdown - values are already totals, no quantity multiplication needed
+          // SHIPPED with real fees - use as-is
           totalFees += (item.total_amazon_fees || 0)
           feeBreakdown.fbaFulfillment += (item.total_fba_fulfillment_fees || 0)
           feeBreakdown.referral += (item.total_referral_fees || 0)
@@ -344,11 +419,25 @@ async function getRealFeesForPeriod(
           feeBreakdown.other += (item.total_other_fees || 0)
           feeBreakdown.reimbursements += (item.total_reimbursements || 0)
           orderHasRealFees = true
+        } else if (!isShipped && item.asin && asinFeeHistory.has(item.asin)) {
+          // PENDING order - use historical per-unit fee from same ASIN
+          const history = asinFeeHistory.get(item.asin)!
+          const qty = quantityOrdered
+          totalFees += history.perUnitFee * qty
+          feeBreakdown.fbaFulfillment += history.perUnitFba * qty
+          feeBreakdown.referral += history.perUnitReferral * qty
+          feeBreakdown.storage += history.perUnitStorage * qty
+          feeBreakdown.inbound += history.perUnitInbound * qty
+          feeBreakdown.returns += history.perUnitReturns * qty
+          feeBreakdown.other += history.perUnitOther * qty
+          orderHasRealFees = true // Treated as "real" since it's based on actual historical data
+          console.log(`  📦 Pending order ${order.amazon_order_id}: estimated $${(history.perUnitFee * qty).toFixed(2)} from historical ASIN data`)
         } else if (item.estimated_amazon_fee) {
           // Legacy: estimated_amazon_fee is PER UNIT, so multiply by quantity
-          totalFees += item.estimated_amazon_fee * quantity
+          totalFees += item.estimated_amazon_fee * quantityOrdered
           orderHasRealFees = true
         }
+        // If none of the above, this order will have 0 fees (will be estimated later)
       }
 
       if (orderHasRealFees) {
