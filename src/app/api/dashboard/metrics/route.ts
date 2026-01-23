@@ -285,21 +285,23 @@ async function getRealFeesForPeriod(
         const quantity = item.quantity_shipped || item.quantity_ordered || 1
 
         // Check if we have detailed fee breakdown (fee_source = 'api')
+        // IMPORTANT: Columns with "total_" prefix already contain TOTALS for all quantities!
+        // Do NOT multiply by quantity again - that would double/triple count!
         if (item.fee_source === 'api' && item.total_amazon_fees) {
-          // Use detailed breakdown
-          totalFees += (item.total_amazon_fees || 0) * quantity
-          feeBreakdown.fbaFulfillment += (item.total_fba_fulfillment_fees || 0) * quantity
-          feeBreakdown.referral += (item.total_referral_fees || 0) * quantity
-          feeBreakdown.storage += (item.total_storage_fees || 0) * quantity
-          feeBreakdown.inbound += (item.total_inbound_fees || 0) * quantity
-          feeBreakdown.removal += (item.total_removal_fees || 0) * quantity
-          feeBreakdown.returns += (item.total_return_fees || 0) * quantity
-          feeBreakdown.chargebacks += (item.total_chargeback_fees || 0) * quantity
-          feeBreakdown.other += (item.total_other_fees || 0) * quantity
-          feeBreakdown.reimbursements += (item.total_reimbursements || 0) * quantity
+          // Use detailed breakdown - values are already totals, no quantity multiplication needed
+          totalFees += (item.total_amazon_fees || 0)
+          feeBreakdown.fbaFulfillment += (item.total_fba_fulfillment_fees || 0)
+          feeBreakdown.referral += (item.total_referral_fees || 0)
+          feeBreakdown.storage += (item.total_storage_fees || 0)
+          feeBreakdown.inbound += (item.total_inbound_fees || 0)
+          feeBreakdown.removal += (item.total_removal_fees || 0)
+          feeBreakdown.returns += (item.total_return_fees || 0)
+          feeBreakdown.chargebacks += (item.total_chargeback_fees || 0)
+          feeBreakdown.other += (item.total_other_fees || 0)
+          feeBreakdown.reimbursements += (item.total_reimbursements || 0)
           orderHasRealFees = true
         } else if (item.estimated_amazon_fee) {
-          // Legacy: only total fee available
+          // Legacy: estimated_amazon_fee is PER UNIT, so multiply by quantity
           totalFees += item.estimated_amazon_fee * quantity
           orderHasRealFees = true
         }
