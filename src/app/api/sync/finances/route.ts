@@ -292,10 +292,20 @@ export async function POST(request: NextRequest) {
     // =====================================================
     log(`\n💳 Processing service fee events...`)
     if (events.serviceFeeEvents) {
+      // Debug: Log raw service fee events
+      log(`   Found ${events.serviceFeeEvents.length} service fee events`)
+      for (let i = 0; i < Math.min(events.serviceFeeEvents.length, 3); i++) {
+        const evt = events.serviceFeeEvents[i]
+        log(`   Event ${i + 1}: ${JSON.stringify(evt).substring(0, 300)}...`)
+      }
+
       for (const event of events.serviceFeeEvents as any[]) {
         const postedDateRaw = event.PostedDate || event.postedDate
         const dateKey = postedDateRaw?.split('T')[0]
-        if (!dateKey) continue
+        if (!dateKey) {
+          log(`   ⚠️ No PostedDate in event: ${JSON.stringify(event).substring(0, 200)}`)
+          continue
+        }
 
         if (!dailySummaries.has(dateKey)) {
           dailySummaries.set(dateKey, { sales: 0, refunds: 0, fees: 0, units: 0, feeBreakdown: {}, orderCount: 0, promotions: 0 })
@@ -303,6 +313,11 @@ export async function POST(request: NextRequest) {
 
         const summary = dailySummaries.get(dateKey)!
         const feeList = event.FeeList || event.feeList || []
+
+        log(`   Processing event on ${dateKey}: FeeList has ${feeList.length} fees`)
+        if (feeList.length === 0) {
+          log(`   ⚠️ Empty FeeList! Raw event keys: ${Object.keys(event).join(', ')}`)
+        }
 
         for (const fee of feeList) {
           const feeType = String(fee.FeeType || fee.feeType || '').toLowerCase()
