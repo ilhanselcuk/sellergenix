@@ -107,60 +107,175 @@ Fee = Finances API'den ItemFeeList (FBA fee, Referral fee, Storage fee, etc.)
 
 ---
 
-### 🚨🚨🚨 AMAZON FEES SORUNU - DÜZELTİLMESİ GEREKİYOR! 🚨🚨🚨
+### ✅✅✅ AMAZON FEES SORUNU - DÜZELTİLDİ! (24 Ocak 2026) ✅✅✅
 
-**Tarih:** 21 Ocak 2026
-**Durum:** ❌ **YANLIŞ ÇALIŞIYOR - DÜZELTME BEKLİYOR**
+**Tarih:** 24 Ocak 2026
+**Durum:** ✅ **ÇÖZÜLDÜ - SELLERBOARD İLE AYNI DEĞERLER**
+**Commit:** `7cf2656` - "fix: Apply historical fee lookup to ALL orders without real fee data"
 
-**Sorun:** Amazon fee'leri yanlış hesaplanıyor/gösteriliyor.
+---
 
-**Araştırılması Gerekenler:**
-1. Fee'ler nereden çekiliyor? (Finances API? Database? Tahmin?)
-2. Hangi fee'ler eksik veya yanlış?
-3. Sellerboard ile karşılaştırma yapılmalı
-4. Pending vs Shipped siparişler için fee mantığı doğru mu?
+#### 🐛 SORUN NEYDİ?
 
-**İlgili Dosyalar:**
-- `/src/lib/amazon-sp-api/finances.ts` - Finances API
-- `/src/lib/amazon-sp-api/fee-service.ts` - Fee service
-- `/src/app/api/dashboard/metrics/route.ts` - Dashboard metrics (fee hesaplama)
-- `/src/components/dashboard/NewDashboardClient.tsx` - Frontend fee gösterimi
+**Belirti:** Sellerboard ile SellerGenix arasında Amazon fees farklı gösteriliyordu:
+- **Sellerboard Today:** Amazon fees = -$32.02
+- **SellerGenix Today:** Amazon fees = -$21.88
+- **Fark:** $10.14 eksik!
 
-**ÇÖZÜM BEKLENEN DAVRANIŞLAR:**
-1. ✅ Shipped siparişler için GERÇEK fee (Finances API'den)
-2. ✅ Pending siparişler için AYNI ÜRÜNÜN geçmiş fee ortalaması
-3. ✅ Fee breakdown doğru (Referral, FBA, Storage, etc.)
-4. ✅ Sellerboard ile aynı değerler
+**Kök Neden:** Historical fee lookup sadece PENDING siparişler için çalışıyordu. Shipped siparişler `fee_source: null` olduğunda $0 fee alıyordu.
 
-**NOT:** Bu sorun UTC timezone fix'ten sonra keşfedildi. Ayrı bir task olarak düzeltilmeli.
-- ❌ Canceled siparişleri sync etme (skip et, DB'den sil)
+---
 
-#### ✅ DOĞRU YAKLAŞIM:
-1. **Order Items API** → Pending sipariş fiyatını al
-2. **products tablosundaki avg_fee_per_unit** → Aynı ürünün geçmiş fee ortalamasını kullan
-3. **Finances API** → Shipped olunca gerçek fee'yi al ve güncelle
+#### 🔍 DETAYLI ANALİZ
 
-#### Fee Lookup Mantığı (products tablosu):
-```sql
--- Her ürün için ortalama fee saklanıyor
-products.avg_fee_per_unit = Shipped siparişlerdeki ortalama Amazon fee per unit
+**Veritabanı Durumu (24 Ocak 2026 Today):**
+```
+8 sipariş toplam:
+├── 5 Pending sipariş → Historical fee lookup ✅ çalışıyordu
+└── 3 Shipped sipariş → fee_source: null → $0 ❌ BUG!
 
--- Pending sipariş için fee hesabı:
-estimated_fee = products.avg_fee_per_unit * quantity
+Ürünler:
+├── B0F1CTMVGB: 5 adet × $3.38/unit = $16.90
+└── B0FP57MKF9: 3 adet × $5.04/unit = $15.12
+                                       --------
+                               Toplam: $32.02 (Sellerboard ile aynı!)
 ```
 
-#### Kod Örneği:
+**Sorunlu Kod (ÖNCE):**
 ```typescript
-// Pending sipariş için fee lookup
-const product = await getProductByASIN(item.asin)
-const estimatedFee = product.avg_fee_per_unit * item.quantity
+// Satır 324-331: Sadece PENDING siparişlerin ASIN'lerini topluyordu
+const pendingAsins = new Set<string>()
+for (const item of items || []) {
+  const isShipped = orderStatusMap.get(item.amazon_order_id) === 'Shipped'
+  const hasRealFees = item.fee_source === 'api' && item.total_amazon_fees
+  if (!isShipped && !hasRealFees && item.asin) {  // ❌ !isShipped = Shipped olanları hariç tut
+    pendingAsins.add(item.asin)
+  }
+}
 
-// Shipped olunca Finances API'den gerçek fee al ve products tablosunu güncelle
-const realFee = financesAPI.getFeeForOrder(orderId)
-await updateProductAvgFee(item.asin, realFee)
+// Satır 445: Historical lookup sadece pending için uygulanıyordu
+} else if (!isShipped && item.asin && asinFeeHistory.has(item.asin)) {  // ❌ !isShipped
+  // Historical fee lookup...
+}
 ```
 
-**⚠️ BU MANTIĞI DEĞİŞTİRME! Sellerboard'ın çalışma prensibi bu.**
+---
+
+#### ✅ ÇÖZÜM
+
+**Düzeltilmiş Kod (SONRA):**
+```typescript
+// Satır 324-333: TÜM fee_source=null siparişlerin ASIN'lerini topla
+const asinsNeedingFees = new Set<string>()  // Yeni isim: daha açıklayıcı
+for (const item of items || []) {
+  const hasRealFees = item.fee_source === 'api' && item.total_amazon_fees
+  // ✅ Shipped veya Pending fark etmez - fee yoksa historical lookup yap
+  if (!hasRealFees && item.asin) {
+    asinsNeedingFees.add(item.asin)
+  }
+}
+
+// Satır 445: Historical lookup TÜM fee'siz siparişler için uygula
+} else if (item.asin && asinFeeHistory.has(item.asin)) {  // ✅ !isShipped kaldırıldı
+  // Use historical per-unit fee from same ASIN for BOTH:
+  // 1. Pending orders (haven't shipped yet)
+  // 2. Shipped orders WITHOUT real fee data (fee_source is null)
+  const history = asinFeeHistory.get(item.asin)!
+  const qty = quantityOrdered
+  totalFees += history.perUnitFee * qty
+  feeBreakdown.fbaFulfillment += history.perUnitFba * qty
+  feeBreakdown.referral += history.perUnitReferral * qty
+  // ...
+}
+```
+
+---
+
+#### 📁 DEĞİŞEN DOSYALAR
+
+**`/src/app/api/dashboard/metrics/route.ts`:**
+
+| Satır | Değişiklik | Açıklama |
+|-------|------------|----------|
+| 318-322 | Yorum güncellendi | "pending orders" → "orders without real fees" |
+| 324-333 | `pendingAsins` → `asinsNeedingFees` | Değişken adı daha açıklayıcı |
+| 328-331 | `!isShipped` kaldırıldı | Shipped siparişler de dahil edildi |
+| 347 | Log mesajı güncellendi | "pending ASINs" → "ASINs without real fee data" |
+| 445 | `!isShipped` kaldırıldı | Historical lookup tüm fee'siz siparişlere uygulanıyor |
+| 460 | Log eklendi | Shipped/Pending bilgisi gösteriliyor |
+
+---
+
+#### 🎯 ETKİLENEN TÜM KARTLAR
+
+`getRealFeesForPeriod()` merkezi fonksiyon olduğu için FIX tüm kartlara uygulandı:
+
+| Kart | Durum | Açıklama |
+|------|-------|----------|
+| ✅ Today | Düzeltildi | Bugünkü tüm siparişler |
+| ✅ Yesterday | Düzeltildi | Dünkü tüm siparişler |
+| ✅ This Month | Düzeltildi | Bu ayki tüm siparişler |
+| ✅ Last Month | Düzeltildi | Geçen ayki tüm siparişler |
+| ✅ Custom Range | Düzeltildi | POST endpoint ile gelen tarih aralıkları |
+
+---
+
+#### 📊 FEE HESAPLAMA MANTIĞI (GÜNCEL)
+
+```
+Sipariş Fee Hesaplama Akışı:
+─────────────────────────────
+
+1. fee_source = 'api' VE total_amazon_fees > 0 ?
+   └── EVET → Gerçek fee kullan (Finance API'den)
+   └── HAYIR → Aşağıya devam
+
+2. ASIN için historical fee var mı? (asinFeeHistory map)
+   └── EVET → Historical per-unit fee × quantity kullan
+   └── HAYIR → Aşağıya devam
+
+3. total_amazon_fees veya estimated_amazon_fee var mı?
+   └── EVET → Bu değeri kullan
+   └── HAYIR → $0 (veri yok)
+```
+
+**Historical Fee Lookup:**
+```sql
+-- En son fee_source='api' olan siparişten per-unit fee al
+SELECT
+  asin,
+  total_amazon_fees / quantity_ordered AS per_unit_fee,
+  total_fba_fulfillment_fees / quantity_ordered AS per_unit_fba,
+  total_referral_fees / quantity_ordered AS per_unit_referral,
+  -- ...diğer fee breakdown'lar
+FROM order_items
+WHERE user_id = ?
+  AND asin IN (fee'siz ASIN'ler)
+  AND fee_source = 'api'
+  AND total_amazon_fees > 0
+ORDER BY created_at DESC
+```
+
+---
+
+#### ⚠️ GELECEK CLAUDE INSTANCE'LAR İÇİN KURALLAR
+
+1. **`!isShipped` KULLANMA** - Fee lookup'ta shipped/pending ayrımı yapma
+2. **`fee_source = 'api'`** - Gerçek fee olup olmadığını kontrol etmek için bu field kullan
+3. **Historical Lookup** - ASIN bazlı, en son gerçek fee'den per-unit hesapla
+4. **Tüm Kartlar Etkilenir** - `getRealFeesForPeriod()` merkezi fonksiyon
+5. **Test** - Sellerboard ile karşılaştır, aynı değerler olmalı
+
+---
+
+#### 🔗 İLGİLİ COMMITLER
+
+```
+7cf2656 fix: Apply historical fee lookup to ALL orders without real fee data
+18a6be1 fix: Match Sellerboard fee breakdown display behavior
+```
+
+**⚠️ BU FIX'İ GERİ ALMA! Sellerboard ile eşleşiyor artık.**
 
 ---
 
