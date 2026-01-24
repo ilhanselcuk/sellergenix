@@ -1026,6 +1026,7 @@ src/inngest/
 | `syncAmazonFees` | `amazon/sync.fees` event | Büyük fee sync (100+ sipariş) |
 | `syncSingleOrderFees` | `amazon/sync.order-fees` event | Tek sipariş fee sync |
 | `scheduledFeeSync` | Cron `*/15 * * * *` | Her 15 dk otomatik sync |
+| **`syncHistoricalData`** | `amazon/sync.historical` event | **2 YILLIK TARİHSEL SYNC** |
 
 #### Kullanım:
 
@@ -1068,6 +1069,129 @@ POST /api/sync/fees?userId=xxx&hours=24&type=shipped&sync=direct
 - ✅ **Concurrency** - Kullanıcı başına 1 sync
 - ✅ **Cron job** - Her 15 dk otomatik sync
 - ✅ **Step functions** - Her adım ayrı, hata izolasyonu
+
+---
+
+### 🚨🚨🚨 YENİ MÜŞTERİ TARİHSEL SYNC (24 Ocak 2026) 🚨🚨🚨
+
+**⚠️ BU BÖLÜM KRİTİK - HER YENİ MÜŞTERİ İÇİN 2 YIL VERİ SYNC!**
+
+#### Neden Gerekli?
+- Her yeni bağlanan müşterinin **geçmiş 2 yıllık** verisini çekmeliyiz
+- Vercel 60s timeout → Inngest background job kullanıyoruz
+- Orders + Order Items + Finances (fee breakdown) tamamı çekilmeli
+
+#### API Endpoint:
+
+```bash
+# Durum kontrolü (data coverage)
+GET /api/amazon/sync-historical
+
+Response:
+{
+  "dataCoverage": {
+    "oldestOrder": "2024-01-15",
+    "newestOrder": "2026-01-24",
+    "hasTwoYearCoverage": true
+  },
+  "counts": {
+    "orders": 1250,
+    "orderItems": 3400,
+    "itemsWithRealFees": 2800,
+    "feesCoveragePercent": "82.4"
+  }
+}
+
+# Historical sync başlat (Inngest background job)
+POST /api/amazon/sync-historical
+Body: { "yearsBack": 2 }  # 1 veya 2 yıl
+
+Response:
+{
+  "success": true,
+  "message": "Historical sync started for 2 year(s)",
+  "note": "This runs in the background. Check Inngest dashboard for progress."
+}
+```
+
+#### Inngest Akışı (`syncHistoricalData`):
+
+```
+1. Event: amazon/sync.historical
+   ↓
+2. Step 1: Initialize - 2 haftalık chunk'lara böl
+   ↓
+3. Step 2-N: Her chunk için:
+   ├─ syncOrdersForDateRange()     → Orders tablosuna kaydet
+   ├─ syncOrderItems()             → Order Items tablosuna kaydet
+   └─ bulkSyncFeesForDateRange()   → Fee breakdown ile güncelle
+   ↓
+4. Final Step: Summary log
+```
+
+#### Chunk Stratejisi:
+
+```typescript
+// 2 yıl = 730 gün = 52 chunk (2 haftalık)
+const CHUNK_SIZE_DAYS = 14
+
+// Her chunk için:
+for (let i = 0; i < totalChunks; i++) {
+  const chunkStart = new Date(startDate)
+  chunkStart.setDate(chunkStart.getDate() + (i * CHUNK_SIZE_DAYS))
+
+  const chunkEnd = new Date(chunkStart)
+  chunkEnd.setDate(chunkEnd.getDate() + CHUNK_SIZE_DAYS - 1)
+
+  // Orders sync
+  // Order items sync
+  // Fee sync with detailed breakdown
+}
+```
+
+#### Yeni Müşteri Bağlandığında:
+
+**⚠️ TODO: Bu otomatik tetiklenmeli!**
+
+Şu anda manuel tetikleme gerekiyor:
+1. Müşteri Amazon'u bağlar
+2. Dashboard'a girer
+3. "Sync Historical Data" butonuna tıklar
+4. Inngest background job başlar
+
+**İDEAL AKIŞ (Gelecek implementasyon):**
+1. Müşteri Amazon'u bağlar → OAuth callback
+2. Callback'te otomatik Inngest job tetikle:
+   ```typescript
+   // /api/auth/amazon/callback/route.ts
+   await inngest.send({
+     name: 'amazon/sync.historical',
+     data: {
+       userId: user.id,
+       refreshToken: connection.refresh_token,
+       marketplaceIds: connection.marketplace_ids,
+       yearsBack: 2
+     }
+   })
+   ```
+3. Kullanıcı beklerken progress bar göster
+4. Tamamlandığında notification/email
+
+#### İlgili Dosyalar:
+
+| Dosya | Amaç |
+|-------|------|
+| `/src/app/api/amazon/sync-historical/route.ts` | Historical sync API endpoint |
+| `/src/inngest/functions.ts` → `syncHistoricalData` | Inngest background job |
+| `/src/lib/services/order-items-sync.ts` | Order items + fee sync logic |
+| `/src/lib/amazon-sp-api/fee-service.ts` → `bulkSyncFeesForDateRange` | Fee breakdown sync |
+
+#### Önemli Notlar:
+
+1. **Rate Limiting:** Amazon API 1 request/second → Her chunk'ta 200ms delay
+2. **Error Handling:** Chunk başarısız olursa retry, diğer chunk'lar devam eder
+3. **Idempotent:** Aynı veri tekrar sync edilirse upsert (üzerine yazar)
+4. **Progress Tracking:** Inngest dashboard'dan izlenebilir
 
 ---
 
