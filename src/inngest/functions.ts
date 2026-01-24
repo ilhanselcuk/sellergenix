@@ -941,39 +941,67 @@ export const syncHistoricalDataReports = inngest.createFunction(
           // Get fees for this order (from Settlement Report)
           const fees = orderFees.get(order.amazonOrderId);
 
-          // Upsert order item
-          // Note: ParsedOrderItem from Reports API doesn't have orderItemId, so we generate one
-          const generatedOrderItemId = `${order.amazonOrderId}-${order.sku || order.asin || '1'}`;
-
-          const { error: itemError } = await supabase
+          // Try to find existing order_item by amazon_order_id + sku/asin
+          // (Order items may already exist from Finances API sync with real order_item_id)
+          const { data: existingItems } = await supabase
             .from("order_items")
-            .upsert(
-              {
-                user_id: userId,
-                amazon_order_id: order.amazonOrderId,
-                order_item_id: generatedOrderItemId,
-                asin: order.asin,
-                seller_sku: order.sku,
-                title: order.productName,
-                quantity_ordered: order.quantity || 1,
-                quantity_shipped: order.quantity || 0, // Reports API only has total quantity
-                item_price: order.itemPrice ? parseFloat(String(order.itemPrice)) : null,
-                item_tax: order.itemTax ? parseFloat(String(order.itemTax)) : null,
-                shipping_price: order.shippingPrice ? parseFloat(String(order.shippingPrice)) : null,
-                promotion_discount: order.itemPromotionDiscount ? parseFloat(String(order.itemPromotionDiscount)) : null,
-                // Real fees from Settlement Report
-                fba_fee: fees?.fbaFee || null,
-                referral_fee: fees?.referralFee || null,
-                promotion_fee: fees?.promotionDiscount || null,
-                other_fee: fees?.otherFees || null,
-                estimated_amazon_fee: fees?.totalFees || null,
-                fee_source: fees ? "settlement_report" : null,
-              },
-              { onConflict: "order_item_id" }
-            );
+            .select("order_item_id")
+            .eq("amazon_order_id", order.amazonOrderId)
+            .or(`seller_sku.eq.${order.sku},asin.eq.${order.asin}`)
+            .limit(1);
 
-          if (!itemError) {
-            itemsSaved++;
+          if (existingItems && existingItems.length > 0) {
+            // Update existing item with Settlement Report fees
+            if (fees) {
+              const { error: updateError } = await supabase
+                .from("order_items")
+                .update({
+                  fba_fee: fees.fbaFee || null,
+                  referral_fee: fees.referralFee || null,
+                  promotion_fee: fees.promotionDiscount || null,
+                  other_fee: fees.otherFees || null,
+                  estimated_amazon_fee: fees.totalFees || null,
+                  fee_source: "settlement_report",
+                })
+                .eq("order_item_id", existingItems[0].order_item_id);
+
+              if (!updateError) {
+                itemsSaved++;
+              }
+            }
+          } else {
+            // Insert new order item (no existing record)
+            const generatedOrderItemId = `${order.amazonOrderId}-${order.sku || order.asin || '1'}`;
+
+            const { error: itemError } = await supabase
+              .from("order_items")
+              .upsert(
+                {
+                  user_id: userId,
+                  amazon_order_id: order.amazonOrderId,
+                  order_item_id: generatedOrderItemId,
+                  asin: order.asin,
+                  seller_sku: order.sku,
+                  title: order.productName,
+                  quantity_ordered: order.quantity || 1,
+                  quantity_shipped: order.quantity || 0,
+                  item_price: order.itemPrice ? parseFloat(String(order.itemPrice)) : null,
+                  item_tax: order.itemTax ? parseFloat(String(order.itemTax)) : null,
+                  shipping_price: order.shippingPrice ? parseFloat(String(order.shippingPrice)) : null,
+                  promotion_discount: order.itemPromotionDiscount ? parseFloat(String(order.itemPromotionDiscount)) : null,
+                  fba_fee: fees?.fbaFee || null,
+                  referral_fee: fees?.referralFee || null,
+                  promotion_fee: fees?.promotionDiscount || null,
+                  other_fee: fees?.otherFees || null,
+                  estimated_amazon_fee: fees?.totalFees || null,
+                  fee_source: fees ? "settlement_report" : null,
+                },
+                { onConflict: "order_item_id" }
+              );
+
+            if (!itemError) {
+              itemsSaved++;
+            }
           }
         }
 
