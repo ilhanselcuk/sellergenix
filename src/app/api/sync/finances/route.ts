@@ -39,12 +39,38 @@ export async function POST(request: NextRequest) {
     const connection = connections[0]
     log(`✅ Found connection for seller: ${connection.seller_id}`)
 
-    // Fetch last 60 days of financial data
+    // Parse custom date range from request body (for historical sync)
+    let customStartDate: string | null = null
+    let customEndDate: string | null = null
+
+    try {
+      const body = await request.json()
+      customStartDate = body.startDate || null
+      customEndDate = body.endDate || null
+      if (customStartDate) log(`📅 Custom start date requested: ${customStartDate}`)
+      if (customEndDate) log(`📅 Custom end date requested: ${customEndDate}`)
+    } catch {
+      // No body or invalid JSON - use defaults
+    }
+
+    // Fetch financial data for specified range or default to last 60 days
     // Storage fees are posted around the 7th-15th of each month for previous month
     // Need wider range to capture monthly service fees (subscription, storage)
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - 60)
+    let endDate: Date
+    let startDate: Date
+
+    if (customStartDate && customEndDate) {
+      // Use custom date range for historical sync
+      startDate = new Date(customStartDate)
+      endDate = new Date(customEndDate)
+      log(`📅 Using CUSTOM date range: ${customStartDate} to ${customEndDate}`)
+    } else {
+      // Default: last 60 days
+      endDate = new Date()
+      startDate = new Date()
+      startDate.setDate(startDate.getDate() - 60)
+      log(`📅 Using DEFAULT date range: last 60 days`)
+    }
 
     log(`📅 Fetching financial events from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`)
 
@@ -540,6 +566,31 @@ export async function POST(request: NextRequest) {
     }
 
     log(`✅ Saved fee data for ${asinUpdated} SKUs`)
+
+    // =====================================================
+    // STEP 5: Sync detailed fee breakdown to order_items
+    // This is required for dashboard fee breakdown display!
+    // =====================================================
+    log(`\n💰 Syncing detailed fees to order_items table...`)
+
+    try {
+      const { bulkSyncFeesForDateRange } = await import('@/lib/amazon-sp-api/fee-service')
+
+      const feeSyncResult = await bulkSyncFeesForDateRange(
+        connection.user_id,
+        connection.refresh_token,
+        startDate,
+        endDate
+      )
+
+      if (feeSyncResult.success) {
+        log(`✅ order_items fee sync: ${feeSyncResult.ordersUpdated} orders, ${feeSyncResult.itemsUpdated} items, $${feeSyncResult.totalFeesApplied.toFixed(2)} fees`)
+      } else {
+        log(`⚠️ order_items fee sync partial: ${feeSyncResult.errors.join(', ')}`)
+      }
+    } catch (feeSyncError: any) {
+      log(`⚠️ order_items fee sync failed: ${feeSyncError.message}`)
+    }
 
     // Get yesterday in PST for comparison
     const now = new Date()

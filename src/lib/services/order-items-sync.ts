@@ -144,12 +144,16 @@ export async function syncOrderItemsForOrder(
  * @param refreshToken - Amazon refresh token
  * @param daysBack - Number of days to sync (default 30)
  * @param maxOrders - Maximum orders to process (default 100, to avoid timeout)
+ * @param customStartDate - Optional custom start date (overrides daysBack)
+ * @param customEndDate - Optional custom end date
  */
 export async function syncOrderItems(
   userId: string,
   refreshToken: string,
   daysBack: number = 30,
-  maxOrders: number = 100
+  maxOrders: number = 100,
+  customStartDate?: Date,
+  customEndDate?: Date
 ): Promise<OrderItemSyncResult> {
   const startTime = Date.now()
   let ordersProcessed = 0
@@ -158,21 +162,37 @@ export async function syncOrderItems(
   const errors: string[] = []
 
   console.log('🚀 Starting order items sync for user:', userId)
-  console.log('📅 Days back:', daysBack)
+  if (customStartDate && customEndDate) {
+    console.log('📅 Custom date range:', customStartDate.toISOString().split('T')[0], 'to', customEndDate.toISOString().split('T')[0])
+  } else {
+    console.log('📅 Days back:', daysBack)
+  }
   console.log('📦 Max orders:', maxOrders)
 
   try {
     // Calculate date range
-    const daysAgo = new Date()
-    daysAgo.setDate(daysAgo.getDate() - daysBack)
+    let startDateFilter: Date
+    if (customStartDate) {
+      startDateFilter = customStartDate
+    } else {
+      startDateFilter = new Date()
+      startDateFilter.setDate(startDateFilter.getDate() - daysBack)
+    }
 
     // Get orders from database that need items synced
     // Prioritize orders that haven't had items synced yet
-    const { data: orders, error: ordersError } = await supabase
+    let ordersQuery = supabase
       .from('orders')
       .select('amazon_order_id, order_status')
       .eq('user_id', userId)
-      .gte('purchase_date', daysAgo.toISOString())
+      .gte('purchase_date', startDateFilter.toISOString())
+
+    // Add end date filter if provided
+    if (customEndDate) {
+      ordersQuery = ordersQuery.lte('purchase_date', customEndDate.toISOString())
+    }
+
+    const { data: orders, error: ordersError } = await ordersQuery
       .order('purchase_date', { ascending: false })
       .limit(maxOrders)
 
@@ -281,11 +301,15 @@ export async function syncOrderItems(
  * @param userId - User ID
  * @param refreshToken - Amazon refresh token
  * @param daysBack - Number of days to sync (default 30)
+ * @param customStartDate - Optional custom start date (overrides daysBack)
+ * @param customEndDate - Optional custom end date
  */
 export async function syncOrderItemsWithFees(
   userId: string,
   refreshToken: string,
-  daysBack: number = 30
+  daysBack: number = 30,
+  customStartDate?: Date,
+  customEndDate?: Date
 ): Promise<{
   success: boolean
   itemsResult: OrderItemSyncResult
@@ -298,7 +322,7 @@ export async function syncOrderItemsWithFees(
 
   // Step 1: Sync order items
   console.log('📦 Step 1: Syncing order items from Orders API...')
-  const itemsResult = await syncOrderItems(userId, refreshToken, daysBack)
+  const itemsResult = await syncOrderItems(userId, refreshToken, daysBack, 500, customStartDate, customEndDate)
 
   if (!itemsResult.success) {
     return {
@@ -315,9 +339,18 @@ export async function syncOrderItemsWithFees(
     // Dynamic import to avoid circular dependencies
     const { bulkSyncFeesForDateRange } = await import('@/lib/amazon-sp-api/fee-service')
 
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - daysBack)
+    // Use custom dates if provided, otherwise calculate from daysBack
+    let startDate: Date
+    let endDate: Date
+
+    if (customStartDate && customEndDate) {
+      startDate = customStartDate
+      endDate = customEndDate
+    } else {
+      endDate = new Date()
+      startDate = new Date()
+      startDate.setDate(startDate.getDate() - daysBack)
+    }
 
     const feesResult = await bulkSyncFeesForDateRange(userId, refreshToken, startDate, endDate)
 

@@ -48,25 +48,45 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Parse request body
+    // Parse request body - supports both daysBack and custom date range
     let daysBack = 30
+    let customStartDate: string | null = null
+    let customEndDate: string | null = null
+
     try {
       const body = await request.json()
       if (body.daysBack && typeof body.daysBack === 'number') {
-        daysBack = Math.min(Math.max(body.daysBack, 1), 90) // Limit to 1-90 days
+        daysBack = Math.min(Math.max(body.daysBack, 1), 365) // Limit to 1-365 days
+      }
+      // Support custom date range for historical sync
+      if (body.startDate) {
+        customStartDate = body.startDate
+      }
+      if (body.endDate) {
+        customEndDate = body.endDate
       }
     } catch {
       // Use default 30 days if no body
     }
 
     console.log(`🚀 Starting order items + fees sync for user ${user.id}`)
-    console.log(`📅 Days back: ${daysBack}`)
+    if (customStartDate && customEndDate) {
+      console.log(`📅 Custom date range: ${customStartDate} to ${customEndDate}`)
+    } else {
+      console.log(`📅 Days back: ${daysBack}`)
+    }
+
+    // Parse custom dates if provided
+    const startDate = customStartDate ? new Date(customStartDate) : undefined
+    const endDate = customEndDate ? new Date(customEndDate) : undefined
 
     // Run the sync
     const result = await syncOrderItemsWithFees(
       user.id,
       connection.refresh_token,
-      daysBack
+      daysBack,
+      startDate,
+      endDate
     )
 
     if (!result.success) {
