@@ -419,7 +419,7 @@ export const syncHistoricalData = inngest.createFunction(
                   user_id: userId,
                   amazon_order_id: order.amazonOrderId,
                   purchase_date: order.purchaseDate,
-                  last_update_date: order.lastUpdatedDate,
+                  last_update_date: order.lastUpdateDate,
                   order_status: order.orderStatus,
                   fulfillment_channel: order.fulfillmentChannel,
                   sales_channel: order.salesChannel,
