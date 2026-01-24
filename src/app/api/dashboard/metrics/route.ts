@@ -151,6 +151,10 @@ async function getRealFeesForPeriod(
       (new Date(endDateStr).getTime() - new Date(startDateStr).getTime()) / (1000 * 60 * 60 * 24)
     ) + 1)
 
+    // Subscription fees only apply to periods >= 7 days (weekly or longer)
+    // Daily periods (Today, Yesterday, daily trends) should NOT include subscription fees
+    const shouldIncludeServiceFees = requestedDays >= 7
+
     if (serviceFees && serviceFees.length > 0) {
       for (const fee of serviceFees) {
         const totalAmount = parseFloat(String(fee.amount)) || 0
@@ -240,14 +244,14 @@ async function getRealFeesForPeriod(
     if (ordersError || !orders || orders.length === 0) {
       console.log('⚠️ No orders found for fee calculation in date range:', ordersError?.message)
       // Still return real fees from daily_metrics if available
-      const totalFees = hasRealFinanceData ? realFeesFromFinanceAPI : accountServiceFees.total
+      const totalFees = hasRealFinanceData ? realFeesFromFinanceAPI : (shouldIncludeServiceFees ? accountServiceFees.total : 0)
       return {
-        totalFees: totalFees + accountServiceFees.total,
+        totalFees: totalFees + (shouldIncludeServiceFees ? accountServiceFees.total : 0),
         totalCogs: 0,
         orderCount: 0,
-        feeSource: hasRealFinanceData ? 'real' : (accountServiceFees.total > 0 ? 'real' : 'estimated'),
+        feeSource: hasRealFinanceData ? 'real' : (shouldIncludeServiceFees && accountServiceFees.total > 0 ? 'real' : 'estimated'),
         feeBreakdown: emptyFeeBreakdown,
-        serviceFees: accountServiceFees,
+        serviceFees: shouldIncludeServiceFees ? accountServiceFees : emptyServiceFees,
         refunds: realRefundsFromFinanceAPI
       }
     }
@@ -292,12 +296,12 @@ async function getRealFeesForPeriod(
     if (itemsError) {
       console.log('⚠️ Could not fetch order items:', itemsError.message)
       return {
-        totalFees: accountServiceFees.total,
+        totalFees: shouldIncludeServiceFees ? accountServiceFees.total : 0,
         totalCogs: 0,
         orderCount: orders.length,
-        feeSource: accountServiceFees.total > 0 ? 'real' : 'estimated',
+        feeSource: shouldIncludeServiceFees && accountServiceFees.total > 0 ? 'real' : 'estimated',
         feeBreakdown: emptyFeeBreakdown,
-        serviceFees: accountServiceFees,
+        serviceFees: shouldIncludeServiceFees ? accountServiceFees : emptyServiceFees,
         refunds: realRefundsFromFinanceAPI
       }
     }
@@ -520,23 +524,29 @@ async function getRealFeesForPeriod(
       console.log(`⚠️ No fee data available, total: $${finalFees.toFixed(2)}`)
     }
 
-    // Add service fees to total
-    const totalFeesWithService = finalFees + accountServiceFees.total
+    // Add service fees to total ONLY for periods >= 7 days (weekly or longer)
+    // Daily periods (Today, Yesterday, Last 7 Days trend cards) should NOT include subscription fees
+    // NOTE: shouldIncludeServiceFees is already calculated at the top using requestedDays
+    const totalFeesWithService = shouldIncludeServiceFees
+      ? finalFees + accountServiceFees.total
+      : finalFees
 
-    console.log(`📊 Fee data for period:`)
+    console.log(`📊 Fee data for period (${requestedDays} days):`)
     console.log(`   Order fees: $${finalFees.toFixed(2)} (source: ${feeSource})`)
     console.log(`   Service fees: $${accountServiceFees.total.toFixed(2)} (Subscription: $${accountServiceFees.subscription.toFixed(2)}, Storage: $${accountServiceFees.storage.toFixed(2)})`)
+    console.log(`   Include service fees: ${shouldIncludeServiceFees ? 'YES (period >= 7 days)' : 'NO (daily period)'}`)
     console.log(`   TOTAL FEES: $${totalFeesWithService.toFixed(2)}`)
     console.log(`   Refunds: $${realRefundsFromFinanceAPI.toFixed(2)}`)
     console.log(`   COGS: $${totalCogs.toFixed(2)}`)
 
     return {
-      totalFees: totalFeesWithService, // REAL fees from Finance API + service fees!
+      totalFees: totalFeesWithService, // REAL fees from Finance API + service fees (if period >= 7 days)
       totalCogs,
       orderCount: orders.length,
       feeSource,
       feeBreakdown,
-      serviceFees: accountServiceFees,
+      // Zero out serviceFees for daily periods (< 7 days) - subscription doesn't apply to individual days
+      serviceFees: shouldIncludeServiceFees ? accountServiceFees : { subscription: 0, storage: 0, other: 0, total: 0 },
       refunds: realRefundsFromFinanceAPI
     }
   } catch (error) {
