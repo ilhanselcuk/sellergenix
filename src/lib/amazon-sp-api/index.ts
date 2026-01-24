@@ -28,8 +28,21 @@ export {
   getSalesAndTrafficReport,
   getOrdersReport,
   getFBAInventoryReport,
+  // NEW: Sellerboard-style bulk data functions
+  parseAllOrdersReport,
+  parseSettlementReport,
+  calculateFeesFromSettlement,
+  getAvailableSettlementReports,
+  bulkSyncHistoricalData,
 } from './reports'
-export type { ReportType, ReportOptions } from './reports'
+export type {
+  ReportType,
+  ReportOptions,
+  // NEW: Parsed data types
+  ParsedOrderItem,
+  ParsedSettlementRow,
+  OrderFeeBreakdown,
+} from './reports'
 
 // Finances
 export {

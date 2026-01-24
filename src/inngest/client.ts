@@ -53,5 +53,34 @@ export type SyncHistoricalDataEvent = {
   };
 };
 
+export type SyncHistoricalDataKioskEvent = {
+  name: "amazon/sync.historical-kiosk";
+  data: {
+    userId: string;
+    refreshToken: string;
+    yearsBack?: number; // Default 2 years
+  };
+};
+
+/**
+ * Sellerboard-style historical sync using Reports API
+ * Much faster and more scalable than individual API calls
+ */
+export type SyncHistoricalDataReportsEvent = {
+  name: "amazon/sync.historical-reports";
+  data: {
+    userId: string;
+    refreshToken: string;
+    marketplaceIds: string[];
+    yearsBack?: number; // Default 2 years
+  };
+};
+
 // Union type for all events
-export type InngestEvents = SyncFeesEvent | SyncOrderFeesEvent | RefreshProductAveragesEvent | SyncHistoricalDataEvent;
+export type InngestEvents =
+  | SyncFeesEvent
+  | SyncOrderFeesEvent
+  | RefreshProductAveragesEvent
+  | SyncHistoricalDataEvent
+  | SyncHistoricalDataKioskEvent
+  | SyncHistoricalDataReportsEvent;

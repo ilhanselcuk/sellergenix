@@ -1,18 +1,37 @@
 /**
  * Amazon SP-API Reports Integration
  *
- * This file provides functions to fetch and process Amazon SP-API reports
- * for dashboard metrics, sales data, and inventory tracking
+ * SELLERBOARD APPROACH: Bulk data fetching via Reports API instead of individual API calls.
+ * This is how Sellerboard and other tools efficiently sync large amounts of data.
+ *
+ * Key Reports:
+ * - GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL → All orders + items (bulk)
+ * - GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2 → All fees (settlement based)
+ *
+ * Flow:
+ * 1. createReport() - Request report generation
+ * 2. Poll getReportStatus() - Wait for DONE status
+ * 3. downloadReport() - Get file and parse
+ *
+ * Benefits:
+ * - 10K orders = 1 file download (vs 10K+ API calls)
+ * - No rate limiting issues
+ * - No timeouts
+ * - All fee data in settlement reports
  */
 
 import { createAmazonSPAPIClient } from './client'
+import { getAccessToken, SP_API_BASE_URL, DEFAULT_MARKETPLACE_ID } from './index'
 
 export type ReportType =
   | 'GET_SALES_AND_TRAFFIC_REPORT' // Sales & traffic by date
-  | 'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL' // Order details
+  | 'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL' // Order details (BULK!)
+  | 'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_LAST_UPDATE_GENERAL' // Orders by update date
   | 'GET_FBA_INVENTORY_PLANNING_DATA' // FBA inventory
   | 'GET_MERCHANT_LISTINGS_ALL_DATA' // All active listings
-  | 'GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE' // Settlement/finances
+  | 'GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE' // Settlement/finances (deprecated)
+  | 'GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2' // Settlement V2 (current)
+  | 'GET_FBA_STORAGE_FEE_CHARGES_DATA' // Storage fees by ASIN
 
 export interface ReportOptions {
   reportType: ReportType
@@ -397,5 +416,525 @@ export async function getFBAInventoryReport(
       success: false,
       error: error.message,
     }
+  }
+}
+
+// ============================================================
+// SELLERBOARD-STYLE BULK DATA FUNCTIONS
+// ============================================================
+
+/**
+ * Parse All Orders Report (tab-separated flat file)
+ * This contains orders + order items in a single file
+ */
+export interface ParsedOrderItem {
+  amazonOrderId: string
+  merchantOrderId: string
+  purchaseDate: string
+  lastUpdatedDate: string
+  orderStatus: string
+  fulfillmentChannel: string
+  salesChannel: string
+  orderChannel: string
+  shipServiceLevel: string
+  productName: string
+  sku: string
+  asin: string
+  itemStatus: string
+  quantity: number
+  currency: string
+  itemPrice: number
+  itemTax: number
+  shippingPrice: number
+  shippingTax: number
+  giftWrapPrice: number
+  giftWrapTax: number
+  itemPromotionDiscount: number
+  shipPromotionDiscount: number
+  shipCity: string
+  shipState: string
+  shipPostalCode: string
+  shipCountry: string
+  promotionIds: string
+  isBusinessOrder: boolean
+  purchaseOrderNumber: string
+  priceDesignation: string
+}
+
+export function parseAllOrdersReport(content: string): ParsedOrderItem[] {
+  const lines = content.trim().split('\n')
+  if (lines.length < 2) return []
+
+  // Parse header - handle different naming conventions
+  const headers = lines[0].split('\t').map((h) =>
+    h.trim().toLowerCase().replace(/[- ]/g, '_').replace(/[()]/g, '')
+  )
+
+  const items: ParsedOrderItem[] = []
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split('\t')
+    if (values.length < 5) continue // Skip malformed rows
+
+    const row: Record<string, string> = {}
+    headers.forEach((header, idx) => {
+      row[header] = values[idx]?.trim() || ''
+    })
+
+    // Map to our interface with multiple possible column names
+    const item: ParsedOrderItem = {
+      amazonOrderId: row['amazon_order_id'] || row['order_id'] || '',
+      merchantOrderId: row['merchant_order_id'] || '',
+      purchaseDate: row['purchase_date'] || '',
+      lastUpdatedDate: row['last_updated_date'] || '',
+      orderStatus: row['order_status'] || '',
+      fulfillmentChannel: row['fulfillment_channel'] || '',
+      salesChannel: row['sales_channel'] || '',
+      orderChannel: row['order_channel'] || '',
+      shipServiceLevel: row['ship_service_level'] || '',
+      productName: row['product_name'] || row['title'] || '',
+      sku: row['sku'] || '',
+      asin: row['asin'] || '',
+      itemStatus: row['item_status'] || '',
+      quantity: parseInt(row['quantity'] || row['quantity_ordered'] || '0') || 0,
+      currency: row['currency'] || 'USD',
+      itemPrice: parseFloat(row['item_price'] || '0') || 0,
+      itemTax: parseFloat(row['item_tax'] || '0') || 0,
+      shippingPrice: parseFloat(row['shipping_price'] || '0') || 0,
+      shippingTax: parseFloat(row['shipping_tax'] || '0') || 0,
+      giftWrapPrice: parseFloat(row['gift_wrap_price'] || '0') || 0,
+      giftWrapTax: parseFloat(row['gift_wrap_tax'] || '0') || 0,
+      itemPromotionDiscount: parseFloat(row['item_promotion_discount'] || '0') || 0,
+      shipPromotionDiscount: parseFloat(row['ship_promotion_discount'] || '0') || 0,
+      shipCity: row['ship_city'] || '',
+      shipState: row['ship_state'] || '',
+      shipPostalCode: row['ship_postal_code'] || '',
+      shipCountry: row['ship_country'] || '',
+      promotionIds: row['promotion_ids'] || '',
+      isBusinessOrder: row['is_business_order']?.toLowerCase() === 'true',
+      purchaseOrderNumber: row['purchase_order_number'] || '',
+      priceDesignation: row['price_designation'] || '',
+    }
+
+    if (item.amazonOrderId) {
+      items.push(item)
+    }
+  }
+
+  console.log(`📊 Parsed ${items.length} order items from All Orders Report`)
+  return items
+}
+
+/**
+ * Parse Settlement Report V2 (tab-separated)
+ * Contains all fees, refunds, and transactions for a settlement period
+ */
+export interface ParsedSettlementRow {
+  settlementId: string
+  settlementStartDate: string
+  settlementEndDate: string
+  depositDate: string
+  totalAmount: number
+  currency: string
+  transactionType: string
+  orderId: string
+  merchantOrderId: string
+  adjustmentId: string
+  shipmentId: string
+  marketplaceName: string
+  amountType: string
+  amountDescription: string
+  amount: number
+  fulfillmentId: string
+  postedDate: string
+  postedDateTime: string
+  orderItemCode: string
+  merchantOrderItemId: string
+  merchantAdjustmentItemId: string
+  sku: string
+  quantityPurchased: number
+  promotionId: string
+}
+
+export function parseSettlementReport(content: string): ParsedSettlementRow[] {
+  const lines = content.trim().split('\n')
+  if (lines.length < 2) return []
+
+  const headers = lines[0].split('\t').map((h) =>
+    h.trim().toLowerCase().replace(/[- ]/g, '_').replace(/[()]/g, '')
+  )
+
+  const rows: ParsedSettlementRow[] = []
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split('\t')
+    if (values.length < 5) continue
+
+    const row: Record<string, string> = {}
+    headers.forEach((header, idx) => {
+      row[header] = values[idx]?.trim() || ''
+    })
+
+    const parsed: ParsedSettlementRow = {
+      settlementId: row['settlement_id'] || '',
+      settlementStartDate: row['settlement_start_date'] || '',
+      settlementEndDate: row['settlement_end_date'] || '',
+      depositDate: row['deposit_date'] || '',
+      totalAmount: parseFloat(row['total_amount'] || '0') || 0,
+      currency: row['currency'] || 'USD',
+      transactionType: row['transaction_type'] || '',
+      orderId: row['order_id'] || '',
+      merchantOrderId: row['merchant_order_id'] || '',
+      adjustmentId: row['adjustment_id'] || '',
+      shipmentId: row['shipment_id'] || '',
+      marketplaceName: row['marketplace_name'] || '',
+      amountType: row['amount_type'] || '',
+      amountDescription: row['amount_description'] || '',
+      amount: parseFloat(row['amount'] || '0') || 0,
+      fulfillmentId: row['fulfillment_id'] || '',
+      postedDate: row['posted_date'] || '',
+      postedDateTime: row['posted_date_time'] || '',
+      orderItemCode: row['order_item_code'] || '',
+      merchantOrderItemId: row['merchant_order_item_id'] || '',
+      merchantAdjustmentItemId: row['merchant_adjustment_item_id'] || '',
+      sku: row['sku'] || '',
+      quantityPurchased: parseInt(row['quantity_purchased'] || '0') || 0,
+      promotionId: row['promotion_id'] || '',
+    }
+
+    rows.push(parsed)
+  }
+
+  console.log(`📊 Parsed ${rows.length} rows from Settlement Report`)
+  return rows
+}
+
+/**
+ * Calculate order-level fees from settlement data
+ */
+export interface OrderFeeBreakdown {
+  orderId: string
+  sku: string
+  quantity: number
+  principal: number      // Product price (positive)
+  fbaFee: number         // FBA fulfillment fee
+  referralFee: number    // Amazon commission
+  promotionDiscount: number
+  shippingCredit: number
+  shippingChargeback: number
+  giftWrap: number
+  otherFees: number
+  refundAmount: number
+  totalFees: number      // Sum of all fees (negative amounts)
+  netProceeds: number    // What seller actually receives
+}
+
+export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<string, OrderFeeBreakdown> {
+  const orderFeesMap = new Map<string, OrderFeeBreakdown>()
+
+  for (const row of rows) {
+    if (!row.orderId || row.transactionType === 'Transfer') continue
+
+    // Get or create order record
+    let orderFees = orderFeesMap.get(row.orderId)
+    if (!orderFees) {
+      orderFees = {
+        orderId: row.orderId,
+        sku: row.sku || '',
+        quantity: row.quantityPurchased || 0,
+        principal: 0,
+        fbaFee: 0,
+        referralFee: 0,
+        promotionDiscount: 0,
+        shippingCredit: 0,
+        shippingChargeback: 0,
+        giftWrap: 0,
+        otherFees: 0,
+        refundAmount: 0,
+        totalFees: 0,
+        netProceeds: 0,
+      }
+      orderFeesMap.set(row.orderId, orderFees)
+    }
+
+    // Update quantity if higher
+    if (row.quantityPurchased > orderFees.quantity) {
+      orderFees.quantity = row.quantityPurchased
+    }
+
+    // Categorize amount based on type and description
+    const amountType = (row.amountType || '').toLowerCase()
+    const amountDesc = (row.amountDescription || '').toLowerCase()
+    const amount = row.amount || 0
+
+    // Principal (product sale price)
+    if (amountType.includes('principal') || amountType.includes('itemprice') || amountType.includes('itemcharges')) {
+      if (amountDesc.includes('principal') || !amountDesc) {
+        orderFees.principal += amount
+      }
+    }
+
+    // FBA Fees
+    if (amountDesc.includes('fba') || amountDesc.includes('fulfillment fee') || amountDesc.includes('pick & pack')) {
+      orderFees.fbaFee += Math.abs(amount)
+    }
+
+    // Referral Fees
+    else if (amountDesc.includes('referral') || amountDesc.includes('commission')) {
+      orderFees.referralFee += Math.abs(amount)
+    }
+
+    // Promotions
+    else if (amountType.includes('promotion') || amountDesc.includes('promotion')) {
+      orderFees.promotionDiscount += Math.abs(amount)
+    }
+
+    // Shipping
+    else if (amountDesc.includes('shipping')) {
+      if (amountDesc.includes('chargeback')) {
+        orderFees.shippingChargeback += Math.abs(amount)
+      } else {
+        orderFees.shippingCredit += amount
+      }
+    }
+
+    // Gift Wrap
+    else if (amountDesc.includes('gift')) {
+      orderFees.giftWrap += amount
+    }
+
+    // Refunds
+    else if (row.transactionType === 'Refund' || amountDesc.includes('refund')) {
+      orderFees.refundAmount += Math.abs(amount)
+    }
+
+    // Other fees (negative amounts we couldn't categorize)
+    else if (amount < 0) {
+      orderFees.otherFees += Math.abs(amount)
+    }
+  }
+
+  // Calculate totals for each order
+  for (const [orderId, fees] of orderFeesMap) {
+    fees.totalFees = fees.fbaFee + fees.referralFee + fees.promotionDiscount + fees.otherFees
+    fees.netProceeds = fees.principal - fees.totalFees - fees.refundAmount + fees.shippingCredit
+    orderFeesMap.set(orderId, fees)
+  }
+
+  console.log(`💰 Calculated fees for ${orderFeesMap.size} orders from settlement data`)
+  return orderFeesMap
+}
+
+/**
+ * Get list of available settlement reports (auto-generated by Amazon)
+ */
+export async function getAvailableSettlementReports(
+  refreshToken: string,
+  options: {
+    createdAfter?: Date
+    marketplaceIds?: string[]
+  } = {}
+): Promise<{ success: boolean; reports?: any[]; error?: string }> {
+  try {
+    const accessToken = await getAccessToken(refreshToken)
+    const marketplaceIds = options.marketplaceIds || [DEFAULT_MARKETPLACE_ID]
+
+    const params = new URLSearchParams({
+      reportTypes: 'GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2',
+      marketplaceIds: marketplaceIds.join(','),
+      pageSize: '100',
+      processingStatuses: 'DONE',
+    })
+
+    if (options.createdAfter) {
+      params.append('createdAfter', options.createdAfter.toISOString())
+    }
+
+    console.log(`📋 Fetching settlement reports list...`)
+
+    const response = await fetch(
+      `${SP_API_BASE_URL}/reports/2021-06-30/reports?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: {
+          'x-amz-access-token': accessToken,
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      return { success: false, error: `API error: ${response.status} - ${errorText}` }
+    }
+
+    const data = await response.json()
+    console.log(`   Found ${data.reports?.length || 0} settlement reports`)
+
+    return { success: true, reports: data.reports || [] }
+  } catch (error: any) {
+    console.error('Failed to get settlement reports:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * MAIN FUNCTION: Bulk sync historical data using Reports API (Sellerboard approach)
+ *
+ * This is the efficient way to sync large amounts of data:
+ * 1. Request All Orders Report for date range
+ * 2. Fetch all available Settlement Reports
+ * 3. Parse and combine the data
+ *
+ * @param refreshToken - Amazon refresh token
+ * @param startDate - Start of date range
+ * @param endDate - End of date range
+ * @returns Orders with items and fees
+ */
+export async function bulkSyncHistoricalData(
+  refreshToken: string,
+  startDate: Date,
+  endDate: Date,
+  marketplaceIds?: string[]
+): Promise<{
+  success: boolean
+  orders?: ParsedOrderItem[]
+  orderFees?: Map<string, OrderFeeBreakdown>
+  stats?: {
+    totalOrders: number
+    totalOrderItems: number
+    ordersWithFees: number
+    dateRange: string
+  }
+  error?: string
+}> {
+  console.log(`🚀 Starting bulk historical sync (Sellerboard approach)`)
+  console.log(`   Date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`)
+
+  try {
+    // Step 1: Request All Orders Report
+    console.log(`\n📦 Step 1: Requesting All Orders Report...`)
+
+    const ordersReportRequest = await requestReport(refreshToken, {
+      reportType: 'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL',
+      startDate,
+      endDate,
+      marketplaceIds,
+    })
+
+    if (!ordersReportRequest.success || !ordersReportRequest.reportId) {
+      return { success: false, error: `Failed to request orders report: ${ordersReportRequest.error}` }
+    }
+
+    // Step 2: Wait for orders report to complete
+    console.log(`⏳ Waiting for orders report to generate...`)
+
+    let ordersReportStatus
+    let attempts = 0
+    const maxAttempts = 60 // 5 minutes max wait
+
+    while (attempts < maxAttempts) {
+      ordersReportStatus = await getReportStatus(refreshToken, ordersReportRequest.reportId)
+
+      if (!ordersReportStatus.success) {
+        return { success: false, error: 'Failed to check orders report status' }
+      }
+
+      if (ordersReportStatus.status === 'DONE') {
+        console.log(`✅ Orders report ready!`)
+        break
+      }
+
+      if (ordersReportStatus.status === 'FATAL' || ordersReportStatus.status === 'CANCELLED') {
+        return { success: false, error: `Orders report failed: ${ordersReportStatus.status}` }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 5000))
+      attempts++
+
+      if (attempts % 6 === 0) {
+        console.log(`   Still waiting... (${attempts * 5}s elapsed)`)
+      }
+    }
+
+    if (!ordersReportStatus || ordersReportStatus.status !== 'DONE') {
+      return { success: false, error: 'Orders report generation timed out' }
+    }
+
+    // Step 3: Download and parse orders report
+    console.log(`📥 Downloading orders report...`)
+
+    const ordersReportData = await downloadReport(refreshToken, ordersReportStatus.documentId!)
+
+    if (!ordersReportData.success || !ordersReportData.content) {
+      return { success: false, error: 'Failed to download orders report' }
+    }
+
+    const orders = parseAllOrdersReport(ordersReportData.content)
+    console.log(`   Parsed ${orders.length} order items`)
+
+    // Step 4: Get settlement reports for fee data
+    console.log(`\n💰 Step 2: Fetching Settlement Reports...`)
+
+    // Get settlements from 30 days before start date (to catch all fees)
+    const settlementStartDate = new Date(startDate)
+    settlementStartDate.setDate(settlementStartDate.getDate() - 30)
+
+    const settlementReportsResult = await getAvailableSettlementReports(refreshToken, {
+      createdAfter: settlementStartDate,
+      marketplaceIds,
+    })
+
+    let orderFees = new Map<string, OrderFeeBreakdown>()
+
+    if (settlementReportsResult.success && settlementReportsResult.reports && settlementReportsResult.reports.length > 0) {
+      console.log(`   Found ${settlementReportsResult.reports.length} settlement reports to process`)
+
+      const allSettlementRows: ParsedSettlementRow[] = []
+
+      for (const report of settlementReportsResult.reports) {
+        if (!report.reportDocumentId) continue
+
+        console.log(`   Processing settlement ${report.reportId}...`)
+
+        const settlementData = await downloadReport(refreshToken, report.reportDocumentId)
+
+        if (settlementData.success && settlementData.content) {
+          const rows = parseSettlementReport(settlementData.content)
+          allSettlementRows.push(...rows)
+        }
+
+        // Rate limiting between downloads
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+
+      // Calculate fees from all settlement data
+      orderFees = calculateFeesFromSettlement(allSettlementRows)
+    } else {
+      console.log(`   No settlement reports found (fees will use historical estimates)`)
+    }
+
+    // Calculate stats
+    const uniqueOrders = new Set(orders.map(o => o.amazonOrderId))
+    const stats = {
+      totalOrders: uniqueOrders.size,
+      totalOrderItems: orders.length,
+      ordersWithFees: orderFees.size,
+      dateRange: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
+    }
+
+    console.log(`\n✅ Bulk sync complete!`)
+    console.log(`   Orders: ${stats.totalOrders}`)
+    console.log(`   Order Items: ${stats.totalOrderItems}`)
+    console.log(`   Orders with fees: ${stats.ordersWithFees}`)
+
+    return {
+      success: true,
+      orders,
+      orderFees,
+      stats,
+    }
+  } catch (error: any) {
+    console.error('❌ Bulk sync failed:', error)
+    return { success: false, error: error.message }
   }
 }

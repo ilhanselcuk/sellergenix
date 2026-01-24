@@ -5,7 +5,15 @@
  * This is safe to call multiple times - Inngest handles concurrency
  *
  * POST /api/amazon/sync-historical
- * Body: { yearsBack?: number } (default: 2)
+ * Body: {
+ *   yearsBack?: number,      // Default: 2 (1-2 years)
+ *   method?: 'reports-api' | 'orders-api' | 'data-kiosk'  // Default: 'reports-api'
+ * }
+ *
+ * Methods:
+ * - reports-api: (RECOMMENDED) Sellerboard approach - bulk downloads, fastest, most scalable
+ * - orders-api: Individual API calls per order - slower but more reliable for small datasets
+ * - data-kiosk: GraphQL-based - good for aggregated analytics
  *
  * This endpoint:
  * 1. Validates user authentication
@@ -17,6 +25,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { inngest } from '@/inngest/client'
+
+type SyncMethod = 'reports-api' | 'orders-api' | 'data-kiosk'
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,20 +57,33 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     let yearsBack = 2
+    let method: SyncMethod = 'reports-api' // Default to Sellerboard approach (most scalable)
     try {
       const body = await request.json()
       if (body.yearsBack && typeof body.yearsBack === 'number') {
         yearsBack = Math.min(Math.max(body.yearsBack, 1), 2) // Limit to 1-2 years
       }
+      if (body.method && ['reports-api', 'orders-api', 'data-kiosk'].includes(body.method)) {
+        method = body.method as SyncMethod
+      }
     } catch {
-      // Use default 2 years if no body
+      // Use defaults if no body
     }
 
-    console.log(`🚀 Triggering historical sync for user ${user.id}, years: ${yearsBack}`)
+    console.log(`🚀 Triggering historical sync for user ${user.id}, years: ${yearsBack}, method: ${method}`)
+
+    // Choose event name based on method
+    const eventNames: Record<SyncMethod, string> = {
+      'reports-api': 'amazon/sync.historical-reports', // NEW: Sellerboard approach
+      'orders-api': 'amazon/sync.historical',          // Original: Individual API calls
+      'data-kiosk': 'amazon/sync.historical-kiosk',    // GraphQL approach
+    }
+
+    const eventName = eventNames[method]
 
     // Trigger Inngest background job
     await inngest.send({
-      name: 'amazon/sync.historical',
+      name: eventName as any,
       data: {
         userId: user.id,
         refreshToken: connection.refresh_token,
@@ -69,13 +92,22 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    const methodDescriptions: Record<SyncMethod, string> = {
+      'reports-api': 'Sellerboard approach - bulk reports download (fastest, most scalable)',
+      'orders-api': 'Individual API calls per order (slower, reliable)',
+      'data-kiosk': 'GraphQL-based aggregated data (good for analytics)',
+    }
+
     return NextResponse.json({
       success: true,
       message: `Historical sync started for ${yearsBack} year(s)`,
+      method,
+      methodDescription: methodDescriptions[method],
       note: 'This runs in the background. Check Inngest dashboard for progress.',
       jobDetails: {
         userId: user.id,
         yearsBack,
+        method,
         marketplaces: connection.marketplace_ids || ['ATVPDKIKX0DER'],
       },
     })
@@ -131,12 +163,22 @@ export async function GET(request: NextRequest) {
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id)
 
-    // Count items with real fees
-    const { count: itemsWithFees } = await supabase
+    // Count items with real fees from Finance API
+    const { count: itemsWithApiFees } = await supabase
       .from('order_items')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id)
       .eq('fee_source', 'api')
+
+    // Count items with real fees from Settlement Reports (Sellerboard approach)
+    const { count: itemsWithSettlementFees } = await supabase
+      .from('order_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('fee_source', 'settlement_report')
+
+    // Total items with REAL fees (either source)
+    const itemsWithFees = (itemsWithApiFees || 0) + (itemsWithSettlementFees || 0)
 
     // Calculate data coverage
     const twoYearsAgo = new Date()
@@ -159,8 +201,12 @@ export async function GET(request: NextRequest) {
       counts: {
         orders: orderCount || 0,
         orderItems: itemCount || 0,
-        itemsWithRealFees: itemsWithFees || 0,
+        itemsWithRealFees: itemsWithFees,
         feesCoveragePercent: feesCoverage,
+        feeSources: {
+          financeApi: itemsWithApiFees || 0,
+          settlementReport: itemsWithSettlementFees || 0,
+        },
       },
       recommendation: hasTwoYearCoverage
         ? 'Data coverage is good. Run sync to update recent data.'

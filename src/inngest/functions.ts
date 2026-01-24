@@ -794,6 +794,256 @@ export const syncHistoricalDataKiosk = inngest.createFunction(
   }
 );
 
+/**
+ * Historical Data Sync via Reports API (Sellerboard Approach)
+ *
+ * Uses Amazon's Reports API for bulk data retrieval - the same approach Sellerboard uses.
+ * This is MUCH faster and more reliable than individual Orders API calls.
+ *
+ * Process:
+ * 1. Request All Orders Report (GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL)
+ *    - Contains ALL orders + items in a single file (no pagination!)
+ * 2. Request Settlement Reports (GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2)
+ *    - Contains REAL Amazon fees (FBA, referral, storage, promotions, etc.)
+ * 3. Parse both reports and calculate fees per order
+ * 4. Save to database
+ *
+ * Benefits:
+ * - Single file download vs thousands of API calls
+ * - No rate limiting issues
+ * - Settlement reports have REAL fee breakdowns
+ * - Handles 10K+ orders/day easily
+ * - Same approach used by Sellerboard
+ *
+ * Limitations:
+ * - Settlement reports only for SHIPPED orders (pending uses historical ASIN average)
+ * - Reports can take 5-15 minutes to generate
+ */
+export const syncHistoricalDataReports = inngest.createFunction(
+  {
+    id: "sync-historical-data-reports",
+    retries: 3,
+    concurrency: {
+      limit: 1,
+      key: "event.data.userId",
+    },
+  },
+  { event: "amazon/sync.historical-reports" },
+  async ({ event, step }) => {
+    const { userId, refreshToken, marketplaceIds, yearsBack = 2 } = event.data;
+
+    console.log(`🚀 [Inngest] Starting Reports API sync for user ${userId}, years: ${yearsBack}`);
+
+    const results: Record<string, unknown> = {
+      startedAt: new Date().toISOString(),
+      yearsBack,
+      marketplaceIds,
+      method: "reports-api",
+    };
+
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setFullYear(startDate.getFullYear() - yearsBack);
+
+    console.log(`📅 Syncing data from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+    // Dynamic import
+    const { bulkSyncHistoricalData } = await import("@/lib/amazon-sp-api/reports");
+
+    // Step 1: Request and download All Orders Report
+    // This gets ALL orders + items in a single file (Sellerboard approach)
+    const bulkResult = await step.run("bulk-sync-orders-and-fees", async () => {
+      console.log("📊 [Reports API] Requesting bulk data (All Orders + Settlement Reports)...");
+
+      try {
+        const result = await bulkSyncHistoricalData(
+          refreshToken,
+          startDate,
+          endDate,
+          marketplaceIds
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || "Bulk sync failed");
+        }
+
+        console.log(`✅ [Reports API] Bulk data retrieved:
+          - Orders: ${result.stats?.totalOrders || 0}
+          - Order Items: ${result.stats?.totalOrderItems || 0}
+          - Orders with Fees: ${result.stats?.ordersWithFees || 0}
+        `);
+
+        return {
+          success: true,
+          orders: result.orders || [],
+          orderFees: result.orderFees ? Object.fromEntries(result.orderFees) : {},
+          stats: result.stats,
+        };
+      } catch (error) {
+        console.error("❌ [Reports API] Bulk sync error:", error);
+        throw error;
+      }
+    });
+
+    if (!bulkResult.success) {
+      results.error = "Failed to retrieve bulk data";
+      results.completedAt = new Date().toISOString();
+      return results;
+    }
+
+    // Step 2: Save orders to database (in chunks to avoid timeout)
+    const orders = bulkResult.orders;
+    const orderFees = new Map(Object.entries(bulkResult.orderFees || {}));
+    const CHUNK_SIZE = 500;
+    let totalOrdersSaved = 0;
+    let totalItemsSaved = 0;
+
+    for (let i = 0; i < orders.length; i += CHUNK_SIZE) {
+      const chunk = orders.slice(i, i + CHUNK_SIZE);
+      const chunkIndex = Math.floor(i / CHUNK_SIZE);
+
+      const saveResult = await step.run(`save-orders-chunk-${chunkIndex}`, async () => {
+        let ordersSaved = 0;
+        let itemsSaved = 0;
+
+        for (const order of chunk) {
+          // Skip canceled orders
+          if (order.orderStatus === "Canceled" || order.orderStatus === "Cancelled") {
+            continue;
+          }
+
+          // Upsert order
+          const { error: orderError } = await supabase
+            .from("orders")
+            .upsert(
+              {
+                user_id: userId,
+                amazon_order_id: order.amazonOrderId,
+                purchase_date: order.purchaseDate,
+                last_update_date: order.lastUpdateDate,
+                order_status: order.orderStatus,
+                fulfillment_channel: order.fulfillmentChannel,
+                sales_channel: order.salesChannel,
+                order_total: order.orderTotal ? parseFloat(String(order.orderTotal)) : null,
+                currency_code: order.currency || "USD",
+                marketplace_id: marketplaceIds?.[0] || "ATVPDKIKX0DER",
+                number_of_items_shipped: order.quantityShipped || 0,
+                number_of_items_unshipped: order.quantityOrdered ? order.quantityOrdered - (order.quantityShipped || 0) : 0,
+              },
+              { onConflict: "amazon_order_id" }
+            );
+
+          if (!orderError) {
+            ordersSaved++;
+          }
+
+          // Get fees for this order (from Settlement Report)
+          const fees = orderFees.get(order.amazonOrderId);
+
+          // Upsert order item
+          const { error: itemError } = await supabase
+            .from("order_items")
+            .upsert(
+              {
+                user_id: userId,
+                amazon_order_id: order.amazonOrderId,
+                order_item_id: order.orderItemId || `${order.amazonOrderId}-1`,
+                asin: order.asin,
+                seller_sku: order.sku,
+                title: order.productName,
+                quantity_ordered: order.quantityOrdered || 1,
+                quantity_shipped: order.quantityShipped || 0,
+                item_price: order.itemPrice ? parseFloat(String(order.itemPrice)) : null,
+                item_tax: order.itemTax ? parseFloat(String(order.itemTax)) : null,
+                shipping_price: order.shippingPrice ? parseFloat(String(order.shippingPrice)) : null,
+                promotion_discount: order.promotionDiscount ? parseFloat(String(order.promotionDiscount)) : null,
+                // Real fees from Settlement Report
+                fba_fee: fees?.fbaFee || null,
+                referral_fee: fees?.referralFee || null,
+                promotion_fee: fees?.promotionFee || null,
+                other_fee: fees?.otherFee || null,
+                estimated_amazon_fee: fees?.totalFee || null,
+                fee_source: fees ? "settlement_report" : null,
+              },
+              { onConflict: "order_item_id" }
+            );
+
+          if (!itemError) {
+            itemsSaved++;
+          }
+        }
+
+        return { ordersSaved, itemsSaved };
+      });
+
+      totalOrdersSaved += saveResult.ordersSaved;
+      totalItemsSaved += saveResult.itemsSaved;
+
+      // Progress log
+      console.log(`📦 Chunk ${chunkIndex + 1}: Saved ${saveResult.ordersSaved} orders, ${saveResult.itemsSaved} items`);
+
+      // Small delay between chunks
+      if (i + CHUNK_SIZE < orders.length) {
+        await step.sleep(`save-delay-${chunkIndex}`, "500ms");
+      }
+    }
+
+    // Step 3: Update product fee averages (uses REAL fee data from Settlement Reports)
+    await step.run("refresh-product-averages", async () => {
+      try {
+        const result = await refreshAllProductFeeAverages(userId);
+        console.log(`✅ Product fee averages updated`);
+        return result;
+      } catch (error) {
+        console.error("Error updating product averages:", error);
+        return { error: String(error) };
+      }
+    });
+
+    // Step 4: Estimate fees for pending orders (using historical ASIN averages)
+    // Settlement Reports only have shipped orders, so pending orders need estimation
+    await step.run("estimate-pending-order-fees", async () => {
+      console.log("💰 Estimating fees for pending orders (using historical ASIN averages)...");
+
+      // Get pending orders
+      const { data: pendingOrders, error } = await supabase
+        .from("orders")
+        .select("amazon_order_id")
+        .eq("user_id", userId)
+        .in("order_status", ["Pending", "Unshipped"]);
+
+      if (error || !pendingOrders) {
+        return { total: 0, error: error?.message };
+      }
+
+      let estimated = 0;
+      for (const order of pendingOrders) {
+        try {
+          const result = await estimatePendingOrderFees(userId, order.amazon_order_id);
+          if (result.success) {
+            estimated++;
+          }
+        } catch (err) {
+          // Continue on error
+        }
+      }
+
+      console.log(`✅ Estimated fees for ${estimated}/${pendingOrders.length} pending orders`);
+      return { total: pendingOrders.length, estimated };
+    });
+
+    results.totalOrders = totalOrdersSaved;
+    results.totalOrderItems = totalItemsSaved;
+    results.ordersWithFees = bulkResult.stats?.ordersWithFees || 0;
+    results.completedAt = new Date().toISOString();
+
+    console.log(`🎉 [Inngest] Reports API sync completed for user ${userId}:`, results);
+
+    return results;
+  }
+);
+
 // Export all functions
 export const functions = [
   syncAmazonFees,
@@ -801,4 +1051,5 @@ export const functions = [
   scheduledFeeSync,
   syncHistoricalData,
   syncHistoricalDataKiosk,
+  syncHistoricalDataReports, // NEW: Sellerboard approach
 ];
