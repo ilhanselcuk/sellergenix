@@ -21,7 +21,25 @@
  */
 
 import { createAmazonSPAPIClient } from './client'
-import { getAccessToken, SP_API_BASE_URL, DEFAULT_MARKETPLACE_ID } from './index'
+import { AMAZON_SP_API_ENDPOINTS, AMAZON_MARKETPLACE_IDS } from './config'
+import { refreshAccessToken } from './oauth'
+
+// Default marketplace ID (US)
+const DEFAULT_MARKETPLACE_ID = AMAZON_MARKETPLACE_IDS.US
+
+// SP-API Base URL for NA region
+const SP_API_BASE_URL = AMAZON_SP_API_ENDPOINTS.na
+
+/**
+ * Helper function to get access token from refresh token
+ */
+async function getAccessToken(refreshToken: string): Promise<string> {
+  const result = await refreshAccessToken(refreshToken)
+  if (!result.success || !result.data?.access_token) {
+    throw new Error(result.error || 'Failed to get access token')
+  }
+  return result.data.access_token
+}
 
 export type ReportType =
   | 'GET_SALES_AND_TRAFFIC_REPORT' // Sales & traffic by date
