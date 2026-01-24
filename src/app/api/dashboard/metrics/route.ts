@@ -316,20 +316,19 @@ async function getRealFeesForPeriod(
     }
 
     // =====================================================
-    // Step 2.5: Get historical fee data for pending orders
-    // For items that haven't shipped yet, estimate fees from
-    // the most recent shipped order with the same ASIN
+    // Step 2.5: Get historical fee data for orders without real fees
+    // For ALL items without real fee data (pending OR shipped),
+    // estimate fees from orders with same ASIN that have real fees
     // =====================================================
 
-    // Collect ASINs that need historical fee lookup (pending items with no fees)
-    const pendingAsins = new Set<string>()
+    // Collect ASINs that need historical fee lookup (ANY items without real fees)
+    // This includes both pending orders AND shipped orders that don't have fee_source='api'
+    const asinsNeedingFees = new Set<string>()
     for (const item of items || []) {
-      // Use order_status from orders table instead of quantity_shipped (which is often 0)
-      const orderStatus = orderStatusMap.get(item.amazon_order_id)
-      const isShipped = orderStatus === 'Shipped'
       const hasRealFees = item.fee_source === 'api' && item.total_amazon_fees
-      if (!isShipped && !hasRealFees && item.asin) {
-        pendingAsins.add(item.asin)
+      // Include ALL orders without real fees - both pending and shipped
+      if (!hasRealFees && item.asin) {
+        asinsNeedingFees.add(item.asin)
       }
     }
 
@@ -344,8 +343,8 @@ async function getRealFeesForPeriod(
       perUnitOther: number
     }>()
 
-    if (pendingAsins.size > 0) {
-      console.log(`📦 Looking up historical fees for ${pendingAsins.size} pending ASINs...`)
+    if (asinsNeedingFees.size > 0) {
+      console.log(`📦 Looking up historical fees for ${asinsNeedingFees.size} ASINs without real fee data...`)
 
       // For each ASIN, get the most recent order_item with real fee data from Finance API
       // NOTE: We use fee_source='api' and total_amazon_fees > 0 to find items with real fees
@@ -366,7 +365,7 @@ async function getRealFeesForPeriod(
           created_at
         `)
         .eq('user_id', userId)
-        .in('asin', Array.from(pendingAsins))
+        .in('asin', Array.from(asinsNeedingFees))
         .eq('fee_source', 'api')
         .gt('total_amazon_fees', 0)
         .order('created_at', { ascending: false })
@@ -390,7 +389,7 @@ async function getRealFeesForPeriod(
           }
         }
       }
-      console.log(`📦 Found historical fees for ${asinFeeHistory.size}/${pendingAsins.size} ASINs`)
+      console.log(`📦 Found historical fees for ${asinFeeHistory.size}/${asinsNeedingFees.size} ASINs`)
     }
 
     let totalFees = 0
@@ -430,7 +429,7 @@ async function getRealFeesForPeriod(
         // The fee_source='api' on pending orders is misleading - those are estimates, not real fees.
 
         if (isShipped && item.fee_source === 'api' && item.total_amazon_fees) {
-          // SHIPPED with real fees - use as-is (Finance API confirmed)
+          // SHIPPED with real fees from Finance API - use as-is
           totalFees += (item.total_amazon_fees || 0)
           feeBreakdown.fbaFulfillment += (item.total_fba_fulfillment_fees || 0)
           feeBreakdown.referral += (item.total_referral_fees || 0)
@@ -442,9 +441,11 @@ async function getRealFeesForPeriod(
           feeBreakdown.other += (item.total_other_fees || 0)
           feeBreakdown.reimbursements += (item.total_reimbursements || 0)
           orderHasRealFees = true
-        } else if (!isShipped && item.asin && asinFeeHistory.has(item.asin)) {
-          // PENDING order - ALWAYS use historical per-unit fee from same ASIN
-          // This ensures pending orders have estimated fees until they ship
+        } else if (item.asin && asinFeeHistory.has(item.asin)) {
+          // Use historical per-unit fee from same ASIN for BOTH:
+          // 1. Pending orders (haven't shipped yet)
+          // 2. Shipped orders WITHOUT real fee data (fee_source is null or fees not synced yet)
+          // This ensures ALL orders get estimated fees based on actual historical data
           const history = asinFeeHistory.get(item.asin)!
           const qty = quantityOrdered
           totalFees += history.perUnitFee * qty
@@ -455,9 +456,9 @@ async function getRealFeesForPeriod(
           feeBreakdown.returns += history.perUnitReturns * qty
           feeBreakdown.other += history.perUnitOther * qty
           orderHasRealFees = true // Treated as "real" since it's based on actual historical data
-          console.log(`  📦 Pending order ${order.amazon_order_id}: estimated $${(history.perUnitFee * qty).toFixed(2)} from historical ASIN ${item.asin}`)
-        } else if (!isShipped && item.total_amazon_fees) {
-          // PENDING with pre-estimated fees (from fee sync) - use those
+          console.log(`  📦 ${isShipped ? 'Shipped' : 'Pending'} order ${order.amazon_order_id}: estimated $${(history.perUnitFee * qty).toFixed(2)} from historical ASIN ${item.asin}`)
+        } else if (item.total_amazon_fees) {
+          // Has pre-estimated fees (from fee sync) - use those
           totalFees += (item.total_amazon_fees || 0)
           feeBreakdown.fbaFulfillment += (item.total_fba_fulfillment_fees || 0)
           orderHasRealFees = true
@@ -466,7 +467,7 @@ async function getRealFeesForPeriod(
           totalFees += item.estimated_amazon_fee * quantityOrdered
           orderHasRealFees = true
         }
-        // If none of the above, this order will have 0 fees (will be estimated later)
+        // If none of the above, this order will have 0 fees (no historical data available)
       }
 
       if (orderHasRealFees) {
