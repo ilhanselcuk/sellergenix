@@ -925,11 +925,11 @@ export const syncHistoricalDataReports = inngest.createFunction(
                 order_status: order.orderStatus,
                 fulfillment_channel: order.fulfillmentChannel,
                 sales_channel: order.salesChannel,
-                order_total: order.orderTotal ? parseFloat(String(order.orderTotal)) : null,
+                order_total: order.itemPrice ? parseFloat(String(order.itemPrice)) : null,
                 currency_code: order.currency || "USD",
                 marketplace_id: marketplaceIds?.[0] || "ATVPDKIKX0DER",
-                number_of_items_shipped: order.quantityShipped || 0,
-                number_of_items_unshipped: order.quantityOrdered ? order.quantityOrdered - (order.quantityShipped || 0) : 0,
+                number_of_items_shipped: order.quantity || 0,
+                number_of_items_unshipped: 0, // Reports API doesn't have separate shipped/unshipped counts
               },
               { onConflict: "amazon_order_id" }
             );
@@ -942,28 +942,31 @@ export const syncHistoricalDataReports = inngest.createFunction(
           const fees = orderFees.get(order.amazonOrderId);
 
           // Upsert order item
+          // Note: ParsedOrderItem from Reports API doesn't have orderItemId, so we generate one
+          const generatedOrderItemId = `${order.amazonOrderId}-${order.sku || order.asin || '1'}`;
+
           const { error: itemError } = await supabase
             .from("order_items")
             .upsert(
               {
                 user_id: userId,
                 amazon_order_id: order.amazonOrderId,
-                order_item_id: order.orderItemId || `${order.amazonOrderId}-1`,
+                order_item_id: generatedOrderItemId,
                 asin: order.asin,
                 seller_sku: order.sku,
                 title: order.productName,
-                quantity_ordered: order.quantityOrdered || 1,
-                quantity_shipped: order.quantityShipped || 0,
+                quantity_ordered: order.quantity || 1,
+                quantity_shipped: order.quantity || 0, // Reports API only has total quantity
                 item_price: order.itemPrice ? parseFloat(String(order.itemPrice)) : null,
                 item_tax: order.itemTax ? parseFloat(String(order.itemTax)) : null,
                 shipping_price: order.shippingPrice ? parseFloat(String(order.shippingPrice)) : null,
-                promotion_discount: order.promotionDiscount ? parseFloat(String(order.promotionDiscount)) : null,
+                promotion_discount: order.itemPromotionDiscount ? parseFloat(String(order.itemPromotionDiscount)) : null,
                 // Real fees from Settlement Report
                 fba_fee: fees?.fbaFee || null,
                 referral_fee: fees?.referralFee || null,
-                promotion_fee: fees?.promotionFee || null,
-                other_fee: fees?.otherFee || null,
-                estimated_amazon_fee: fees?.totalFee || null,
+                promotion_fee: fees?.promotionDiscount || null,
+                other_fee: fees?.otherFees || null,
+                estimated_amazon_fee: fees?.totalFees || null,
                 fee_source: fees ? "settlement_report" : null,
               },
               { onConflict: "order_item_id" }
