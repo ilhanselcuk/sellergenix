@@ -156,6 +156,27 @@ export async function handleAmazonCallbackAction(
 
     revalidatePath('/dashboard/amazon')
 
+    // ========================================
+    // AUTO-SYNC: Trigger 2-year historical sync via Inngest
+    // Uses Inngest for reliable background processing (no timeout)
+    // ========================================
+    try {
+      console.log('🚀 [OAuth] Triggering 2-year historical sync via Inngest...')
+      await inngest.send({
+        name: 'amazon/sync.historical',
+        data: {
+          userId,
+          refreshToken: refresh_token,
+          marketplaceIds: marketplaceIds.length > 0 ? marketplaceIds : ['ATVPDKIKX0DER'],
+          yearsBack: 2
+        }
+      })
+      console.log('✅ [OAuth] Historical sync triggered successfully!')
+    } catch (inngestError) {
+      console.error('⚠️ [OAuth] Failed to trigger Inngest sync (non-blocking):', inngestError)
+      // Don't fail the connection - sync can be triggered manually later
+    }
+
     return {
       success: true,
       connection

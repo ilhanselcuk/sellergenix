@@ -1,12 +1,20 @@
 /**
- * Settlement Report Fee Sync
+ * Settlement Report Fee Sync API
  *
  * Downloads Settlement Reports and updates existing order_items with real fees.
  * This bypasses the All Orders Report and directly matches Settlement fees to database records.
+ *
+ * IMPORTANT: Uses Inngest for background processing to avoid Vercel timeout (60s limit)
+ *
+ * Query params:
+ * - sync=direct: Run synchronously (for small syncs, may timeout)
+ * - sync=background (default): Trigger Inngest job (recommended)
+ * - monthsBack: How many months of settlement reports to process (default: 3)
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { inngest } from '@/inngest'
 import {
   getAvailableSettlementReports,
   downloadReport,
@@ -23,6 +31,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Get sync mode from query params
+    const searchParams = request.nextUrl.searchParams
+    const syncMode = searchParams.get('sync') || 'background'
+    const monthsBack = parseInt(searchParams.get('monthsBack') || '3', 10)
+
     // Get Amazon connection
     const { data: connection } = await supabase
       .from('amazon_connections')
@@ -35,14 +48,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No Amazon connection' }, { status: 404 })
     }
 
+    // ========================================
+    // BACKGROUND MODE (Default - Recommended)
+    // Uses Inngest for reliable processing without timeout
+    // ========================================
+    if (syncMode === 'background') {
+      console.log('🚀 [Settlement] Triggering Inngest background job...')
+
+      await inngest.send({
+        name: 'amazon/sync.settlement-fees',
+        data: {
+          userId: user.id,
+          refreshToken: connection.refresh_token,
+          marketplaceIds: connection.marketplace_ids || ['ATVPDKIKX0DER'],
+          monthsBack
+        }
+      })
+
+      return NextResponse.json({
+        success: true,
+        mode: 'background',
+        message: `Settlement fee sync started in background (${monthsBack} months)`,
+        note: 'Check Inngest dashboard for progress: https://app.inngest.com'
+      })
+    }
+
+    // ========================================
+    // DIRECT MODE (Synchronous - May timeout)
+    // Only use for small syncs or debugging
+    // ========================================
+    console.log('⚠️ [Settlement] Running in direct mode (may timeout for large syncs)')
+
     const results: any = {
       startedAt: new Date().toISOString(),
       steps: []
     }
 
-    // Step 1: Get Settlement Reports (last 3 months)
+    // Step 1: Get Settlement Reports (last N months)
     const startDate = new Date()
-    startDate.setMonth(startDate.getMonth() - 3)
+    startDate.setMonth(startDate.getMonth() - monthsBack)
 
     results.steps.push({ step: 'Fetching settlement reports...' })
 
@@ -163,6 +207,7 @@ export async function POST(request: NextRequest) {
     })
 
     results.completedAt = new Date().toISOString()
+    results.mode = 'direct'
     results.summary = {
       settlementReports: reportsResult.reports.length,
       settlementRows: allSettlementRows.length,
@@ -192,6 +237,18 @@ export async function GET(request: NextRequest) {
     endpoint: '/api/sync/settlement-fees',
     method: 'POST',
     description: 'Downloads Settlement Reports and updates existing order_items with real Amazon fees',
-    note: 'This bypasses All Orders Report and directly matches fees to database records'
+    note: 'Uses Inngest background job by default to avoid timeout',
+    queryParams: {
+      'sync': {
+        'background': '(default) Trigger Inngest job - recommended for production',
+        'direct': 'Run synchronously - may timeout for large syncs'
+      },
+      'monthsBack': 'Number of months to process (default: 3)'
+    },
+    examples: [
+      'POST /api/sync/settlement-fees - Background mode (default)',
+      'POST /api/sync/settlement-fees?sync=direct - Direct mode (may timeout)',
+      'POST /api/sync/settlement-fees?monthsBack=6 - 6 months of reports'
+    ]
   })
 }

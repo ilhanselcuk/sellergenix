@@ -588,10 +588,36 @@ export const syncHistoricalData = inngest.createFunction(
       }
     });
 
+    // ========================================
+    // TRIGGER SETTLEMENT FEE SYNC
+    // Finances API often returns 0 for fees, Settlement Reports have REAL fees
+    // This runs AFTER orders are synced so it can match fees to existing order_items
+    // ========================================
+    await step.run("trigger-settlement-fee-sync", async () => {
+      try {
+        console.log('📊 [Inngest] Triggering Settlement Report fee sync...');
+        await inngest.send({
+          name: 'amazon/sync.settlement-fees',
+          data: {
+            userId,
+            refreshToken,
+            marketplaceIds: marketplaceIds || ['ATVPDKIKX0DER'],
+            monthsBack: 6 // 6 months of settlement reports
+          }
+        });
+        console.log('✅ [Inngest] Settlement fee sync triggered!');
+        return { triggered: true };
+      } catch (error) {
+        console.error('⚠️ [Inngest] Failed to trigger settlement sync:', error);
+        return { triggered: false, error: String(error) };
+      }
+    });
+
     results.totalOrders = totalOrders;
     results.totalOrderItems = totalOrderItems;
     results.processedChunks = processedChunks;
     results.feeSync = feeResult;
+    results.settlementSyncTriggered = true;
     results.completedAt = new Date().toISOString();
 
     console.log(`🎉 [Inngest] Historical sync completed for user ${userId}:`, results);
@@ -1105,6 +1131,215 @@ export const syncHistoricalDataReports = inngest.createFunction(
   }
 );
 
+/**
+ * Settlement Report Fee Sync
+ *
+ * Downloads Settlement Reports directly and updates existing order_items with REAL fees.
+ * This bypasses All Orders Report (which can return 0) and works on already-synced order_items.
+ *
+ * This is the Sellerboard approach:
+ * - Settlement Reports have REAL fee breakdowns (FBA, referral, promotions, etc.)
+ * - Fees are matched to existing order_items by amazon_order_id + seller_sku
+ * - Sets fee_source = 'settlement_report'
+ */
+export const syncSettlementFees = inngest.createFunction(
+  {
+    id: "sync-settlement-fees",
+    retries: 3,
+    concurrency: {
+      limit: 1,
+      key: "event.data.userId",
+    },
+  },
+  { event: "amazon/sync.settlement-fees" },
+  async ({ event, step }) => {
+    const { userId, refreshToken, marketplaceIds = ['ATVPDKIKX0DER'], monthsBack = 3 } = event.data;
+
+    console.log(`🚀 [Inngest] Starting Settlement Report fee sync for user ${userId}, months: ${monthsBack}`);
+
+    const results: Record<string, unknown> = {
+      startedAt: new Date().toISOString(),
+      monthsBack,
+      marketplaceIds,
+      method: "settlement-reports",
+    };
+
+    // Dynamic imports
+    const {
+      getAvailableSettlementReports,
+      downloadReport,
+      parseSettlementReport,
+      calculateFeesFromSettlement,
+    } = await import("@/lib/amazon-sp-api/reports");
+
+    // Step 1: Get Settlement Reports
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - monthsBack);
+
+    const reportsResult = await step.run("get-settlement-reports", async () => {
+      console.log(`📊 [Settlement] Fetching reports from last ${monthsBack} months...`);
+
+      const result = await getAvailableSettlementReports(refreshToken, {
+        createdAfter: startDate,
+        marketplaceIds,
+      });
+
+      if (!result.success || !result.reports?.length) {
+        console.log("⚠️ [Settlement] No reports found");
+        return { reports: [], count: 0 };
+      }
+
+      console.log(`✅ [Settlement] Found ${result.reports.length} settlement reports`);
+      return { reports: result.reports, count: result.reports.length };
+    });
+
+    if (reportsResult.count === 0) {
+      results.error = "No settlement reports found";
+      results.completedAt = new Date().toISOString();
+      return results;
+    }
+
+    // Step 2: Download and parse ALL settlement reports
+    const allSettlementRows: any[] = [];
+
+    for (let i = 0; i < reportsResult.reports.length; i++) {
+      const report = reportsResult.reports[i];
+      if (!report.reportDocumentId) continue;
+
+      const downloadResult = await step.run(`download-report-${i}`, async () => {
+        console.log(`📥 [Settlement] Downloading report ${i + 1}/${reportsResult.count}...`);
+
+        const result = await downloadReport(refreshToken, report.reportDocumentId);
+
+        if (result.success && result.content) {
+          const rows = parseSettlementReport(result.content);
+          return { success: true, rows, count: rows.length };
+        }
+
+        return { success: false, rows: [], count: 0 };
+      });
+
+      if (downloadResult.success) {
+        allSettlementRows.push(...downloadResult.rows);
+      }
+
+      // Rate limiting
+      if (i < reportsResult.reports.length - 1) {
+        await step.sleep(`report-delay-${i}`, "500ms");
+      }
+    }
+
+    console.log(`✅ [Settlement] Parsed ${allSettlementRows.length} total settlement rows`);
+
+    // Step 3: Calculate fees per order
+    const orderFees = await step.run("calculate-fees", async () => {
+      const fees = calculateFeesFromSettlement(allSettlementRows);
+      console.log(`✅ [Settlement] Calculated fees for ${fees.size} unique order keys`);
+      return { size: fees.size, feesMap: Object.fromEntries(fees) };
+    });
+
+    // Step 4: Get all order_items from database
+    const orderItems = await step.run("get-order-items", async () => {
+      const { data, error } = await supabase
+        .from("order_items")
+        .select("order_item_id, amazon_order_id, seller_sku, asin")
+        .eq("user_id", userId);
+
+      if (error || !data) {
+        console.error("❌ [Settlement] Failed to fetch order items:", error);
+        return { items: [], count: 0 };
+      }
+
+      console.log(`✅ [Settlement] Found ${data.length} order_items in database`);
+      return { items: data, count: data.length };
+    });
+
+    // Step 5: Match and update fees (in batches)
+    const feesMap = new Map(Object.entries(orderFees.feesMap));
+    const BATCH_SIZE = 100;
+    let totalMatched = 0;
+    let totalUpdated = 0;
+    let totalErrors = 0;
+
+    for (let i = 0; i < orderItems.items.length; i += BATCH_SIZE) {
+      const batch = orderItems.items.slice(i, i + BATCH_SIZE);
+      const batchIndex = Math.floor(i / BATCH_SIZE);
+
+      const batchResult = await step.run(`update-batch-${batchIndex}`, async () => {
+        let matched = 0;
+        let updated = 0;
+        let errors = 0;
+
+        for (const item of batch) {
+          // Try multiple key formats to find a match
+          const keysToTry = [
+            item.seller_sku ? `${item.amazon_order_id}|${item.seller_sku}` : null,
+            item.amazon_order_id,
+          ].filter(Boolean) as string[];
+
+          let fees = null;
+          for (const key of keysToTry) {
+            if (feesMap.has(key)) {
+              fees = feesMap.get(key);
+              break;
+            }
+          }
+
+          if (fees) {
+            matched++;
+
+            const { error: updateError } = await supabase
+              .from("order_items")
+              .update({
+                fee_fba_per_unit: (fees as any).fbaFee || null,
+                fee_referral: (fees as any).referralFee || null,
+                fee_promotion: (fees as any).promotionDiscount || null,
+                fee_other: (fees as any).otherFees || null,
+                total_amazon_fees: (fees as any).totalFees || null,
+                fee_source: "settlement_report",
+              })
+              .eq("order_item_id", item.order_item_id);
+
+            if (updateError) {
+              errors++;
+              console.error(`❌ Update error for ${item.order_item_id}:`, updateError.message);
+            } else {
+              updated++;
+            }
+          }
+        }
+
+        return { matched, updated, errors };
+      });
+
+      totalMatched += batchResult.matched;
+      totalUpdated += batchResult.updated;
+      totalErrors += batchResult.errors;
+
+      // Progress log
+      console.log(`📦 [Settlement] Batch ${batchIndex + 1}: matched=${batchResult.matched}, updated=${batchResult.updated}`);
+
+      // Small delay between batches
+      if (i + BATCH_SIZE < orderItems.items.length) {
+        await step.sleep(`batch-delay-${batchIndex}`, "200ms");
+      }
+    }
+
+    results.settlementReports = reportsResult.count;
+    results.settlementRows = allSettlementRows.length;
+    results.uniqueFeeKeys = orderFees.size;
+    results.orderItemsInDb = orderItems.count;
+    results.matched = totalMatched;
+    results.updated = totalUpdated;
+    results.errors = totalErrors;
+    results.completedAt = new Date().toISOString();
+
+    console.log(`🎉 [Inngest] Settlement fee sync completed for user ${userId}:`, results);
+
+    return results;
+  }
+);
+
 // Export all functions
 export const functions = [
   syncAmazonFees,
@@ -1112,5 +1347,6 @@ export const functions = [
   scheduledFeeSync,
   syncHistoricalData,
   syncHistoricalDataKiosk,
-  syncHistoricalDataReports, // NEW: Sellerboard approach
+  syncHistoricalDataReports,
+  syncSettlementFees, // NEW: Direct Settlement Report fee sync
 ];

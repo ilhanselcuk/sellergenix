@@ -76,6 +76,21 @@ export type SyncHistoricalDataReportsEvent = {
   };
 };
 
+/**
+ * Settlement Report Fee Sync
+ * Directly downloads Settlement Reports and updates existing order_items with REAL fees
+ * This bypasses All Orders Report and works on already-synced order_items
+ */
+export type SyncSettlementFeesEvent = {
+  name: "amazon/sync.settlement-fees";
+  data: {
+    userId: string;
+    refreshToken: string;
+    marketplaceIds?: string[];
+    monthsBack?: number; // Default 3 months
+  };
+};
+
 // Union type for all events
 export type InngestEvents =
   | SyncFeesEvent
@@ -83,4 +98,5 @@ export type InngestEvents =
   | RefreshProductAveragesEvent
   | SyncHistoricalDataEvent
   | SyncHistoricalDataKioskEvent
-  | SyncHistoricalDataReportsEvent;
+  | SyncHistoricalDataReportsEvent
+  | SyncSettlementFeesEvent;

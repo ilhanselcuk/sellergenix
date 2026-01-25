@@ -346,9 +346,11 @@ async function getRealFeesForPeriod(
     if (asinsNeedingFees.size > 0) {
       console.log(`📦 Looking up historical fees for ${asinsNeedingFees.size} ASINs without real fee data...`)
 
-      // For each ASIN, get the most recent order_item with real fee data from Finance API
-      // NOTE: We use fee_source='api' and total_amazon_fees > 0 to find items with real fees
-      // instead of quantity_shipped > 0 because quantity_shipped is often not populated
+      // For each ASIN, get the most recent order_item with real fee data
+      // NOTE: Real fees can come from TWO sources:
+      //   1. fee_source='api' - From Finances API (order-level fees)
+      //   2. fee_source='settlement_report' - From Settlement Reports (REAL fees, most accurate)
+      // We check both sources and prefer settlement_report as it has real per-item fees
       const { data: historicalItems } = await supabase
         .from('order_items')
         .select(`
@@ -366,7 +368,7 @@ async function getRealFeesForPeriod(
         `)
         .eq('user_id', userId)
         .in('asin', Array.from(asinsNeedingFees))
-        .eq('fee_source', 'api')
+        .in('fee_source', ['api', 'settlement_report']) // Both sources have REAL fees
         .gt('total_amazon_fees', 0)
         .order('created_at', { ascending: false })
 
@@ -428,8 +430,10 @@ async function getRealFeesForPeriod(
         // because Finance API only returns real fees AFTER order ships!
         // The fee_source='api' on pending orders is misleading - those are estimates, not real fees.
 
-        if (isShipped && item.fee_source === 'api' && item.total_amazon_fees) {
-          // SHIPPED with real fees from Finance API - use as-is
+        // Real fees can come from 'api' (Finances API) or 'settlement_report' (Settlement Reports)
+        const hasRealFees = (item.fee_source === 'api' || item.fee_source === 'settlement_report') && item.total_amazon_fees
+        if (isShipped && hasRealFees) {
+          // SHIPPED with real fees from Finance API or Settlement Report - use as-is
           totalFees += (item.total_amazon_fees || 0)
           feeBreakdown.fbaFulfillment += (item.total_fba_fulfillment_fees || 0)
           feeBreakdown.referral += (item.total_referral_fees || 0)

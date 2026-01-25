@@ -5,5 +5,23 @@
  */
 
 export { inngest } from "./client";
-export { functions, syncAmazonFees, syncSingleOrderFees, scheduledFeeSync, syncHistoricalData } from "./functions";
-export type { SyncFeesEvent, SyncOrderFeesEvent, RefreshProductAveragesEvent, SyncHistoricalDataEvent, InngestEvents } from "./client";
+export {
+  functions,
+  syncAmazonFees,
+  syncSingleOrderFees,
+  scheduledFeeSync,
+  syncHistoricalData,
+  syncHistoricalDataKiosk,
+  syncHistoricalDataReports,
+  syncSettlementFees
+} from "./functions";
+export type {
+  SyncFeesEvent,
+  SyncOrderFeesEvent,
+  RefreshProductAveragesEvent,
+  SyncHistoricalDataEvent,
+  SyncHistoricalDataKioskEvent,
+  SyncHistoricalDataReportsEvent,
+  SyncSettlementFeesEvent,
+  InngestEvents
+} from "./client";
