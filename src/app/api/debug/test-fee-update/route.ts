@@ -132,26 +132,48 @@ export async function GET(request: NextRequest) {
       const matchedFees = orderFees.get(itemKey) || orderFees.get(firstMatch.amazon_order_id)
 
       // Get the order_item_id
-      const { data: orderItem } = await supabase
+      const { data: orderItem, error: orderItemError } = await supabase
         .from("order_items")
         .select("order_item_id, fee_source, fba_fee, referral_fee")
         .eq("amazon_order_id", firstMatch.amazon_order_id)
         .eq("seller_sku", firstMatch.seller_sku)
         .single()
 
+      if (orderItemError) {
+        results.push({
+          step: 'ERROR: Query for order_item failed',
+          error: orderItemError.message,
+          hint: orderItemError.hint,
+          details: orderItemError.details
+        })
+      }
+
       results.push({
         step: 'Found matching order for update test',
         orderId: firstMatch.amazon_order_id,
         sku: firstMatch.seller_sku,
         itemKey,
-        currentFeeSource: orderItem?.fee_source,
-        currentFbaFee: orderItem?.fba_fee,
+        orderItemFound: !!orderItem,
+        orderItemId: orderItem?.order_item_id || 'NOT FOUND',
+        currentFeeSource: orderItem?.fee_source || 'N/A',
+        currentFbaFee: orderItem?.fba_fee || 'N/A',
         newFbaFee: matchedFees?.fbaFee,
         newReferralFee: matchedFees?.referralFee,
         newTotalFees: matchedFees?.totalFees
       })
 
       // Actually do the update
+      if (!orderItem) {
+        results.push({
+          step: 'SKIP: orderItem not found in database',
+          query: `amazon_order_id=${firstMatch.amazon_order_id}, seller_sku=${firstMatch.seller_sku}`
+        })
+      } else if (!matchedFees) {
+        results.push({
+          step: 'SKIP: No fees found in Settlement Report'
+        })
+      }
+
       if (orderItem && matchedFees) {
         const { error: updateError } = await supabase
           .from("order_items")
