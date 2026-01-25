@@ -60,110 +60,121 @@ export async function GET(request: NextRequest) {
     const rows = parseSettlementReport(downloadResult.content!)
     const orderFees = calculateFeesFromSettlement(rows)
 
-    results.push({ step: 'Parsed fees', uniqueOrders: orderFees.size })
-
-    // Step 3: Try to update a specific order
-    const testOrderId = "111-0582539-3725837" // From our earlier test
-    const fees = orderFees.get(testOrderId)
-
+    // Show all keys in the fee map (first 20)
+    const allFeeKeys = Array.from(orderFees.keys())
     results.push({
-      step: 'Test order fees',
-      orderId: testOrderId,
-      feesFound: !!fees,
-      fees: fees || 'NOT FOUND'
+      step: 'Parsed fees',
+      uniqueKeys: orderFees.size,
+      sampleKeys: allFeeKeys.slice(0, 20)
     })
 
-    if (!fees) {
-      // Try to find any order that exists in our database
-      const allFeeOrderIds = Array.from(orderFees.keys())
+    // Step 3: Try to find fees for orders in our database
+    const testOrderId = "111-0582539-3725837"
+    const testSku = "PISTACHIO001"
 
-      const { data: existingOrders } = await supabase
-        .from('order_items')
-        .select('amazon_order_id, seller_sku, asin')
-        .in('amazon_order_id', allFeeOrderIds.slice(0, 50))
+    // Try both key formats
+    const itemLevelKey = `${testOrderId}|${testSku}`
+    const orderLevelKey = testOrderId
+
+    const itemLevelFees = orderFees.get(itemLevelKey)
+    const orderLevelFees = orderFees.get(orderLevelKey)
+
+    results.push({
+      step: 'Test order fees lookup',
+      orderId: testOrderId,
+      sku: testSku,
+      itemLevelKey,
+      itemLevelFeesFound: !!itemLevelFees,
+      itemLevelFees: itemLevelFees || 'NOT FOUND',
+      orderLevelKey,
+      orderLevelFeesFound: !!orderLevelFees,
+      orderLevelFees: orderLevelFees || 'NOT FOUND'
+    })
+
+    // Get all orders from our database and check which have fees
+    const { data: dbOrders } = await supabase
+      .from('order_items')
+      .select('amazon_order_id, seller_sku, asin')
+      .limit(50)
+
+    if (dbOrders) {
+      const matchResults = dbOrders.map(item => {
+        const itemKey = item.seller_sku ? `${item.amazon_order_id}|${item.seller_sku}` : item.amazon_order_id
+        const itemFees = orderFees.get(itemKey) || orderFees.get(item.amazon_order_id)
+        return {
+          orderId: item.amazon_order_id,
+          sku: item.seller_sku,
+          asin: item.asin,
+          itemKey,
+          hasFees: !!itemFees,
+          fbaFee: itemFees?.fbaFee,
+          referralFee: itemFees?.referralFee,
+          totalFees: itemFees?.totalFees
+        }
+      })
 
       results.push({
-        step: 'Looking for matching orders',
-        feeOrderIds: allFeeOrderIds.slice(0, 10),
-        matchingOrdersInDb: existingOrders?.length || 0,
-        matchingOrders: existingOrders?.slice(0, 5)
+        step: 'Database orders fee matching',
+        totalDbOrders: dbOrders.length,
+        ordersWithFees: matchResults.filter(r => r.hasFees).length,
+        matches: matchResults.slice(0, 10)
       })
     }
 
-    // Step 4: Test the exact query we use in the sync
-    if (fees) {
-      // Simulating: order.sku = 'PISTACHIO001', order.asin = 'B0F1CTW639'
-      const testSku = 'PISTACHIO001'
-      const testAsin = 'B0F1CTW639'
+    // Step 4: Test actual update with first matching order
+    const firstMatch = dbOrders?.find(item => {
+      const itemKey = item.seller_sku ? `${item.amazon_order_id}|${item.seller_sku}` : item.amazon_order_id
+      return orderFees.has(itemKey) || orderFees.has(item.amazon_order_id)
+    })
 
-      // Try different query approaches
-      const { data: approach1, error: err1 } = await supabase
+    if (firstMatch) {
+      const itemKey = firstMatch.seller_sku ? `${firstMatch.amazon_order_id}|${firstMatch.seller_sku}` : firstMatch.amazon_order_id
+      const matchedFees = orderFees.get(itemKey) || orderFees.get(firstMatch.amazon_order_id)
+
+      // Get the order_item_id
+      const { data: orderItem } = await supabase
         .from("order_items")
-        .select("order_item_id, amazon_order_id, seller_sku, asin")
-        .eq("amazon_order_id", testOrderId)
-        .or(`seller_sku.eq.${testSku},asin.eq.${testAsin}`)
-        .limit(1)
+        .select("order_item_id, fee_source, fba_fee, referral_fee")
+        .eq("amazon_order_id", firstMatch.amazon_order_id)
+        .eq("seller_sku", firstMatch.seller_sku)
+        .single()
 
       results.push({
-        step: 'Query approach 1 (or with eq)',
-        query: `eq(amazon_order_id, ${testOrderId}).or(seller_sku.eq.${testSku},asin.eq.${testAsin})`,
-        result: approach1,
-        error: err1?.message
+        step: 'Found matching order for update test',
+        orderId: firstMatch.amazon_order_id,
+        sku: firstMatch.seller_sku,
+        itemKey,
+        currentFeeSource: orderItem?.fee_source,
+        currentFbaFee: orderItem?.fba_fee,
+        newFbaFee: matchedFees?.fbaFee,
+        newReferralFee: matchedFees?.referralFee,
+        newTotalFees: matchedFees?.totalFees
       })
 
-      // Try simpler approach
-      const { data: approach2, error: err2 } = await supabase
-        .from("order_items")
-        .select("order_item_id, amazon_order_id, seller_sku, asin")
-        .eq("amazon_order_id", testOrderId)
-        .eq("seller_sku", testSku)
-        .limit(1)
-
-      results.push({
-        step: 'Query approach 2 (just sku)',
-        query: `eq(amazon_order_id, ${testOrderId}).eq(seller_sku, ${testSku})`,
-        result: approach2,
-        error: err2?.message
-      })
-
-      // Try just by order ID
-      const { data: approach3, error: err3 } = await supabase
-        .from("order_items")
-        .select("order_item_id, amazon_order_id, seller_sku, asin")
-        .eq("amazon_order_id", testOrderId)
-        .limit(1)
-
-      results.push({
-        step: 'Query approach 3 (just order_id)',
-        query: `eq(amazon_order_id, ${testOrderId})`,
-        result: approach3,
-        error: err3?.message
-      })
-
-      // Step 5: Actually try to update
-      if (approach3 && approach3.length > 0) {
+      // Actually do the update
+      if (orderItem && matchedFees) {
         const { error: updateError } = await supabase
           .from("order_items")
           .update({
-            fba_fee: fees.fbaFee,
-            referral_fee: fees.referralFee,
-            other_fee: fees.otherFees,
-            estimated_amazon_fee: fees.totalFees,
+            fba_fee: matchedFees.fbaFee || null,
+            referral_fee: matchedFees.referralFee || null,
+            other_fee: matchedFees.otherFees || null,
+            estimated_amazon_fee: matchedFees.totalFees || null,
             fee_source: "settlement_report",
           })
-          .eq("order_item_id", approach3[0].order_item_id)
+          .eq("order_item_id", orderItem.order_item_id)
 
         results.push({
           step: 'Update attempt',
-          orderItemId: approach3[0].order_item_id,
+          orderItemId: orderItem.order_item_id,
           updateError: updateError?.message || 'SUCCESS'
         })
 
         // Verify the update
         const { data: verifyData } = await supabase
           .from("order_items")
-          .select("order_item_id, fee_source, fba_fee, estimated_amazon_fee")
-          .eq("order_item_id", approach3[0].order_item_id)
+          .select("order_item_id, fee_source, fba_fee, referral_fee, estimated_amazon_fee")
+          .eq("order_item_id", orderItem.order_item_id)
           .single()
 
         results.push({
@@ -171,6 +182,11 @@ export async function GET(request: NextRequest) {
           data: verifyData
         })
       }
+    } else {
+      results.push({
+        step: 'No matching orders found',
+        message: 'None of the database orders have fees in the Settlement Report'
+      })
     }
 
     return NextResponse.json({
