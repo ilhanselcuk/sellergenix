@@ -75,6 +75,86 @@
 
 ---
 
+### 🚨🚨🚨 24 AY VERİ SYNC KURALI - KRİTİK! 🚨🚨🚨
+
+**⚠️ BU KURAL TÜM CLAUDE INSTANCE'LARI İÇİN GEÇERLİDİR!**
+
+#### 📅 24 AY BAZ ALINACAK - İSTİSNASIZ!
+
+**Tarih:** 25 Ocak 2026
+**Karar:** Kullanıcı talebi ile kesinleşti
+
+#### 1️⃣ HER DÜZELTME 24 AY BAZ ALINARAK YAPILACAK
+
+```
+- Settlement Report sync → monthsBack=24
+- Order sync → 24 ay geriye
+- Fee sync → 24 ay geriye
+- Herhangi bir veri düzeltmesi → 24 ay
+```
+
+**Neden 24 ay?**
+- Amazon Settlement Report'ları son 18-24 ay mevcut
+- Tam 2 yıllık karşılaştırma imkanı
+- Sellerboard ile tam parite
+
+#### 2️⃣ YENİ MÜŞTERİ BAĞLANDIĞINDA OTOMATİK 24 AY SYNC
+
+```
+Yeni müşteri Amazon hesabını bağladığında:
+1. OAuth callback tetiklenir
+2. Inngest job otomatik başlar
+3. 24 aylık TÜM veri çekilir:
+   - Orders (son 24 ay)
+   - Order Items (son 24 ay)
+   - Settlement Reports (son 24 ay)
+   - Fee breakdown (son 24 ay)
+   - Service fees (son 24 ay)
+```
+
+**Tetikleme Noktası:** `/api/auth/amazon/callback` içinde:
+```typescript
+await inngest.send({
+  name: 'amazon/sync.historical',
+  data: {
+    userId: user.id,
+    refreshToken: connection.refresh_token,
+    monthsBack: 24  // HER ZAMAN 24 AY!
+  }
+})
+```
+
+#### 3️⃣ HER REVİZE/DÜZELTME CLAUDE.MD'YE KAYDEDİLECEK
+
+```
+Her bug fix, her düzeltme, her iyileştirme:
+1. Commit atılacak
+2. CLAUDE.md'ye dokümante edilecek
+3. Tarih + commit hash + açıklama yazılacak
+```
+
+**Format:**
+```markdown
+### ✅ [KONU] - DÜZELTİLDİ! (TARİH)
+
+**Commit:** `hash` - "commit message"
+
+#### 🐛 Sorun Neydi?
+...
+
+#### ✅ Nasıl Çözüldü?
+...
+```
+
+#### ⚠️ YAPILMAMASI GEREKENLER
+
+- ❌ `monthsBack=3` veya daha az kullanma
+- ❌ Yeni müşteri sync'ini manuel bırakma
+- ❌ Düzeltmeleri dokümante etmeden commit atma
+- ❌ Kısmi tarih aralığı ile sync yapma
+
+---
+
 ### 🚨🚨🚨 AMAZON APP PUBLISH SONRASI YAPILACAKLAR - BÜYÜK TODO 🚨🚨🚨
 
 **⚠️⚠️⚠️ APP PUBLISH EDİLDİĞİNDE BU LİSTEYİ TAKİP ET! ⚠️⚠️⚠️**
