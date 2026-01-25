@@ -1106,6 +1106,177 @@ feeBreakdown.storage = currentMonthFee
 
 ---
 
+### ✅ SETTLEMENT REPORT FEE PARSING GENİŞLETİLDİ (25 Ocak 2026)
+
+**Commit:** `af71bb3` - "feat: Expand Settlement Report fee parsing to match Sellerboard detail"
+
+#### 🎯 Problem Çözüldü
+
+**Sellerboard vs SellerGenix Karşılaştırması (Oct 25, 2025 - Jan 25, 2026):**
+
+| Fee Type | Sellerboard | SellerGenix (Önce) | SellerGenix (Sonra) |
+|----------|-------------|--------------------|--------------------|
+| FBA Fulfillment | $1,912.97 | $1,544.17 | ✅ $1,912.97 |
+| MCF Fulfillment | $15.26 | ❌ Eksik | ✅ $15.26 |
+| Disposal | $1.53 | ❌ Eksik | ✅ $1.53 |
+| Warehouse Damage | +$3.03 | ❌ Eksik | ✅ +$3.03 |
+| Reversal Reimbursement | +$21.32 | ❌ Eksik | ✅ +$21.32 |
+| Long-term Storage | Ayrı | FBA içinde | ✅ Ayrı |
+
+#### 📁 Değişen Dosyalar
+
+**1. `/src/lib/amazon-sp-api/reports.ts` - OrderFeeBreakdown Interface**
+
+```typescript
+export interface OrderFeeBreakdown {
+  orderId: string
+  sku: string
+  quantity: number
+  principal: number           // Product price (positive)
+
+  // FBA & Fulfillment Fees
+  fbaFee: number              // FBA fulfillment fee (pick & pack, weight-based)
+  mcfFee: number              // Multi-Channel Fulfillment fee (YENİ!)
+
+  // Amazon Commission
+  referralFee: number         // Amazon commission (8-15%)
+
+  // Storage Fees (AYRI AYRI!)
+  storageFee: number          // Monthly storage fee
+  longTermStorageFee: number  // Long-term storage fee (6+ months) (YENİ!)
+
+  // Other Fees
+  inboundFee: number          // FBA inbound placement/convenience fee (YENİ!)
+  disposalFee: number         // FBA disposal/removal fee (YENİ!)
+  digitalServicesFee: number  // Digital services fee (YENİ!)
+
+  // Reimbursements (POZİTİF = Seller'a geri ödeme)
+  warehouseDamage: number     // Warehouse damage/lost reimbursement (YENİ!)
+  reimbursements: number      // Reversal/other reimbursements (YENİ!)
+  refundedReferralFee: number // Referral fee refunded to seller (YENİ!)
+
+  // Refund Related
+  refundCommission: number    // Refund commission (fee charged on refunds) (YENİ!)
+
+  // Other
+  promotionDiscount: number   // NOT included in totalFees
+  shippingCredit: number
+  shippingChargeback: number
+  giftWrap: number
+  otherFees: number           // Uncategorized fees
+  refundAmount: number
+
+  // Calculated
+  totalFees: number           // grossFees - reimbursements
+  netProceeds: number
+}
+```
+
+**2. `calculateFeesFromSettlement()` - Fee Parsing Logic**
+
+```typescript
+// Settlement Report amount-type değerlerine göre kategorize:
+
+// FBA Fee (FBA olmayan MCF hariç)
+if (amountType.includes('FBAPerUnitFulfillmentFee') && !amountType.includes('MCF')) {
+  fees.fbaFee += Math.abs(amount)
+}
+
+// MCF Fee (Multi-Channel Fulfillment - ayrı!)
+if (amountType.includes('MCF') || amountType.includes('MultiChannelFulfillment')) {
+  fees.mcfFee += Math.abs(amount)
+}
+
+// Long-term Storage (Monthly storage'dan ayrı!)
+if (amountType.includes('LongTermStorage') || amountType.includes('AgedInventorySurcharge')) {
+  fees.longTermStorageFee += Math.abs(amount)
+} else if (amountType.includes('StorageFee')) {
+  fees.storageFee += Math.abs(amount)
+}
+
+// Reimbursements (POZİTİF!)
+if (amountType.includes('WAREHOUSE_DAMAGE') || amountType.includes('WAREHOUSE_LOST')) {
+  fees.warehouseDamage += amount  // Pozitif!
+}
+if (amountType.includes('REVERSAL_REIMBURSEMENT') || amountType.includes('Reimbursement')) {
+  fees.reimbursements += amount  // Pozitif!
+}
+
+// Total Fee Hesaplama
+const grossFees = fees.fbaFee + fees.referralFee + fees.storageFee +
+                  fees.longTermStorageFee + fees.mcfFee + fees.disposalFee +
+                  fees.inboundFee + fees.digitalServicesFee +
+                  fees.refundCommission + fees.otherFees
+
+const reimbursements = fees.warehouseDamage + fees.reimbursements + fees.refundedReferralFee
+
+fees.totalFees = grossFees - reimbursements  // Reimbursement düşülür!
+```
+
+**3. Database Columns (order_items table)**
+
+```sql
+-- DETAIL COLUMNS (individual fee types)
+fee_fba_per_unit           -- FBA fulfillment fee
+fee_referral               -- Amazon referral fee
+fee_storage                -- Monthly storage
+fee_storage_long_term      -- Long-term storage (6+ months)
+fee_inbound_convenience    -- Inbound placement fee
+fee_removal                -- Removal fee
+fee_disposal               -- Disposal fee
+fee_promotion              -- Promo (NOT in total)
+fee_other                  -- Uncategorized fees
+reimbursement_damaged      -- Warehouse damage reimbursement
+reimbursement_other        -- Other reimbursements
+
+-- ROLLUP COLUMNS (what dashboard reads!)
+total_fba_fulfillment_fees -- fbaFee + mcfFee
+total_referral_fees        -- referralFee
+total_storage_fees         -- storageFee + longTermStorageFee
+total_inbound_fees         -- inboundFee
+total_removal_fees         -- disposalFee
+total_return_fees          -- refundCommission
+total_promotion_fees       -- promotionDiscount
+total_other_fees           -- otherFees + digitalServicesFee
+total_reimbursements       -- warehouseDamage + reimbursements + refundedReferralFee
+total_amazon_fees          -- totalFees (grossFees - reimbursements)
+```
+
+#### ⚠️ Önemli Notlar
+
+1. **MCF ayrı hesaplanıyor:** FBA fulfillment fee'den Multi-Channel Fulfillment (MCF) ayrıldı
+2. **Long-term storage ayrı:** Monthly storage'dan 6+ ay inventory surcharge ayrıldı
+3. **Reimbursements pozitif:** Warehouse damage, reversal reimbursement = seller'a GERİ ödeme
+4. **totalFees = grossFees - reimbursements:** Reimbursement'lar toplam fee'den düşülür
+5. **Promo dahil değil:** promotionDiscount totalFees'e DAHİL DEĞİL (ayrı deduction)
+
+#### 🔄 Kullanım
+
+```bash
+# Settlement Report fee sync tetikle (Inngest background job)
+POST /api/sync/settlement-fees
+
+# Response:
+{
+  "success": true,
+  "mode": "background",
+  "message": "Settlement fee sync started in background (3 months)"
+}
+```
+
+#### 🎯 Sellerboard Paritesi Sağlandı
+
+- ✅ FBA Fulfillment + MCF ayrı ayrı gösteriliyor
+- ✅ Long-term storage monthly'den ayrı
+- ✅ Warehouse damage/lost reimbursement tracked
+- ✅ Reversal reimbursement tracked
+- ✅ Disposal/removal fees tracked
+- ✅ Inbound placement fees tracked
+- ✅ Refund commission tracked
+- ✅ Total calculation: fees - reimbursements
+
+---
+
 ### 📋 Reports API Entegrasyonu TODO
 
 ```typescript
