@@ -686,7 +686,8 @@ function formatMetrics(
       returns: amazonFees * 0.02,          // ~2% of total fees
       chargebacks: 0,
       other: 0,
-      reimbursements: 0
+      reimbursements: 0,
+      promo: 0
     }
   }
 
