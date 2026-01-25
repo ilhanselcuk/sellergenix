@@ -155,54 +155,155 @@ Her bug fix, her düzeltme, her iyileştirme:
 
 ---
 
-### 📅 OTOMATİK SYNC TAKVİMİ (25 Ocak 2026)
+### 📅 OTOMATİK SYNC TAKVİMİ (25 Ocak 2026) - GÜNCEL
 
-**Commit:** `bfa4c27` - "feat: Add daily scheduled sync for Settlement and Storage fees"
+**Son Güncelleme:** 25 Ocak 2026
+**Commit:** `bfa4c27`, `6e64535`
+**Inngest'te Aktif Function Sayısı:** **9 function**
 
-#### ⏰ Tüm Scheduled Jobs
+---
 
-| Job | Sıklık | Saat (UTC) | Ne Yapıyor | Dosya |
-|-----|--------|------------|------------|-------|
-| **Vercel Cron** | Her 15 dk | `*/15 * * * *` | Yeni siparişler (3 gün), Order Items, Finances (7 gün), Dimensions | `/api/cron/sync` |
-| **scheduledFeeSync** | Her 15 dk | `*/15 * * * *` | Shipped sipariş fee sync (1 saat) | Inngest |
-| **scheduledSettlementSync** | Günde 1x | `06:00 UTC` | Settlement Report fees (24 ay) | Inngest |
-| **scheduledStorageSync** | Günde 1x | `07:00 UTC` | FBA Storage fees | Inngest |
+#### 🚨🚨🚨 YENİ TRIGGER EKLEME KURALI - KRİTİK! 🚨🚨🚨
 
-#### 🕐 Türkiye Saati Karşılıkları
+**⚠️ HER YENİ CLAUDE INSTANCE BU KURALI TAKİP ETMELİ!**
 
-| UTC | Türkiye (UTC+3) |
-|-----|-----------------|
-| 06:00 UTC | 09:00 TSİ |
-| 07:00 UTC | 10:00 TSİ |
+Yeni bir Inngest function veya sync trigger eklerken:
 
-#### 📊 Veri Akışı
+1. **Scheduled Job ise** → `functions.ts`'e ekle, `functions` array'e dahil et
+2. **Event-triggered ise** → `amazon-actions.ts`'de müşteri bağlandığında otomatik tetikle
+3. **Her iki durumda da** → Bu dokümantasyonu güncelle
+
+**ASLA müşteriyi manuel tetiklemeye bırakma!** Her şey otomatik olmalı.
+
+---
+
+#### ✅ AKTİF INNGEST FUNCTIONS (9 Adet)
+
+##### ⏰ Scheduled (Otomatik Çalışan - Cron)
+
+| Function | Cron | Saat (UTC) | Saat (TR) | Ne Yapıyor |
+|----------|------|------------|-----------|------------|
+| `scheduled-fee-sync` | `*/15 * * * *` | Her 15 dk | Her 15 dk | Shipped sipariş fee sync |
+| `scheduled-settlement-sync` | `0 6 * * *` | 06:00 | 09:00 | Settlement Report fees (24 ay) |
+| `scheduled-storage-sync` | `0 7 * * *` | 07:00 | 10:00 | FBA Storage fees |
+
+##### 📦 Event-Triggered (Müşteri Bağlandığında Otomatik)
+
+| Function | Event | Ne Zaman Tetiklenir |
+|----------|-------|---------------------|
+| `sync-historical-data` | `amazon/sync.historical` | Müşteri Amazon bağladığında (2 yıl) |
+| `sync-settlement-fees` | `amazon/sync.settlement-fees` | Müşteri Amazon bağladığında (24 ay) |
+| `sync-amazon-fees` | `amazon/sync.fees` | Manual veya scheduled tetiklediğinde |
+| `sync-single-order-fees` | `amazon/sync.order-fees` | Tek sipariş fee sync |
+| `sync-historical-data-kiosk` | `amazon/sync.historical-kiosk` | Data Kiosk sync |
+| `sync-historical-data-reports` | `amazon/sync.historical-reports` | Reports API sync |
+
+##### 🌐 Vercel Cron (Ek)
+
+| Endpoint | Cron | Ne Yapıyor |
+|----------|------|------------|
+| `/api/cron/sync` | `*/15 * * * *` | Yeni siparişler (3 gün), Order Items, Finances (7 gün) |
+
+---
+
+#### 🔄 MÜŞTERİ AKIŞI (TAM OTOMATİK)
 
 ```
-YENİ MÜŞTERİ BAĞLANDIĞINDA:
-├── OAuth callback tetiklenir
-├── amazon/sync.historical (24 ay) → Orders, Order Items, Fees
-└── amazon/sync.settlement-fees (24 ay) → Settlement Report fees
+┌─────────────────────────────────────────────────────────────────┐
+│                  MÜŞTERİ AMAZON BAĞLAR                         │
+│                         ↓                                       │
+│                  OAuth Callback                                 │
+│           /api/auth/amazon/callback                            │
+│                         ↓                                       │
+│         handleAmazonCallbackAction() veya                      │
+│         connectWithManualTokenAction()                         │
+│                         ↓                                       │
+│              ┌─────────┴─────────┐                             │
+│              ↓                   ↓                              │
+│    amazon/sync.historical    amazon/sync.settlement-fees       │
+│         (2 yıl)                  (24 ay)                       │
+│              ↓                   ↓                              │
+│         Orders API          Settlement Reports                  │
+│        Order Items          GERÇEK fee'ler                     │
+│              ↓                   ↓                              │
+│              └─────────┬─────────┘                             │
+│                        ↓                                        │
+│           MÜŞTERİ HİÇBİR ŞEY YAPMADI                          │
+│              TÜM DATA HAZIR! ✅                                 │
+└─────────────────────────────────────────────────────────────────┘
 
-HER 15 DAKİKA:
-├── Vercel Cron → Yeni siparişler (son 3 gün)
-├── Vercel Cron → Order items, Finances (son 7 gün)
-└── Inngest scheduledFeeSync → Shipped fee sync (son 1 saat)
+SONRASI (OTOMATİK DEVAM):
 
-HER GÜN 06:00 UTC:
-└── Inngest scheduledSettlementSync → Tüm kullanıcılar için Settlement (24 ay)
+Her 15 Dakika:
+├── Vercel Cron → Yeni siparişler sync
+└── Inngest → Shipped fee sync
 
-HER GÜN 07:00 UTC:
-└── Inngest scheduledStorageSync → Tüm kullanıcılar için Storage fees
+Her Gün 06:00 UTC (09:00 TR):
+└── Settlement Report fees güncelle (24 ay)
+
+Her Gün 07:00 UTC (10:00 TR):
+└── Storage fees güncelle
 ```
 
-#### 📁 İlgili Dosyalar
+---
 
-| Dosya | Amaç |
-|-------|------|
-| `/vercel.json` | Vercel Cron config |
-| `/src/app/api/cron/sync/route.ts` | Her 15 dk cron endpoint |
-| `/src/inngest/functions.ts` | Tüm Inngest jobs |
-| `/src/inngest/client.ts` | Event type definitions |
+#### 📁 İLGİLİ DOSYALAR
+
+| Dosya | Amaç | Satırlar |
+|-------|------|----------|
+| `/src/inngest/functions.ts` | Tüm Inngest functions | 1-1537 |
+| `/src/inngest/client.ts` | Event type definitions | 1-103 |
+| `/src/inngest/index.ts` | Exports | 1-30 |
+| `/src/app/actions/amazon-actions.ts` | OAuth callback + auto-trigger | 159-193, 274-308 |
+| `/src/app/api/cron/sync/route.ts` | Vercel Cron endpoint | 1-300+ |
+| `/vercel.json` | Cron config | crons array |
+
+---
+
+#### 🛠️ YENİ FUNCTION EKLEME REHBERİ
+
+**1. Inngest Function Tanımla:**
+```typescript
+// /src/inngest/functions.ts
+export const myNewFunction = inngest.createFunction(
+  { id: "my-new-function", retries: 1 },
+  { cron: "0 8 * * *" }, // veya { event: "amazon/sync.my-event" }
+  async ({ step }) => {
+    // Logic here
+  }
+);
+```
+
+**2. Functions Array'e Ekle:**
+```typescript
+// /src/inngest/functions.ts (en alt)
+export const functions = [
+  // ... mevcut functions
+  myNewFunction, // YENİ
+];
+```
+
+**3. Export Et:**
+```typescript
+// /src/inngest/index.ts
+export {
+  functions,
+  // ... mevcut exports
+  myNewFunction, // YENİ
+} from "./functions";
+```
+
+**4. Event-triggered ise OAuth'a Ekle:**
+```typescript
+// /src/app/actions/amazon-actions.ts
+// handleAmazonCallbackAction ve connectWithManualTokenAction içinde:
+await inngest.send({
+  name: 'amazon/sync.my-event',
+  data: { userId, refreshToken, marketplaceIds }
+})
+```
+
+**5. Bu Dokümantasyonu Güncelle!**
 
 ---
 
