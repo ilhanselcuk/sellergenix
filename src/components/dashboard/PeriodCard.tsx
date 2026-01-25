@@ -19,19 +19,31 @@ export interface PeriodData {
   amazonFees: number
   cogs: number
   grossProfit: number
-  // Fee source and breakdown (Phase 1.8)
+  // Fee source and breakdown (Phase 1.8) - Sellerboard Parity
   feeSource?: 'real' | 'estimated' | 'mixed'
   feeBreakdown?: {
-    fbaFulfillment: number
-    referral: number
-    storage: number
-    inbound: number
-    removal: number
-    returns: number
-    chargebacks: number
-    other: number
+    // === AMAZON FEES (charges) ===
+    fbaFulfillment: number      // FBA per-unit fulfillment fee
+    mcf: number                 // Multi-Channel Fulfillment (SEPARATE from FBA!)
+    referral: number            // Amazon commission (8-15%)
+    storage: number             // Monthly FBA storage
+    longTermStorage: number     // Long-term storage (6+ months) - SEPARATE!
+    inbound: number             // Inbound placement/convenience fee
+    removal: number             // Disposal/removal fee
+    digitalServices: number     // Digital services fee
+    refundCommission: number    // Refund commission charge
+    returns: number             // Return processing fees
+    chargebacks: number         // Chargebacks
+    other: number               // Other miscellaneous fees
+    // === REIMBURSEMENTS (credits - positive values) ===
+    warehouseDamage: number     // Warehouse damage reimbursement
+    warehouseLost: number       // Warehouse lost reimbursement
+    reversalReimbursement: number // Reversal/compensation
+    refundedReferral: number    // Referral fee refunded back to seller
+    // === PROMO (separate from Amazon fees) ===
+    promo: number               // Promotional discounts
+    // Legacy field for backward compatibility
     reimbursements: number
-    promo: number
   }
   serviceFees?: {
     subscription: number

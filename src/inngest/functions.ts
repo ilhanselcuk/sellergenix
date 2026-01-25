@@ -1308,37 +1308,39 @@ export const syncSettlementFees = inngest.createFunction(
           if (fees) {
             matched++;
 
-            // Write to BOTH detail columns AND rollup columns
-            // Detail columns: fee_fba_per_unit, fee_referral, etc.
-            // Rollup columns: total_fba_fulfillment_fees, total_referral_fees, etc.
-            // Dashboard reads from rollup columns for breakdown display
-            //
-            // NEW (2026-01-25): Added all fee types from expanded OrderFeeBreakdown
+            // SELLERBOARD FEE PARITY (2026-01-25): Save ALL fee types to INDIVIDUAL columns
+            // This allows the dashboard to display fee breakdown exactly like Sellerboard
             const f = fees as any;
             const { error: updateError } = await supabase
               .from("order_items")
               .update({
-                // ========== DETAIL COLUMNS (individual fee types) ==========
+                // ========== INDIVIDUAL FEE COLUMNS (Sellerboard-style) ==========
                 fee_fba_per_unit: f.fbaFee || null,
+                fee_mcf: f.mcfFee || null, // MCF separate from FBA!
                 fee_referral: f.referralFee || null,
                 fee_storage: f.storageFee || null,
                 fee_storage_long_term: f.longTermStorageFee || null,
                 fee_inbound_convenience: f.inboundFee || null,
                 fee_removal: f.disposalFee || null,
                 fee_disposal: f.disposalFee || null,
+                fee_digital_services: f.digitalServicesFee || null,
+                fee_refund_commission: f.refundCommission || null,
                 fee_promotion: f.promotionDiscount || null,
                 fee_other: f.otherFees || null,
+                refund_amount: f.refundAmount || null,
+                // ========== REIMBURSEMENTS (positive values) ==========
                 reimbursement_damaged: f.warehouseDamage || null,
-                reimbursement_other: f.reimbursements || null,
-                // ========== ROLLUP COLUMNS (category totals - what dashboard reads!) ==========
-                total_fba_fulfillment_fees: (f.fbaFee || 0) + (f.mcfFee || 0),
+                reimbursement_reversal: f.reimbursements || null,
+                reimbursement_refunded_referral: f.refundedReferralFee || null,
+                // ========== ROLLUP COLUMNS (for quick queries) ==========
+                total_fba_fulfillment_fees: f.fbaFee || null, // FBA only, NOT MCF
                 total_referral_fees: f.referralFee || null,
                 total_storage_fees: (f.storageFee || 0) + (f.longTermStorageFee || 0),
                 total_inbound_fees: f.inboundFee || null,
                 total_removal_fees: f.disposalFee || null,
                 total_return_fees: f.refundCommission || null,
                 total_promotion_fees: f.promotionDiscount || null,
-                total_other_fees: (f.otherFees || 0) + (f.digitalServicesFee || 0),
+                total_other_fees: (f.otherFees || 0) + (f.digitalServicesFee || 0) + (f.mcfFee || 0),
                 total_reimbursements: (f.warehouseDamage || 0) + (f.reimbursements || 0) + (f.refundedReferralFee || 0),
                 total_amazon_fees: f.totalFees || null,
                 fee_source: "settlement_report",

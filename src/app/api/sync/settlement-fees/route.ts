@@ -182,19 +182,19 @@ export async function POST(request: NextRequest) {
         // Dashboard reads from rollup columns for breakdown display
         // NOTE: promotionDiscount is stored but NOT included in total_amazon_fees
         //
-        // NEW (2026-01-25): Added all fee types from expanded OrderFeeBreakdown:
-        // - MCF, disposal, inbound, digital services
-        // - Reimbursements (warehouse damage, reversal, refunded referral)
-        // - Refund commission
+        // SELLERBOARD FEE PARITY (2026-01-25): Save ALL fee types to INDIVIDUAL columns
+        // This allows the dashboard to display fee breakdown exactly like Sellerboard
         const { error: updateError } = await supabase
           .from('order_items')
           .update({
-            // ========== DETAIL COLUMNS (individual fee types) ==========
-            // FBA Fees
+            // ========== INDIVIDUAL FEE COLUMNS (Sellerboard-style) ==========
+            // FBA Fees (NOT including MCF)
             fee_fba_per_unit: fees.fbaFee || null,
+            // MCF (Multi-Channel Fulfillment) - SEPARATE!
+            fee_mcf: fees.mcfFee || null,
             // Referral
             fee_referral: fees.referralFee || null,
-            // Storage
+            // Storage - SEPARATE short-term and long-term
             fee_storage: fees.storageFee || null,
             fee_storage_long_term: fees.longTermStorageFee || null,
             // Inbound/Placement
@@ -202,24 +202,34 @@ export async function POST(request: NextRequest) {
             // Removal/Disposal
             fee_removal: fees.disposalFee || null,
             fee_disposal: fees.disposalFee || null,
+            // Digital Services
+            fee_digital_services: fees.digitalServicesFee || null,
+            // Refund Commission (charge when processing refunds)
+            fee_refund_commission: fees.refundCommission || null,
             // Promotions (NOT included in Amazon fees)
             fee_promotion: fees.promotionDiscount || null,
             // Other fees
             fee_other: fees.otherFees || null,
-            // Reimbursements (positive - reduce total fees)
-            reimbursement_damaged: fees.warehouseDamage || null,
-            reimbursement_other: fees.reimbursements || null,
+            // Refund amount
+            refund_amount: fees.refundAmount || null,
 
-            // ========== ROLLUP COLUMNS (category totals - what dashboard reads!) ==========
-            // These are the columns that appear in the dashboard fee breakdown
-            total_fba_fulfillment_fees: (fees.fbaFee || 0) + (fees.mcfFee || 0),
+            // ========== REIMBURSEMENTS (positive values - reduce total fees) ==========
+            reimbursement_damaged: fees.warehouseDamage || null,
+            reimbursement_lost: null, // Settlement doesn't distinguish lost from damaged
+            reimbursement_reversal: fees.reimbursements || null, // Reversal/compensation
+            reimbursement_refunded_referral: fees.refundedReferralFee || null,
+            reimbursement_other: null, // Catch-all
+
+            // ========== ROLLUP COLUMNS (category totals for quick queries) ==========
+            // Dashboard can use either individual OR rollup columns
+            total_fba_fulfillment_fees: fees.fbaFee || null, // FBA only, NOT MCF
             total_referral_fees: fees.referralFee || null,
             total_storage_fees: (fees.storageFee || 0) + (fees.longTermStorageFee || 0),
             total_inbound_fees: fees.inboundFee || null,
             total_removal_fees: fees.disposalFee || null,
-            total_return_fees: fees.refundCommission || null, // Refund processing fees
+            total_return_fees: fees.refundCommission || null,
             total_promotion_fees: fees.promotionDiscount || null,
-            total_other_fees: (fees.otherFees || 0) + (fees.digitalServicesFee || 0),
+            total_other_fees: (fees.otherFees || 0) + (fees.digitalServicesFee || 0) + (fees.mcfFee || 0),
             // Reimbursements are POSITIVE (reduce total fees)
             total_reimbursements: (fees.warehouseDamage || 0) + (fees.reimbursements || 0) + (fees.refundedReferralFee || 0),
             // total_amazon_fees = All fees - Reimbursements (NOT promo!)

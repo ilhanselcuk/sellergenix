@@ -64,19 +64,9 @@ interface PeriodMetrics {
   roi: number
   // Fee source indicator
   feeSource: 'real' | 'estimated' | 'mixed'
-  // Detailed fee breakdown (Sellerboard-style)
-  feeBreakdown: {
-    fbaFulfillment: number
-    referral: number
-    storage: number
-    inbound: number
-    removal: number
-    returns: number
-    chargebacks: number
-    other: number
-    reimbursements: number
-    promo: number
-  }
+  // SELLERBOARD-STYLE DETAILED FEE BREAKDOWN
+  // Each fee type is tracked SEPARATELY (not combined)
+  feeBreakdown: SellerboardFeeBreakdown
   // Account-level service fees (subscription, storage, etc.)
   serviceFees: {
     subscription: number
@@ -88,24 +78,44 @@ interface PeriodMetrics {
   refunds: number
 }
 
+// SELLERBOARD FEE BREAKDOWN - All fee types tracked individually
+interface SellerboardFeeBreakdown {
+  // FBA Fees
+  fbaFulfillment: number      // FBA per-unit fulfillment fee
+  mcf: number                 // Multi-Channel Fulfillment (SEPARATE from FBA!)
+  // Referral
+  referral: number            // Amazon commission (8-15%)
+  // Storage
+  storage: number             // Monthly FBA storage
+  longTermStorage: number     // Long-term storage (6+ months) - SEPARATE!
+  // Inbound
+  inbound: number             // Inbound placement/convenience fee
+  // Removal/Disposal
+  removal: number             // Disposal/removal fee
+  // Digital Services
+  digitalServices: number     // Digital services fee
+  // Refund Fees
+  refundCommission: number    // Refund commission charge
+  returns: number             // Return processing fees
+  chargebacks: number         // Chargebacks
+  // Other
+  other: number               // Other miscellaneous fees
+  // Reimbursements (POSITIVE - reduce total fees)
+  warehouseDamage: number     // Warehouse damage reimbursement
+  warehouseLost: number       // Warehouse lost reimbursement
+  reversalReimbursement: number // Reversal/compensation
+  refundedReferral: number    // Referral fee refunded back
+  // Promo (NOT an Amazon fee - tracked separately)
+  promo: number               // Promotional discounts
+}
+
 interface RealFeeData {
   totalFees: number
   totalCogs: number
   orderCount: number
   feeSource: 'real' | 'estimated' | 'mixed'
-  // Detailed fee breakdown (Sellerboard-style)
-  feeBreakdown: {
-    fbaFulfillment: number
-    referral: number
-    storage: number
-    inbound: number
-    removal: number
-    returns: number
-    chargebacks: number
-    other: number
-    reimbursements: number
-    promo: number
-  }
+  // SELLERBOARD-STYLE DETAILED FEE BREAKDOWN
+  feeBreakdown: SellerboardFeeBreakdown
   // Account-level service fees (not tied to orders)
   serviceFees: {
     subscription: number
@@ -129,7 +139,26 @@ async function getRealFeesForPeriod(
   endDate: Date
 ): Promise<RealFeeData> {
   const emptyServiceFees = { subscription: 0, storage: 0, other: 0, total: 0 }
-  const emptyFeeBreakdown = { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0, promo: 0 }
+  // SELLERBOARD FEE BREAKDOWN - All fee types tracked individually
+  const emptyFeeBreakdown: SellerboardFeeBreakdown = {
+    fbaFulfillment: 0,
+    mcf: 0,
+    referral: 0,
+    storage: 0,
+    longTermStorage: 0,
+    inbound: 0,
+    removal: 0,
+    digitalServices: 0,
+    refundCommission: 0,
+    returns: 0,
+    chargebacks: 0,
+    other: 0,
+    warehouseDamage: 0,
+    warehouseLost: 0,
+    reversalReimbursement: 0,
+    refundedReferral: 0,
+    promo: 0,
+  }
 
   try {
     // =====================================================
@@ -271,7 +300,7 @@ async function getRealFeesForPeriod(
     console.log(`   Shipped: ${shippedCount}, Pending: ${pendingCount}`)
 
     // Step 2: Get order items for these orders
-    // Include detailed fee breakdown columns
+    // SELLERBOARD PARITY: Include ALL individual fee columns for detailed breakdown
     const { data: items, error: itemsError } = await supabase
       .from('order_items')
       .select(`
@@ -280,6 +309,24 @@ async function getRealFeesForPeriod(
         quantity_shipped,
         quantity_ordered,
         asin,
+        fee_source,
+        fee_fba_per_unit,
+        fee_mcf,
+        fee_referral,
+        fee_storage,
+        fee_storage_long_term,
+        fee_inbound_convenience,
+        fee_removal,
+        fee_disposal,
+        fee_digital_services,
+        fee_refund_commission,
+        fee_promotion,
+        fee_other,
+        refund_amount,
+        reimbursement_damaged,
+        reimbursement_lost,
+        reimbursement_reversal,
+        reimbursement_refunded_referral,
         total_fba_fulfillment_fees,
         total_referral_fees,
         total_storage_fees,
@@ -290,8 +337,7 @@ async function getRealFeesForPeriod(
         total_other_fees,
         total_reimbursements,
         total_amazon_fees,
-        total_promotion_fees,
-        fee_source
+        total_promotion_fees
       `)
       .eq('user_id', userId)
       .in('amazon_order_id', orderIds)
@@ -402,22 +448,31 @@ async function getRealFeesForPeriod(
     let ordersWithRealFees = 0
     let ordersWithEstimatedFees = 0
 
-    // Fee breakdown totals (Sellerboard-style)
-    const feeBreakdown = {
+    // SELLERBOARD FEE BREAKDOWN - All fee types tracked individually
+    const feeBreakdown: SellerboardFeeBreakdown = {
       fbaFulfillment: 0,
+      mcf: 0,
       referral: 0,
       storage: 0,
+      longTermStorage: 0,
       inbound: 0,
       removal: 0,
+      digitalServices: 0,
+      refundCommission: 0,
       returns: 0,
       chargebacks: 0,
       other: 0,
-      reimbursements: 0,
-      promo: 0
+      warehouseDamage: 0,
+      warehouseLost: 0,
+      reversalReimbursement: 0,
+      refundedReferral: 0,
+      promo: 0,
     }
 
     // Promo total (separate from Amazon fees - not included in totalFees!)
     let totalPromo = 0
+    // Refund total (from item-level refund_amount)
+    let totalRefundAmount = 0
 
     for (const order of orders) {
       const orderItems = itemsByOrder.get(order.amazon_order_id) || []
@@ -440,27 +495,53 @@ async function getRealFeesForPeriod(
         // Real fees can come from 'api' (Finances API) or 'settlement_report' (Settlement Reports)
         const hasRealFees = (item.fee_source === 'api' || item.fee_source === 'settlement_report') && item.total_amazon_fees
         if (isShipped && hasRealFees) {
-          // SHIPPED with real fees from Finance API or Settlement Report - use as-is
+          // SHIPPED with real fees from Finance API or Settlement Report
+          // SELLERBOARD PARITY: Use INDIVIDUAL columns for detailed breakdown
           totalFees += (item.total_amazon_fees || 0)
-          feeBreakdown.fbaFulfillment += (item.total_fba_fulfillment_fees || 0)
-          feeBreakdown.referral += (item.total_referral_fees || 0)
-          feeBreakdown.storage += (item.total_storage_fees || 0)
-          feeBreakdown.inbound += (item.total_inbound_fees || 0)
-          feeBreakdown.removal += (item.total_removal_fees || 0)
-          feeBreakdown.returns += (item.total_return_fees || 0)
-          feeBreakdown.chargebacks += (item.total_chargeback_fees || 0)
-          feeBreakdown.other += (item.total_other_fees || 0)
-          feeBreakdown.reimbursements += (item.total_reimbursements || 0)
-          // Promo is tracked separately (not included in totalFees)
-          const itemPromo = (item as any).total_promotion_fees || 0
+
+          // FBA Fees (NOT including MCF)
+          feeBreakdown.fbaFulfillment += parseFloat(String(item.fee_fba_per_unit || 0))
+          // MCF is SEPARATE from FBA
+          feeBreakdown.mcf += parseFloat(String(item.fee_mcf || 0))
+          // Referral
+          feeBreakdown.referral += parseFloat(String(item.fee_referral || item.total_referral_fees || 0))
+          // Storage - SEPARATE short-term and long-term
+          feeBreakdown.storage += parseFloat(String(item.fee_storage || 0))
+          feeBreakdown.longTermStorage += parseFloat(String(item.fee_storage_long_term || 0))
+          // Inbound
+          feeBreakdown.inbound += parseFloat(String(item.fee_inbound_convenience || item.total_inbound_fees || 0))
+          // Removal/Disposal
+          feeBreakdown.removal += parseFloat(String(item.fee_disposal || item.total_removal_fees || 0))
+          // Digital Services
+          feeBreakdown.digitalServices += parseFloat(String(item.fee_digital_services || 0))
+          // Refund Commission
+          feeBreakdown.refundCommission += parseFloat(String(item.fee_refund_commission || 0))
+          // Returns
+          feeBreakdown.returns += parseFloat(String(item.total_return_fees || 0))
+          // Chargebacks
+          feeBreakdown.chargebacks += parseFloat(String(item.total_chargeback_fees || 0))
+          // Other
+          feeBreakdown.other += parseFloat(String(item.fee_other || 0))
+
+          // REIMBURSEMENTS (positive values - reduce total fees)
+          feeBreakdown.warehouseDamage += parseFloat(String(item.reimbursement_damaged || 0))
+          feeBreakdown.warehouseLost += parseFloat(String(item.reimbursement_lost || 0))
+          feeBreakdown.reversalReimbursement += parseFloat(String(item.reimbursement_reversal || 0))
+          feeBreakdown.refundedReferral += parseFloat(String(item.reimbursement_refunded_referral || 0))
+
+          // Promo is tracked separately (NOT included in totalFees)
+          const itemPromo = parseFloat(String(item.fee_promotion || item.total_promotion_fees || 0))
           feeBreakdown.promo += itemPromo
           totalPromo += itemPromo
+
+          // Refund amount
+          totalRefundAmount += parseFloat(String(item.refund_amount || 0))
+
           orderHasRealFees = true
         } else if (item.asin && asinFeeHistory.has(item.asin)) {
           // Use historical per-unit fee from same ASIN for BOTH:
           // 1. Pending orders (haven't shipped yet)
           // 2. Shipped orders WITHOUT real fee data (fee_source is null or fees not synced yet)
-          // This ensures ALL orders get estimated fees based on actual historical data
           const history = asinFeeHistory.get(item.asin)!
           const qty = quantityOrdered
           totalFees += history.perUnitFee * qty
@@ -470,12 +551,14 @@ async function getRealFeesForPeriod(
           feeBreakdown.inbound += history.perUnitInbound * qty
           feeBreakdown.returns += history.perUnitReturns * qty
           feeBreakdown.other += history.perUnitOther * qty
-          orderHasRealFees = true // Treated as "real" since it's based on actual historical data
+          orderHasRealFees = true
           console.log(`  📦 ${isShipped ? 'Shipped' : 'Pending'} order ${order.amazon_order_id}: estimated $${(history.perUnitFee * qty).toFixed(2)} from historical ASIN ${item.asin}`)
         } else if (item.total_amazon_fees) {
-          // Has pre-estimated fees (from fee sync) - use those
+          // Has pre-estimated fees (from fee sync) - use rollup columns
           totalFees += (item.total_amazon_fees || 0)
-          feeBreakdown.fbaFulfillment += (item.total_fba_fulfillment_fees || 0)
+          feeBreakdown.fbaFulfillment += parseFloat(String(item.total_fba_fulfillment_fees || 0))
+          feeBreakdown.referral += parseFloat(String(item.total_referral_fees || 0))
+          feeBreakdown.storage += parseFloat(String(item.total_storage_fees || 0))
           orderHasRealFees = true
         } else if (item.estimated_amazon_fee) {
           // Legacy: estimated_amazon_fee is PER UNIT, so multiply by quantity

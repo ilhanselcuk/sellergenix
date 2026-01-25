@@ -124,21 +124,32 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
   const safeCogs = data.cogs ?? 0
   const safeAdSpend = data.adSpend ?? 0
 
-  // Amazon Fees breakdown - use real data when available
+  // Amazon Fees breakdown - use real data when available (Sellerboard Parity)
   const hasRealFees = (data.feeSource === 'real' || data.feeSource === 'mixed') && data.feeBreakdown
 
   const fees = hasRealFees
     ? {
+        // === AMAZON FEES (charges) ===
         fbaFulfillment: data.feeBreakdown!.fbaFulfillment || 0,
+        mcf: data.feeBreakdown!.mcf || 0,                       // Multi-Channel Fulfillment
         referral: data.feeBreakdown!.referral || 0,
         storage: data.feeBreakdown!.storage || 0,
+        longTermStorage: data.feeBreakdown!.longTermStorage || 0,  // Long-term storage (6+ months)
         inbound: data.feeBreakdown!.inbound || 0,
-        removal: data.feeBreakdown!.removal || 0,
+        removal: data.feeBreakdown!.removal || 0,               // Disposal/removal fee
+        digitalServices: data.feeBreakdown!.digitalServices || 0,
+        refundCommission: data.feeBreakdown!.refundCommission || 0,
         returns: data.feeBreakdown!.returns || 0,
         chargebacks: data.feeBreakdown!.chargebacks || 0,
         other: data.feeBreakdown!.other || 0,
-        reimbursements: data.feeBreakdown!.reimbursements || 0,
+        // === REIMBURSEMENTS (credits - positive values) ===
+        warehouseDamage: data.feeBreakdown!.warehouseDamage || 0,
+        warehouseLost: data.feeBreakdown!.warehouseLost || 0,
+        reversalReimbursement: data.feeBreakdown!.reversalReimbursement || 0,
+        refundedReferral: data.feeBreakdown!.refundedReferral || 0,
+        // === OTHER ===
         promo: data.feeBreakdown!.promo || 0,
+        reimbursements: data.feeBreakdown!.reimbursements || 0, // Legacy
       }
     : null
 
@@ -234,23 +245,33 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
             <SubRow label="Sponsored Brands" value="$0.00" valueColor="text-gray-400" />
           </CollapsibleRow>
 
-          {/* Refund cost - Expandable */}
+          {/* Refund cost - Expandable (Sellerboard Parity) */}
           <CollapsibleRow
             label="Refund cost"
-            value={formatCurrency(-safeRefunds)}
-            valueColor={safeRefunds > 0 ? "text-red-600" : "text-gray-500"}
+            value={formatCurrency(-(safeRefunds + (fees?.refundCommission || 0) - (fees?.refundedReferral || 0)))}
+            valueColor={(safeRefunds + (fees?.refundCommission || 0)) > 0 ? "text-red-600" : "text-gray-500"}
             defaultOpen={false}
           >
-            <SubRow label="Refunded amount" value={formatCurrency(-safeRefunds)} valueColor="text-red-600" />
-            <SubRow label="Refund commission" value="$0.00" valueColor="text-gray-400" />
-            <SubRow label="Refunded referral fee" value="$0.00" valueColor="text-gray-400" />
+            <SubRow label="Refunded amount" value={formatCurrency(-safeRefunds)} valueColor={safeRefunds > 0 ? "text-red-600" : "text-gray-400"} />
+            <SubRow label="Refund commission" value={formatCurrency(-(fees?.refundCommission || 0))} valueColor={(fees?.refundCommission || 0) > 0 ? "text-red-600" : "text-gray-400"} />
+            <SubRow label="Refunded referral fee" value={formatCurrency(fees?.refundedReferral || 0)} valueColor={(fees?.refundedReferral || 0) > 0 ? "text-green-600" : "text-gray-400"} />
           </CollapsibleRow>
 
-          {/* Amazon fees - Expandable (DETAILED) */}
-          {/* Sellerboard behavior (from normal seller account):
-              - Daily periods (Today, Yesterday): Show FBA per unit fulfilment fee + Referral fee
-              - Weekly+ periods: Show all fee types (FBA, Referral, FBA storage, Long term storage,
-                Inbound transportation, Subscription, Warehouse lost, Reversal reimbursement, etc.)
+          {/* Amazon fees - Expandable (DETAILED) - SELLERBOARD PARITY */}
+          {/* Shows ALL fee types that Sellerboard shows:
+              - FBA per unit fulfilment fee
+              - MCF (Multi-Channel Fulfillment) - SEPARATE from FBA
+              - Referral fee
+              - FBA storage fee
+              - Long term storage fee (6+ months)
+              - FBA disposal fee
+              - Inbound transportation / convenience fee
+              - Subscription
+              - Digital services fee
+              - Warehouse damage (reimbursement - positive)
+              - Warehouse lost (reimbursement - positive)
+              - Reversal reimbursement (positive)
+              - Other fees
           */}
           <CollapsibleRow
             label="Amazon fees"
@@ -260,116 +281,167 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           >
             {hasRealFees && fees ? (
               <>
-                {/* === DAILY + WEEKLY+ PERIODS: Always show FBA + Referral === */}
+                {/* === CORE FEES (Always show) === */}
 
-                {/* FBA per unit fulfilment fee - ALWAYS show */}
+                {/* FBA per unit fulfilment fee */}
                 <SubRow
                   label="FBA per unit fulfilment fee"
                   value={formatCurrency(-fees.fbaFulfillment)}
                   valueColor={fees.fbaFulfillment > 0 ? "text-red-600" : "text-gray-400"}
                 />
 
-                {/* Referral fee - ALWAYS show (even for daily periods) */}
+                {/* MCF - Multi-Channel Fulfillment (SEPARATE from FBA!) */}
+                {fees.mcf > 0 && (
+                  <SubRow
+                    label="FBA fee (MCF)"
+                    value={formatCurrency(-fees.mcf)}
+                    valueColor="text-red-600"
+                  />
+                )}
+
+                {/* Referral fee */}
                 <SubRow
                   label="Referral fee"
                   value={formatCurrency(-fees.referral)}
                   valueColor={fees.referral > 0 ? "text-red-600" : "text-gray-400"}
                 />
 
-                {/* === WEEKLY+ PERIODS ONLY: Storage, Subscription, etc. === */}
-                {shouldShowSubscriptionFee(data.label) && (
-                  <>
-                    {/* FBA storage fee */}
-                    {fees.storage > 0 && (
-                      <SubRow
-                        label="FBA storage fee"
-                        value={formatCurrency(-fees.storage)}
-                        valueColor="text-red-600"
-                      />
-                    )}
+                {/* === STORAGE FEES === */}
 
-                    {/* Long term storage fee */}
-                    {data.serviceFees && data.serviceFees.storage > 0 && (
-                      <SubRow
-                        label="Long term storage fee"
-                        value={formatCurrency(-data.serviceFees.storage)}
-                        valueColor="text-red-600"
-                      />
-                    )}
+                {/* FBA storage fee (monthly) */}
+                {fees.storage > 0 && (
+                  <SubRow
+                    label="FBA storage fee"
+                    value={formatCurrency(-fees.storage)}
+                    valueColor="text-red-600"
+                  />
+                )}
 
-                    {/* Inbound transportation */}
-                    {fees.inbound > 0 && (
-                      <SubRow
-                        label="Inbound transportation"
-                        value={formatCurrency(-fees.inbound)}
-                        valueColor="text-red-600"
-                      />
-                    )}
+                {/* Long term storage fee (6+ months) - SEPARATE from regular storage */}
+                {fees.longTermStorage > 0 && (
+                  <SubRow
+                    label="Long term storage fee"
+                    value={formatCurrency(-fees.longTermStorage)}
+                    valueColor="text-red-600"
+                  />
+                )}
 
-                    {/* Subscription fee */}
-                    {data.serviceFees && data.serviceFees.subscription > 0 && (
-                      <SubRow
-                        label="Subscription"
-                        value={formatCurrency(-data.serviceFees.subscription)}
-                        valueColor="text-red-600"
-                      />
-                    )}
+                {/* === INBOUND / OUTBOUND FEES === */}
 
-                    {/* FBA removal fee */}
-                    {fees.removal > 0 && (
-                      <SubRow
-                        label="FBA removal fee"
-                        value={formatCurrency(-fees.removal)}
-                        valueColor="text-red-600"
-                      />
-                    )}
+                {/* Inbound transportation / convenience fee */}
+                {fees.inbound > 0 && (
+                  <SubRow
+                    label="Inbound transportation"
+                    value={formatCurrency(-fees.inbound)}
+                    valueColor="text-red-600"
+                  />
+                )}
 
-                    {/* Warehouse lost (can be positive or negative) */}
-                    {(fees.other !== 0 || fees.chargebacks !== 0) && (
-                      <SubRow
-                        label="Warehouse lost"
-                        value={formatCurrency(fees.other + fees.chargebacks)}
-                        valueColor={(fees.other + fees.chargebacks) > 0 ? "text-green-600" : "text-red-600"}
-                      />
-                    )}
+                {/* FBA disposal / removal fee */}
+                {fees.removal > 0 && (
+                  <SubRow
+                    label="FBA disposal fee"
+                    value={formatCurrency(-fees.removal)}
+                    valueColor="text-red-600"
+                  />
+                )}
 
-                    {/* FBA customer return fee */}
-                    {fees.returns > 0 && (
-                      <SubRow
-                        label="FBA customer return per unit fee"
-                        value={formatCurrency(-fees.returns)}
-                        valueColor="text-red-600"
-                      />
-                    )}
+                {/* FBA customer return per unit fee */}
+                {fees.returns > 0 && (
+                  <SubRow
+                    label="FBA customer return per unit fee"
+                    value={formatCurrency(-fees.returns)}
+                    valueColor="text-red-600"
+                  />
+                )}
 
-                    {/* Reversal reimbursement - positive value (money back) */}
-                    {fees.reimbursements > 0 && (
-                      <SubRow
-                        label="Reversal reimbursement"
-                        value={formatCurrency(fees.reimbursements)}
-                        valueColor="text-green-600"
-                      />
-                    )}
+                {/* === SERVICE FEES (Subscription, Digital, etc.) === */}
 
-                    {/* Other service fees */}
-                    {data.serviceFees && data.serviceFees.other > 0 && (
-                      <SubRow
-                        label="Other service fees"
-                        value={formatCurrency(-data.serviceFees.other)}
-                        valueColor="text-red-600"
-                      />
-                    )}
-                  </>
+                {/* Subscription fee (show for weekly+ periods) */}
+                {shouldShowSubscriptionFee(data.label) && data.serviceFees && data.serviceFees.subscription > 0 && (
+                  <SubRow
+                    label="Subscription"
+                    value={formatCurrency(-data.serviceFees.subscription)}
+                    valueColor="text-red-600"
+                  />
+                )}
+
+                {/* Digital services fee */}
+                {fees.digitalServices > 0 && (
+                  <SubRow
+                    label="Digital services fee"
+                    value={formatCurrency(-fees.digitalServices)}
+                    valueColor="text-red-600"
+                  />
+                )}
+
+                {/* === REIMBURSEMENTS (positive values - money back to seller) === */}
+
+                {/* Warehouse damage reimbursement */}
+                {fees.warehouseDamage > 0 && (
+                  <SubRow
+                    label="Warehouse damage"
+                    value={formatCurrency(fees.warehouseDamage)}
+                    valueColor="text-green-600"
+                  />
+                )}
+
+                {/* Warehouse lost reimbursement */}
+                {fees.warehouseLost > 0 && (
+                  <SubRow
+                    label="Warehouse lost"
+                    value={formatCurrency(fees.warehouseLost)}
+                    valueColor="text-green-600"
+                  />
+                )}
+
+                {/* Reversal reimbursement */}
+                {(fees.reversalReimbursement > 0 || fees.reimbursements > 0) && (
+                  <SubRow
+                    label="Reversal reimbursement"
+                    value={formatCurrency(fees.reversalReimbursement || fees.reimbursements)}
+                    valueColor="text-green-600"
+                  />
+                )}
+
+                {/* === OTHER FEES === */}
+
+                {/* Other miscellaneous fees */}
+                {fees.other > 0 && (
+                  <SubRow
+                    label="Other fees"
+                    value={formatCurrency(-fees.other)}
+                    valueColor="text-red-600"
+                  />
+                )}
+
+                {/* Chargebacks */}
+                {fees.chargebacks > 0 && (
+                  <SubRow
+                    label="Chargebacks"
+                    value={formatCurrency(-fees.chargebacks)}
+                    valueColor="text-red-600"
+                  />
+                )}
+
+                {/* Other service fees (from serviceFees table) */}
+                {shouldShowSubscriptionFee(data.label) && data.serviceFees && data.serviceFees.other > 0 && (
+                  <SubRow
+                    label="Other service fees"
+                    value={formatCurrency(-data.serviceFees.other)}
+                    valueColor="text-red-600"
+                  />
                 )}
               </>
             ) : (
               <>
-                {/* Estimated breakdown - FBA + Referral always, others for weekly+ */}
-                <SubRow label="FBA per unit fulfilment fee" value={formatCurrency(-data.amazonFees * 0.60)} valueColor="text-red-600" />
+                {/* Estimated breakdown when no real data */}
+                <SubRow label="FBA per unit fulfilment fee" value={formatCurrency(-data.amazonFees * 0.55)} valueColor="text-red-600" />
                 <SubRow label="Referral fee" value={formatCurrency(-data.amazonFees * 0.40)} valueColor="text-red-600" />
+                <SubRow label="FBA storage fee" value={formatCurrency(-data.amazonFees * 0.05)} valueColor="text-red-600" />
                 {shouldShowSubscriptionFee(data.label) && (
                   <>
-                    <SubRow label="FBA storage fee" value="$0.00" valueColor="text-gray-400" />
+                    <SubRow label="Subscription" value="$0.00" valueColor="text-gray-400" />
                   </>
                 )}
                 <div className="px-10 py-2 text-xs text-amber-500 italic">
