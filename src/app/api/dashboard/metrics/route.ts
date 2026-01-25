@@ -656,7 +656,7 @@ async function getRealFeesForPeriod(
       totalCogs: 0,
       orderCount: 0,
       feeSource: 'estimated',
-      feeBreakdown: { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0, promo: 0 },
+      feeBreakdown: emptyFeeBreakdown,
       serviceFees: { subscription: 0, storage: 0, other: 0, total: 0 },
       refunds: 0
     }
@@ -672,17 +672,25 @@ function formatMetrics(
   realFeeData?: RealFeeData,
   adSpendEstimate: number = 0
 ): PeriodMetrics {
-  const emptyBreakdown = {
+  // SELLERBOARD FEE BREAKDOWN - All fee types tracked individually
+  const emptyBreakdown: SellerboardFeeBreakdown = {
     fbaFulfillment: 0,
+    mcf: 0,
     referral: 0,
     storage: 0,
+    longTermStorage: 0,
     inbound: 0,
     removal: 0,
+    digitalServices: 0,
+    refundCommission: 0,
     returns: 0,
     chargebacks: 0,
     other: 0,
-    reimbursements: 0,
-    promo: 0
+    warehouseDamage: 0,
+    warehouseLost: 0,
+    reversalReimbursement: 0,
+    refundedReferral: 0,
+    promo: 0,
   }
   const emptyServiceFees = { subscription: 0, storage: 0, other: 0, total: 0 }
 
@@ -760,17 +768,25 @@ function formatMetrics(
   }
   // If we only have total fees (legacy), estimate breakdown using typical ratios
   else if (feeSource === 'estimated' || (amazonFees > 0 && feeBreakdown.fbaFulfillment === 0 && feeBreakdown.referral === 0)) {
+    // ESTIMATED FEE BREAKDOWN - Sellerboard-style format
     feeBreakdown = {
-      fbaFulfillment: amazonFees * 0.55,  // ~55% of total fees
-      referral: amazonFees * 0.35,         // ~35% of total fees
-      storage: amazonFees * 0.05,          // ~5% of total fees
-      inbound: amazonFees * 0.03,          // ~3% of total fees
+      fbaFulfillment: amazonFees * 0.55,   // ~55% of total fees
+      mcf: 0,
+      referral: amazonFees * 0.35,          // ~35% of total fees
+      storage: amazonFees * 0.05,           // ~5% of total fees
+      longTermStorage: 0,
+      inbound: amazonFees * 0.03,           // ~3% of total fees
       removal: 0,
-      returns: amazonFees * 0.02,          // ~2% of total fees
+      digitalServices: 0,
+      refundCommission: 0,
+      returns: amazonFees * 0.02,           // ~2% of total fees
       chargebacks: 0,
       other: 0,
-      reimbursements: 0,
-      promo: 0
+      warehouseDamage: 0,
+      warehouseLost: 0,
+      reversalReimbursement: 0,
+      refundedReferral: 0,
+      promo: 0,
     }
   }
 
