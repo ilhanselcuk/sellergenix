@@ -75,6 +75,7 @@ interface PeriodMetrics {
     chargebacks: number
     other: number
     reimbursements: number
+    promo: number
   }
   // Account-level service fees (subscription, storage, etc.)
   serviceFees: {
@@ -103,6 +104,7 @@ interface RealFeeData {
     chargebacks: number
     other: number
     reimbursements: number
+    promo: number
   }
   // Account-level service fees (not tied to orders)
   serviceFees: {
