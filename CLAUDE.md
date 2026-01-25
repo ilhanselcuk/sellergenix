@@ -75,6 +75,59 @@
 
 ---
 
+### 🚨🚨🚨 AMAZON APP PUBLISH SONRASI YAPILACAKLAR - BÜYÜK TODO 🚨🚨🚨
+
+**⚠️⚠️⚠️ APP PUBLISH EDİLDİĞİNDE BU LİSTEYİ TAKİP ET! ⚠️⚠️⚠️**
+
+**Tarih:** _App publish edildiğinde buraya yaz_
+**Durum:** ⏳ BEKLİYOR
+
+#### PUBLISH SONRASI CHECKLIST:
+
+```
+1. [ ] SELLER'I YENİDEN AUTHORIZE ET
+       - Yeni roller için consent gerekiyor
+       - /dashboard/amazon → "Reconnect" veya yeni OAuth flow
+
+2. [ ] FBA STORAGE FEE RAPORU TEST ET
+       - GET_FBA_STORAGE_FEE_CHARGES_DATA artık çalışmalı
+       - fetch('/api/sync/storage-fees', { method: 'POST' })
+       - source: "reports_api" dönmeli (artık fallback değil)
+
+3. [ ] LISTINGS API TEST ET
+       - Ürün detayları çekilebilmeli
+       - /api/amazon/products → sync test
+
+4. [ ] FBA INVENTORY API TEST ET
+       - Stok seviyeleri çekilebilmeli
+       - GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA raporu
+
+5. [ ] CATALOG ITEMS API TEST ET
+       - Ürün kataloğu çekilebilmeli
+
+6. [ ] DASHBOARD'A YENİ VERİLERİ ENTEGRE ET
+       - Storage fee: Reports API datası
+       - FBA Inventory: Stok seviyeleri
+       - Product details: ASIN bazlı bilgiler
+```
+
+#### ŞU AN 403 FORBIDDEN VEREN API'LER:
+
+| API | Endpoint | Neden? | Publish Sonrası |
+|-----|----------|--------|-----------------|
+| FBA Storage Fee Report | `GET_FBA_STORAGE_FEE_CHARGES_DATA` | Amazon Fulfillment rolü | ✅ Çalışacak |
+| FBA Inventory | `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` | Amazon Fulfillment rolü | ✅ Çalışacak |
+| Listings Items | `/listings/2021-08-01/items` | Product Listing rolü | ✅ Çalışacak |
+| Catalog Items | `/catalog/2022-04-01/items` | Product Listing rolü | ✅ Çalışacak |
+
+#### FALLBACK DURUMU (ŞİMDİLİK):
+
+- `/api/sync/storage-fees` → Settlement Report fallback kullanıyor
+- Dashboard feeBreakdown.storage → order_items.total_storage_fees'den çekiyor
+- **Publish sonrası Reports API'dan ASIN bazlı detaylı veri gelecek**
+
+---
+
 ### 🚨🚨🚨 PENDING vs SHIPPED SİPARİŞ VERİ MANTIĞI 🚨🚨🚨
 
 **⚠️ BU BÖLÜMÜ MUTLAKA OKU - AYNI HATAYI TEKRARLAMA!**
