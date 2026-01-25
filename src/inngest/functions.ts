@@ -986,11 +986,11 @@ export const syncHistoricalDataReports = inngest.createFunction(
               const { error: updateError } = await supabase
                 .from("order_items")
                 .update({
-                  fba_fee: fees.fbaFee || null,
-                  referral_fee: fees.referralFee || null,
-                  promotion_fee: fees.promotionDiscount || null,
-                  other_fee: fees.otherFees || null,
-                  estimated_amazon_fee: fees.totalFees || null,
+                  fee_fba_per_unit: fees.fbaFee || null,
+                  fee_referral: fees.referralFee || null,
+                  fee_promotion: fees.promotionDiscount || null,
+                  fee_other: fees.otherFees || null,
+                  total_amazon_fees: fees.totalFees || null,
                   fee_source: "settlement_report",
                 })
                 .eq("order_item_id", existingItems[0].order_item_id);
@@ -1019,11 +1019,11 @@ export const syncHistoricalDataReports = inngest.createFunction(
                   item_tax: order.itemTax ? parseFloat(String(order.itemTax)) : null,
                   shipping_price: order.shippingPrice ? parseFloat(String(order.shippingPrice)) : null,
                   promotion_discount: order.itemPromotionDiscount ? parseFloat(String(order.itemPromotionDiscount)) : null,
-                  fba_fee: fees?.fbaFee || null,
-                  referral_fee: fees?.referralFee || null,
-                  promotion_fee: fees?.promotionDiscount || null,
-                  other_fee: fees?.otherFees || null,
-                  estimated_amazon_fee: fees?.totalFees || null,
+                  fee_fba_per_unit: fees?.fbaFee || null,
+                  fee_referral: fees?.referralFee || null,
+                  fee_promotion: fees?.promotionDiscount || null,
+                  fee_other: fees?.otherFees || null,
+                  total_amazon_fees: fees?.totalFees || null,
                   fee_source: fees ? "settlement_report" : null,
                 },
                 { onConflict: "order_item_id" }

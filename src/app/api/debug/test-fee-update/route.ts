@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
       // Get the order_item_id
       const { data: orderItem, error: orderItemError } = await supabase
         .from("order_items")
-        .select("order_item_id, fee_source, fba_fee, referral_fee")
+        .select("order_item_id, fee_source, fee_fba_per_unit, fee_referral, total_amazon_fees")
         .eq("amazon_order_id", firstMatch.amazon_order_id)
         .eq("seller_sku", firstMatch.seller_sku)
         .single()
@@ -156,7 +156,8 @@ export async function GET(request: NextRequest) {
         orderItemFound: !!orderItem,
         orderItemId: orderItem?.order_item_id || 'NOT FOUND',
         currentFeeSource: orderItem?.fee_source || 'N/A',
-        currentFbaFee: orderItem?.fba_fee || 'N/A',
+        currentFbaFee: orderItem?.fee_fba_per_unit || 'N/A',
+        currentTotalFees: orderItem?.total_amazon_fees || 'N/A',
         newFbaFee: matchedFees?.fbaFee,
         newReferralFee: matchedFees?.referralFee,
         newTotalFees: matchedFees?.totalFees
@@ -178,10 +179,10 @@ export async function GET(request: NextRequest) {
         const { error: updateError } = await supabase
           .from("order_items")
           .update({
-            fba_fee: matchedFees.fbaFee || null,
-            referral_fee: matchedFees.referralFee || null,
-            other_fee: matchedFees.otherFees || null,
-            estimated_amazon_fee: matchedFees.totalFees || null,
+            fee_fba_per_unit: matchedFees.fbaFee || null,
+            fee_referral: matchedFees.referralFee || null,
+            fee_other: matchedFees.otherFees || null,
+            total_amazon_fees: matchedFees.totalFees || null,
             fee_source: "settlement_report",
           })
           .eq("order_item_id", orderItem.order_item_id)
@@ -195,7 +196,7 @@ export async function GET(request: NextRequest) {
         // Verify the update
         const { data: verifyData } = await supabase
           .from("order_items")
-          .select("order_item_id, fee_source, fba_fee, referral_fee, estimated_amazon_fee")
+          .select("order_item_id, fee_source, fee_fba_per_unit, fee_referral, total_amazon_fees")
           .eq("order_item_id", orderItem.order_item_id)
           .single()
 
