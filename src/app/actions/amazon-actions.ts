@@ -162,6 +162,8 @@ export async function handleAmazonCallbackAction(
     // ========================================
     try {
       console.log('🚀 [OAuth] Triggering 2-year historical sync via Inngest...')
+
+      // 1. Orders API sync (2 years)
       await inngest.send({
         name: 'amazon/sync.historical',
         data: {
@@ -171,7 +173,20 @@ export async function handleAmazonCallbackAction(
           yearsBack: 2
         }
       })
-      console.log('✅ [OAuth] Historical sync triggered successfully!')
+      console.log('✅ [OAuth] Historical orders sync triggered!')
+
+      // 2. Settlement Report fee sync (24 months) - GERÇEK FEE'LER İÇİN KRİTİK!
+      await inngest.send({
+        name: 'amazon/sync.settlement-fees',
+        data: {
+          userId,
+          refreshToken: refresh_token,
+          marketplaceIds: marketplaceIds.length > 0 ? marketplaceIds : ['ATVPDKIKX0DER'],
+          monthsBack: 24  // 24 ay kuralı!
+        }
+      })
+      console.log('✅ [OAuth] Settlement Report fee sync triggered (24 months)!')
+
     } catch (inngestError) {
       console.error('⚠️ [OAuth] Failed to trigger Inngest sync (non-blocking):', inngestError)
       // Don't fail the connection - sync can be triggered manually later
@@ -262,6 +277,8 @@ export async function connectWithManualTokenAction(
     // ========================================
     try {
       console.log('🚀 Triggering 2-year historical sync via Inngest...')
+
+      // 1. Orders API sync (2 years)
       await inngest.send({
         name: 'amazon/sync.historical',
         data: {
@@ -271,7 +288,20 @@ export async function connectWithManualTokenAction(
           yearsBack: 2
         }
       })
-      console.log('✅ Historical sync triggered successfully!')
+      console.log('✅ Historical orders sync triggered!')
+
+      // 2. Settlement Report fee sync (24 months) - GERÇEK FEE'LER İÇİN KRİTİK!
+      await inngest.send({
+        name: 'amazon/sync.settlement-fees',
+        data: {
+          userId,
+          refreshToken,
+          marketplaceIds: marketplaceIds.length > 0 ? marketplaceIds : ['ATVPDKIKX0DER'],
+          monthsBack: 24  // 24 ay kuralı!
+        }
+      })
+      console.log('✅ Settlement Report fee sync triggered (24 months)!')
+
     } catch (inngestError) {
       console.error('⚠️ Failed to trigger Inngest sync (non-blocking):', inngestError)
       // Don't fail the connection - sync can be triggered manually later
