@@ -178,13 +178,25 @@ export async function POST(request: NextRequest) {
       if (fees) {
         matched++
 
+        // Write to BOTH detail columns AND rollup columns
+        // Dashboard reads from rollup columns for breakdown display
+        // NOTE: promotionDiscount is stored but NOT included in total_amazon_fees
         const { error: updateError } = await supabase
           .from('order_items')
           .update({
+            // Detail columns (individual fee types)
             fee_fba_per_unit: fees.fbaFee || null,
             fee_referral: fees.referralFee || null,
+            fee_storage: fees.storageFee || null,
             fee_promotion: fees.promotionDiscount || null,
             fee_other: fees.otherFees || null,
+            // Rollup columns (category totals - what dashboard reads!)
+            total_fba_fulfillment_fees: fees.fbaFee || null,
+            total_referral_fees: fees.referralFee || null,
+            total_storage_fees: fees.storageFee || null,
+            total_promotion_fees: fees.promotionDiscount || null,
+            total_other_fees: fees.otherFees || null,
+            // total_amazon_fees = FBA + Referral + Storage + Other (NOT promo!)
             total_amazon_fees: fees.totalFees || null,
             fee_source: 'settlement_report',
           })

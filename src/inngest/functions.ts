@@ -1009,13 +1009,24 @@ export const syncHistoricalDataReports = inngest.createFunction(
           if (existingItems && existingItems.length > 0) {
             // Update existing item with Settlement Report fees
             if (fees) {
+              // Write to BOTH detail AND rollup columns
+              // NOTE: promotionDiscount stored separately, NOT in total_amazon_fees
               const { error: updateError } = await supabase
                 .from("order_items")
                 .update({
+                  // Detail columns
                   fee_fba_per_unit: fees.fbaFee || null,
                   fee_referral: fees.referralFee || null,
+                  fee_storage: fees.storageFee || null,
                   fee_promotion: fees.promotionDiscount || null,
                   fee_other: fees.otherFees || null,
+                  // Rollup columns (what dashboard reads!)
+                  total_fba_fulfillment_fees: fees.fbaFee || null,
+                  total_referral_fees: fees.referralFee || null,
+                  total_storage_fees: fees.storageFee || null,
+                  total_promotion_fees: fees.promotionDiscount || null,
+                  total_other_fees: fees.otherFees || null,
+                  // total_amazon_fees = FBA + Referral + Storage + Other (NOT promo!)
                   total_amazon_fees: fees.totalFees || null,
                   fee_source: "settlement_report",
                 })
@@ -1045,10 +1056,19 @@ export const syncHistoricalDataReports = inngest.createFunction(
                   item_tax: order.itemTax ? parseFloat(String(order.itemTax)) : null,
                   shipping_price: order.shippingPrice ? parseFloat(String(order.shippingPrice)) : null,
                   promotion_discount: order.itemPromotionDiscount ? parseFloat(String(order.itemPromotionDiscount)) : null,
+                  // Detail columns
                   fee_fba_per_unit: fees?.fbaFee || null,
                   fee_referral: fees?.referralFee || null,
+                  fee_storage: fees?.storageFee || null,
                   fee_promotion: fees?.promotionDiscount || null,
                   fee_other: fees?.otherFees || null,
+                  // Rollup columns (what dashboard reads!)
+                  total_fba_fulfillment_fees: fees?.fbaFee || null,
+                  total_referral_fees: fees?.referralFee || null,
+                  total_storage_fees: fees?.storageFee || null,
+                  total_promotion_fees: fees?.promotionDiscount || null,
+                  total_other_fees: fees?.otherFees || null,
+                  // total_amazon_fees = FBA + Referral + Storage + Other (NOT promo!)
                   total_amazon_fees: fees?.totalFees || null,
                   fee_source: fees ? "settlement_report" : null,
                 },
@@ -1288,13 +1308,27 @@ export const syncSettlementFees = inngest.createFunction(
           if (fees) {
             matched++;
 
+            // Write to BOTH detail columns AND rollup columns
+            // Detail columns: fee_fba_per_unit, fee_referral, etc.
+            // Rollup columns: total_fba_fulfillment_fees, total_referral_fees, etc.
+            // Dashboard reads from rollup columns for breakdown display
+            // NOTE: promotionDiscount is stored but NOT included in total_amazon_fees
             const { error: updateError } = await supabase
               .from("order_items")
               .update({
+                // Detail columns (individual fee types)
                 fee_fba_per_unit: (fees as any).fbaFee || null,
                 fee_referral: (fees as any).referralFee || null,
+                fee_storage: (fees as any).storageFee || null,
                 fee_promotion: (fees as any).promotionDiscount || null,
                 fee_other: (fees as any).otherFees || null,
+                // Rollup columns (category totals - what dashboard reads!)
+                total_fba_fulfillment_fees: (fees as any).fbaFee || null,
+                total_referral_fees: (fees as any).referralFee || null,
+                total_storage_fees: (fees as any).storageFee || null,
+                total_promotion_fees: (fees as any).promotionDiscount || null,
+                total_other_fees: (fees as any).otherFees || null,
+                // total_amazon_fees = FBA + Referral + Storage + Other (NOT promo!)
                 total_amazon_fees: (fees as any).totalFees || null,
                 fee_source: "settlement_report",
               })

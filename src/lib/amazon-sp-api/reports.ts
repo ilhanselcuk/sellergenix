@@ -629,22 +629,28 @@ export function parseSettlementReport(content: string): ParsedSettlementRow[] {
 
 /**
  * Calculate order-level fees from settlement data
+ *
+ * IMPORTANT: Amazon fees vs Deductions
+ * - Amazon fees: FBA, Referral, Storage (count toward totalFees)
+ * - Promotions: NOT Amazon fees - deducted from sales separately
+ * - Sellerboard shows these separately, we should too
  */
 export interface OrderFeeBreakdown {
   orderId: string
   sku: string
   quantity: number
-  principal: number      // Product price (positive)
-  fbaFee: number         // FBA fulfillment fee
-  referralFee: number    // Amazon commission
-  promotionDiscount: number
+  principal: number           // Product price (positive)
+  fbaFee: number              // FBA fulfillment fee
+  referralFee: number         // Amazon commission (may be $0 for new seller incentive)
+  storageFee: number          // Monthly/long-term storage fee
+  promotionDiscount: number   // NOT included in totalFees - separate deduction
   shippingCredit: number
   shippingChargeback: number
   giftWrap: number
-  otherFees: number
+  otherFees: number           // Other Amazon fees (not promotions)
   refundAmount: number
-  totalFees: number      // Sum of all fees (negative amounts)
-  netProceeds: number    // What seller actually receives
+  totalFees: number           // Sum of AMAZON fees only (FBA + Referral + Storage + Other)
+  netProceeds: number         // What seller actually receives
 }
 
 export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<string, OrderFeeBreakdown> {
@@ -668,6 +674,7 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
         principal: 0,
         fbaFee: 0,
         referralFee: 0,
+        storageFee: 0,
         promotionDiscount: 0,
         shippingCredit: 0,
         shippingChargeback: 0,
@@ -697,18 +704,24 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
       }
     }
 
-    // FBA Fees
+    // FBA Fees (fulfillment, pick & pack, weight-based)
     if (amountDesc.includes('fba') || amountDesc.includes('fulfillment fee') || amountDesc.includes('pick & pack')) {
       orderFees.fbaFee += Math.abs(amount)
     }
 
-    // Referral Fees
+    // Referral Fees / Commission (may be $0 for new seller incentive)
     else if (amountDesc.includes('referral') || amountDesc.includes('commission')) {
       orderFees.referralFee += Math.abs(amount)
     }
 
-    // Promotions
-    else if (amountType.includes('promotion') || amountDesc.includes('promotion')) {
+    // Storage Fees (monthly + long-term)
+    else if (amountDesc.includes('storage')) {
+      orderFees.storageFee += Math.abs(amount)
+    }
+
+    // Promotions - NOT Amazon fees, tracked separately!
+    // Sellerboard shows this as "Promo" separate from "Amazon fees"
+    else if (amountType.includes('promotion') || amountDesc.includes('promotion') || amountDesc.includes('coupon') || amountDesc.includes('lightning deal')) {
       orderFees.promotionDiscount += Math.abs(amount)
     }
 
@@ -731,16 +744,23 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
       orderFees.refundAmount += Math.abs(amount)
     }
 
-    // Other fees (negative amounts we couldn't categorize)
+    // Other AMAZON fees (negative amounts that are actual fees, not promos)
+    // Only count as otherFees if it looks like a fee, not a deduction
     else if (amount < 0) {
-      orderFees.otherFees += Math.abs(amount)
+      // Check if it's a fee type we missed
+      if (amountType.includes('fee') || amountDesc.includes('fee')) {
+        orderFees.otherFees += Math.abs(amount)
+      }
+      // Otherwise don't add to Amazon fees - might be a promo or other deduction
     }
   }
 
   // Calculate totals for each order
+  // IMPORTANT: totalFees = ONLY Amazon fees (FBA + Referral + Storage + Other)
+  // Promotions are NOT Amazon fees - they're deducted from sales separately
   for (const [orderId, fees] of orderFeesMap) {
-    fees.totalFees = fees.fbaFee + fees.referralFee + fees.promotionDiscount + fees.otherFees
-    fees.netProceeds = fees.principal - fees.totalFees - fees.refundAmount + fees.shippingCredit
+    fees.totalFees = fees.fbaFee + fees.referralFee + fees.storageFee + fees.otherFees
+    fees.netProceeds = fees.principal - fees.totalFees - fees.promotionDiscount - fees.refundAmount + fees.shippingCredit
     orderFeesMap.set(orderId, fees)
   }
 
