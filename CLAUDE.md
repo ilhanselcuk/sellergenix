@@ -155,6 +155,57 @@ Her bug fix, her düzeltme, her iyileştirme:
 
 ---
 
+### 📅 OTOMATİK SYNC TAKVİMİ (25 Ocak 2026)
+
+**Commit:** `bfa4c27` - "feat: Add daily scheduled sync for Settlement and Storage fees"
+
+#### ⏰ Tüm Scheduled Jobs
+
+| Job | Sıklık | Saat (UTC) | Ne Yapıyor | Dosya |
+|-----|--------|------------|------------|-------|
+| **Vercel Cron** | Her 15 dk | `*/15 * * * *` | Yeni siparişler (3 gün), Order Items, Finances (7 gün), Dimensions | `/api/cron/sync` |
+| **scheduledFeeSync** | Her 15 dk | `*/15 * * * *` | Shipped sipariş fee sync (1 saat) | Inngest |
+| **scheduledSettlementSync** | Günde 1x | `06:00 UTC` | Settlement Report fees (24 ay) | Inngest |
+| **scheduledStorageSync** | Günde 1x | `07:00 UTC` | FBA Storage fees | Inngest |
+
+#### 🕐 Türkiye Saati Karşılıkları
+
+| UTC | Türkiye (UTC+3) |
+|-----|-----------------|
+| 06:00 UTC | 09:00 TSİ |
+| 07:00 UTC | 10:00 TSİ |
+
+#### 📊 Veri Akışı
+
+```
+YENİ MÜŞTERİ BAĞLANDIĞINDA:
+├── OAuth callback tetiklenir
+├── amazon/sync.historical (24 ay) → Orders, Order Items, Fees
+└── amazon/sync.settlement-fees (24 ay) → Settlement Report fees
+
+HER 15 DAKİKA:
+├── Vercel Cron → Yeni siparişler (son 3 gün)
+├── Vercel Cron → Order items, Finances (son 7 gün)
+└── Inngest scheduledFeeSync → Shipped fee sync (son 1 saat)
+
+HER GÜN 06:00 UTC:
+└── Inngest scheduledSettlementSync → Tüm kullanıcılar için Settlement (24 ay)
+
+HER GÜN 07:00 UTC:
+└── Inngest scheduledStorageSync → Tüm kullanıcılar için Storage fees
+```
+
+#### 📁 İlgili Dosyalar
+
+| Dosya | Amaç |
+|-------|------|
+| `/vercel.json` | Vercel Cron config |
+| `/src/app/api/cron/sync/route.ts` | Her 15 dk cron endpoint |
+| `/src/inngest/functions.ts` | Tüm Inngest jobs |
+| `/src/inngest/client.ts` | Event type definitions |
+
+---
+
 ### 🚨🚨🚨 AMAZON APP PUBLISH SONRASI YAPILACAKLAR - BÜYÜK TODO 🚨🚨🚨
 
 **⚠️⚠️⚠️ APP PUBLISH EDİLDİĞİNDE BU LİSTEYİ TAKİP ET! ⚠️⚠️⚠️**
