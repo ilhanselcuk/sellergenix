@@ -653,12 +653,17 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
   for (const row of rows) {
     if (!row.orderId || row.transactionType === 'Transfer') continue
 
+    // Key by orderId-sku for item-level fee tracking
+    // Fall back to just orderId if no SKU (order-level fees)
+    const sku = row.sku || ''
+    const key = sku ? `${row.orderId}|${sku}` : row.orderId
+
     // Get or create order record
-    let orderFees = orderFeesMap.get(row.orderId)
+    let orderFees = orderFeesMap.get(key)
     if (!orderFees) {
       orderFees = {
         orderId: row.orderId,
-        sku: row.sku || '',
+        sku: sku,
         quantity: row.quantityPurchased || 0,
         principal: 0,
         fbaFee: 0,
@@ -672,7 +677,7 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
         totalFees: 0,
         netProceeds: 0,
       }
-      orderFeesMap.set(row.orderId, orderFees)
+      orderFeesMap.set(key, orderFees)
     }
 
     // Update quantity if higher

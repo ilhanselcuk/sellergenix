@@ -938,17 +938,47 @@ export const syncHistoricalDataReports = inngest.createFunction(
             ordersSaved++;
           }
 
-          // Get fees for this order (from Settlement Report)
-          const fees = orderFees.get(order.amazonOrderId);
+          // Get fees for this order item (from Settlement Report)
+          // Try item-level key first (orderId|sku), then fall back to order-level key
+          const sku = order.sku || '';
+          const itemFeeKey = sku ? `${order.amazonOrderId}|${sku}` : order.amazonOrderId;
+          const fees = orderFees.get(itemFeeKey) || orderFees.get(order.amazonOrderId);
 
-          // Try to find existing order_item by amazon_order_id + sku/asin
+          // Try to find existing order_item by amazon_order_id + seller_sku
           // (Order items may already exist from Finances API sync with real order_item_id)
-          const { data: existingItems } = await supabase
-            .from("order_items")
-            .select("order_item_id")
-            .eq("amazon_order_id", order.amazonOrderId)
-            .or(`seller_sku.eq.${order.sku},asin.eq.${order.asin}`)
-            .limit(1);
+          let existingItems: { order_item_id: string }[] | null = null;
+
+          // First try matching by SKU if available
+          if (order.sku) {
+            const { data } = await supabase
+              .from("order_items")
+              .select("order_item_id")
+              .eq("amazon_order_id", order.amazonOrderId)
+              .eq("seller_sku", order.sku)
+              .limit(1);
+            existingItems = data;
+          }
+
+          // If no match by SKU, try by ASIN
+          if ((!existingItems || existingItems.length === 0) && order.asin) {
+            const { data } = await supabase
+              .from("order_items")
+              .select("order_item_id")
+              .eq("amazon_order_id", order.amazonOrderId)
+              .eq("asin", order.asin)
+              .limit(1);
+            existingItems = data;
+          }
+
+          // If still no match, try just by order_id (will get first item)
+          if (!existingItems || existingItems.length === 0) {
+            const { data } = await supabase
+              .from("order_items")
+              .select("order_item_id")
+              .eq("amazon_order_id", order.amazonOrderId)
+              .limit(1);
+            existingItems = data;
+          }
 
           if (existingItems && existingItems.length > 0) {
             // Update existing item with Settlement Report fees
