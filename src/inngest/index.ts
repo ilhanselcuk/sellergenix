@@ -10,6 +10,8 @@ export {
   syncAmazonFees,
   syncSingleOrderFees,
   scheduledFeeSync,
+  scheduledSettlementSync, // NEW: Daily Settlement sync
+  scheduledStorageSync,    // NEW: Daily Storage sync
   syncHistoricalData,
   syncHistoricalDataKiosk,
   syncHistoricalDataReports,

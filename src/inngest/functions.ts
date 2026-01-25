@@ -1386,13 +1386,152 @@ export const syncSettlementFees = inngest.createFunction(
   }
 );
 
+/**
+ * Scheduled Daily Settlement Report Sync
+ * Runs every day at 06:00 UTC
+ * Syncs Settlement Report fees for all active users (24 months)
+ */
+export const scheduledSettlementSync = inngest.createFunction(
+  {
+    id: "scheduled-settlement-sync",
+    retries: 1,
+  },
+  // Run daily at 06:00 UTC
+  { cron: "0 6 * * *" },
+  async ({ step }) => {
+    console.log("⏰ [Inngest] Starting daily Settlement Report sync");
+
+    // Get all active Amazon connections
+    const connections = await step.run("get-connections", async () => {
+      const { data, error } = await supabase
+        .from("amazon_connections")
+        .select("user_id, refresh_token, marketplace_ids")
+        .eq("is_active", true);
+
+      if (error) {
+        console.error("Error fetching connections:", error);
+        return [];
+      }
+
+      return data || [];
+    });
+
+    console.log(`📊 Found ${connections.length} active connections for Settlement sync`);
+
+    // Trigger settlement sync for each user
+    const results = [];
+    for (const conn of connections) {
+      await step.run(`trigger-settlement-${conn.user_id}`, async () => {
+        await inngest.send({
+          name: "amazon/sync.settlement-fees",
+          data: {
+            userId: conn.user_id,
+            refreshToken: conn.refresh_token,
+            marketplaceIds: conn.marketplace_ids || ['ATVPDKIKX0DER'],
+            monthsBack: 24, // Always 24 months per rule
+          },
+        });
+
+        return { userId: conn.user_id, triggered: true };
+      });
+
+      results.push(conn.user_id);
+
+      // Delay between users to spread load
+      await step.sleep(`settlement-delay-${conn.user_id}`, "5s");
+    }
+
+    return {
+      usersProcessed: results.length,
+      completedAt: new Date().toISOString(),
+    };
+  }
+);
+
+/**
+ * Scheduled Daily Storage Fee Sync
+ * Runs every day at 07:00 UTC
+ * Syncs FBA Storage Fees for all active users
+ */
+export const scheduledStorageSync = inngest.createFunction(
+  {
+    id: "scheduled-storage-sync",
+    retries: 1,
+  },
+  // Run daily at 07:00 UTC (1 hour after settlement sync)
+  { cron: "0 7 * * *" },
+  async ({ step }) => {
+    console.log("⏰ [Inngest] Starting daily Storage Fee sync");
+
+    // Get all active Amazon connections
+    const connections = await step.run("get-connections", async () => {
+      const { data, error } = await supabase
+        .from("amazon_connections")
+        .select("user_id, refresh_token, marketplace_ids")
+        .eq("is_active", true);
+
+      if (error) {
+        console.error("Error fetching connections:", error);
+        return [];
+      }
+
+      return data || [];
+    });
+
+    console.log(`📊 Found ${connections.length} active connections for Storage sync`);
+
+    // Dynamic import
+    const { getFBAStorageFeeReport } = await import("@/lib/amazon-sp-api/reports");
+
+    const results = [];
+    for (const conn of connections) {
+      const syncResult = await step.run(`sync-storage-${conn.user_id}`, async () => {
+        try {
+          const marketplaceIds = conn.marketplace_ids || ['ATVPDKIKX0DER'];
+          const result = await getFBAStorageFeeReport(conn.refresh_token, marketplaceIds);
+
+          if (result.success) {
+            console.log(`✅ Storage sync for ${conn.user_id}: $${result.totalStorageFee}`);
+            return {
+              userId: conn.user_id,
+              success: true,
+              totalStorageFee: result.totalStorageFee
+            };
+          } else {
+            console.log(`⚠️ Storage sync failed for ${conn.user_id}: ${result.error}`);
+            return { userId: conn.user_id, success: false, error: result.error };
+          }
+        } catch (err: any) {
+          console.error(`❌ Storage sync error for ${conn.user_id}:`, err.message);
+          return { userId: conn.user_id, success: false, error: err.message };
+        }
+      });
+
+      results.push(syncResult);
+
+      // Delay between users
+      await step.sleep(`storage-delay-${conn.user_id}`, "3s");
+    }
+
+    const successful = results.filter(r => r.success).length;
+    return {
+      usersProcessed: results.length,
+      successful,
+      failed: results.length - successful,
+      completedAt: new Date().toISOString(),
+    };
+  }
+);
+
 // Export all functions
 export const functions = [
   syncAmazonFees,
   syncSingleOrderFees,
   scheduledFeeSync,
+  scheduledSettlementSync, // NEW: Daily Settlement Report sync
+  scheduledStorageSync,    // NEW: Daily Storage Fee sync
   syncHistoricalData,
   syncHistoricalDataKiosk,
   syncHistoricalDataReports,
-  syncSettlementFees, // NEW: Direct Settlement Report fee sync
+  syncSettlementFees,
 ];
