@@ -34,6 +34,9 @@ export {
   calculateFeesFromSettlement,
   getAvailableSettlementReports,
   bulkSyncHistoricalData,
+  // FBA Storage Fee Report (Phase 1.9)
+  parseStorageFeeReport,
+  getFBAStorageFeeReport,
 } from './reports'
 export type {
   ReportType,
@@ -42,6 +45,8 @@ export type {
   ParsedOrderItem,
   ParsedSettlementRow,
   OrderFeeBreakdown,
+  // FBA Storage Fee types (Phase 1.9)
+  ParsedStorageFeeRow,
 } from './reports'
 
 // Finances

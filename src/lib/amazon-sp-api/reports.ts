@@ -820,6 +820,209 @@ export async function getAvailableSettlementReports(
   }
 }
 
+// ============================================================
+// FBA STORAGE FEE REPORT
+// ============================================================
+
+/**
+ * FBA Storage Fee Report Row
+ * Contains monthly storage fee charges per ASIN
+ */
+export interface ParsedStorageFeeRow {
+  asin: string
+  fnsku: string
+  productName: string
+  fulfillmentCenter: string
+  countryCode: string
+  longestSide: number
+  medianSide: number
+  shortestSide: number
+  measurementUnits: string
+  weight: number
+  weightUnits: string
+  itemVolume: number
+  volumeUnits: string
+  productSizeTier: string
+  averageQuantityOnHand: number
+  averageQuantityPendingRemoval: number
+  estimatedTotalItemVolume: number
+  monthOfCharge: string
+  storageRate: number
+  currency: string
+  estimatedMonthlyStorageFee: number
+  dangerousGoodsStorageType: string
+  eligibleForInventoryDiscount: boolean
+  qualifiesForInventoryDiscount: boolean
+  totalIncentiveFeeAmount: number
+  breakdownIncentiveFeeAmount: number
+  averageQuantityCustomerOrders: number
+}
+
+/**
+ * Parse FBA Storage Fee Report (tab-separated)
+ */
+export function parseStorageFeeReport(content: string): ParsedStorageFeeRow[] {
+  const lines = content.trim().split('\n')
+  if (lines.length < 2) return []
+
+  const headers = lines[0].split('\t').map((h) =>
+    h.trim().toLowerCase().replace(/[- ]/g, '_').replace(/[()]/g, '')
+  )
+
+  const rows: ParsedStorageFeeRow[] = []
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split('\t')
+    if (values.length < 5) continue
+
+    const row: Record<string, string> = {}
+    headers.forEach((header, idx) => {
+      row[header] = values[idx]?.trim() || ''
+    })
+
+    const parsed: ParsedStorageFeeRow = {
+      asin: row['asin'] || '',
+      fnsku: row['fnsku'] || '',
+      productName: row['product_name'] || '',
+      fulfillmentCenter: row['fulfillment_center'] || '',
+      countryCode: row['country_code'] || '',
+      longestSide: parseFloat(row['longest_side'] || '0') || 0,
+      medianSide: parseFloat(row['median_side'] || '0') || 0,
+      shortestSide: parseFloat(row['shortest_side'] || '0') || 0,
+      measurementUnits: row['measurement_units'] || '',
+      weight: parseFloat(row['weight'] || '0') || 0,
+      weightUnits: row['weight_units'] || '',
+      itemVolume: parseFloat(row['item_volume'] || '0') || 0,
+      volumeUnits: row['volume_units'] || '',
+      productSizeTier: row['product_size_tier'] || '',
+      averageQuantityOnHand: parseFloat(row['average_quantity_on_hand'] || '0') || 0,
+      averageQuantityPendingRemoval: parseFloat(row['average_quantity_pending_removal'] || '0') || 0,
+      estimatedTotalItemVolume: parseFloat(row['estimated_total_item_volume'] || '0') || 0,
+      monthOfCharge: row['month_of_charge'] || '',
+      storageRate: parseFloat(row['storage_rate'] || '0') || 0,
+      currency: row['currency'] || 'USD',
+      estimatedMonthlyStorageFee: parseFloat(row['estimated_monthly_storage_fee'] || '0') || 0,
+      dangerousGoodsStorageType: row['dangerous_goods_storage_type'] || '',
+      eligibleForInventoryDiscount: row['eligible_for_inventory_discount']?.toLowerCase() === 'yes',
+      qualifiesForInventoryDiscount: row['qualifies_for_inventory_discount']?.toLowerCase() === 'yes',
+      totalIncentiveFeeAmount: parseFloat(row['total_incentive_fee_amount'] || '0') || 0,
+      breakdownIncentiveFeeAmount: parseFloat(row['breakdown_incentive_fee_amount'] || '0') || 0,
+      averageQuantityCustomerOrders: parseFloat(row['average_quantity_customer_orders'] || '0') || 0,
+    }
+
+    if (parsed.asin) {
+      rows.push(parsed)
+    }
+  }
+
+  console.log(`📊 Parsed ${rows.length} rows from FBA Storage Fee Report`)
+  return rows
+}
+
+/**
+ * Get FBA Storage Fee Report
+ *
+ * This report contains estimated monthly storage fees per ASIN.
+ * It's the source for the "FBA storage fee" line item in Sellerboard.
+ *
+ * NOTE: This is different from long-term storage fees which come from Settlement Reports.
+ */
+export async function getFBAStorageFeeReport(
+  refreshToken: string,
+  marketplaceIds?: string[]
+): Promise<{
+  success: boolean
+  data?: ParsedStorageFeeRow[]
+  totalStorageFee?: number
+  byMonth?: Map<string, number>
+  error?: string
+}> {
+  console.log('📦 Fetching FBA Storage Fee Report...')
+
+  try {
+    // Request report
+    const reportRequest = await requestReport(refreshToken, {
+      reportType: 'GET_FBA_STORAGE_FEE_CHARGES_DATA',
+      marketplaceIds,
+    })
+
+    if (!reportRequest.success || !reportRequest.reportId) {
+      return { success: false, error: `Failed to request storage fee report: ${reportRequest.error}` }
+    }
+
+    // Poll for completion
+    let attempts = 0
+    const maxAttempts = 30 // 2.5 minutes max
+    let reportStatus
+
+    while (attempts < maxAttempts) {
+      reportStatus = await getReportStatus(refreshToken, reportRequest.reportId)
+
+      if (!reportStatus.success) {
+        return { success: false, error: 'Failed to check report status' }
+      }
+
+      if (reportStatus.status === 'DONE') {
+        console.log('✅ Storage fee report ready!')
+        break
+      }
+
+      if (reportStatus.status === 'FATAL' || reportStatus.status === 'CANCELLED') {
+        return { success: false, error: `Report failed: ${reportStatus.status}` }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 5000))
+      attempts++
+    }
+
+    if (!reportStatus || reportStatus.status !== 'DONE') {
+      return { success: false, error: 'Report generation timed out' }
+    }
+
+    // Download and parse
+    const reportData = await downloadReport(refreshToken, reportStatus.documentId!)
+
+    if (!reportData.success || !reportData.content) {
+      return { success: false, error: 'Failed to download report' }
+    }
+
+    const rows = parseStorageFeeReport(reportData.content)
+
+    // Calculate totals
+    let totalStorageFee = 0
+    const byMonth = new Map<string, number>()
+
+    for (const row of rows) {
+      totalStorageFee += row.estimatedMonthlyStorageFee
+
+      const month = row.monthOfCharge
+      if (month) {
+        byMonth.set(month, (byMonth.get(month) || 0) + row.estimatedMonthlyStorageFee)
+      }
+    }
+
+    console.log(`💰 Total Storage Fee: $${totalStorageFee.toFixed(2)}`)
+    console.log(`📊 Storage fees by month:`)
+    for (const [month, fee] of byMonth.entries()) {
+      console.log(`   ${month}: $${fee.toFixed(2)}`)
+    }
+
+    return {
+      success: true,
+      data: rows,
+      totalStorageFee,
+      byMonth,
+    }
+  } catch (error: any) {
+    console.error('❌ Failed to get storage fee report:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+// ============================================================
+// BULK HISTORICAL SYNC
+// ============================================================
+
 /**
  * MAIN FUNCTION: Bulk sync historical data using Reports API (Sellerboard approach)
  *
