@@ -51,6 +51,7 @@ interface PeriodMetrics {
     chargebacks: number
     other: number
     reimbursements: number
+    promo: number
   }
   serviceFees?: {
     subscription: number
