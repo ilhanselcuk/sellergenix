@@ -31,6 +31,7 @@ export interface PeriodData {
     chargebacks: number
     other: number
     reimbursements: number
+    promo: number
   }
   serviceFees?: {
     subscription: number

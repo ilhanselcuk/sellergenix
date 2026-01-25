@@ -127,7 +127,7 @@ async function getRealFeesForPeriod(
   endDate: Date
 ): Promise<RealFeeData> {
   const emptyServiceFees = { subscription: 0, storage: 0, other: 0, total: 0 }
-  const emptyFeeBreakdown = { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0 }
+  const emptyFeeBreakdown = { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0, promo: 0 }
 
   try {
     // =====================================================
@@ -288,6 +288,7 @@ async function getRealFeesForPeriod(
         total_other_fees,
         total_reimbursements,
         total_amazon_fees,
+        total_promotion_fees,
         fee_source
       `)
       .eq('user_id', userId)
@@ -409,8 +410,12 @@ async function getRealFeesForPeriod(
       returns: 0,
       chargebacks: 0,
       other: 0,
-      reimbursements: 0
+      reimbursements: 0,
+      promo: 0
     }
+
+    // Promo total (separate from Amazon fees - not included in totalFees!)
+    let totalPromo = 0
 
     for (const order of orders) {
       const orderItems = itemsByOrder.get(order.amazon_order_id) || []
@@ -444,6 +449,10 @@ async function getRealFeesForPeriod(
           feeBreakdown.chargebacks += (item.total_chargeback_fees || 0)
           feeBreakdown.other += (item.total_other_fees || 0)
           feeBreakdown.reimbursements += (item.total_reimbursements || 0)
+          // Promo is tracked separately (not included in totalFees)
+          const itemPromo = (item as any).total_promotion_fees || 0
+          feeBreakdown.promo += itemPromo
+          totalPromo += itemPromo
           orderHasRealFees = true
         } else if (item.asin && asinFeeHistory.has(item.asin)) {
           // Use historical per-unit fee from same ASIN for BOTH:
@@ -539,6 +548,7 @@ async function getRealFeesForPeriod(
     console.log(`📊 Fee data for period (${requestedDays} days):`)
     console.log(`   Order fees: $${finalFees.toFixed(2)} (source: ${feeSource})`)
     console.log(`   Service fees: $${accountServiceFees.total.toFixed(2)} (Subscription: $${accountServiceFees.subscription.toFixed(2)}, Storage: $${accountServiceFees.storage.toFixed(2)})`)
+    console.log(`   Promo: $${totalPromo.toFixed(2)} (separate from Amazon fees)`)
     console.log(`   Include service fees: ${shouldIncludeServiceFees ? 'YES (period >= 7 days)' : 'NO (daily period)'}`)
     console.log(`   TOTAL FEES: $${totalFeesWithService.toFixed(2)}`)
     console.log(`   Refunds: $${realRefundsFromFinanceAPI.toFixed(2)}`)
@@ -561,7 +571,7 @@ async function getRealFeesForPeriod(
       totalCogs: 0,
       orderCount: 0,
       feeSource: 'estimated',
-      feeBreakdown: { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0 },
+      feeBreakdown: { fbaFulfillment: 0, referral: 0, storage: 0, inbound: 0, removal: 0, returns: 0, chargebacks: 0, other: 0, reimbursements: 0, promo: 0 },
       serviceFees: { subscription: 0, storage: 0, other: 0, total: 0 },
       refunds: 0
     }
@@ -586,7 +596,8 @@ function formatMetrics(
     returns: 0,
     chargebacks: 0,
     other: 0,
-    reimbursements: 0
+    reimbursements: 0,
+    promo: 0
   }
   const emptyServiceFees = { subscription: 0, storage: 0, other: 0, total: 0 }
 

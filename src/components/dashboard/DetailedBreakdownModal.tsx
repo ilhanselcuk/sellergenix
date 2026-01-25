@@ -138,8 +138,12 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
         chargebacks: data.feeBreakdown!.chargebacks || 0,
         other: data.feeBreakdown!.other || 0,
         reimbursements: data.feeBreakdown!.reimbursements || 0,
+        promo: data.feeBreakdown!.promo || 0,
       }
     : null
+
+  // Get promo value (separate from Amazon fees)
+  const safePromo = fees?.promo || data.feeBreakdown?.promo || 0
 
   // Calculated metrics
   const grossProfit = data.grossProfit ?? (data.sales - data.amazonFees - safeRefunds - safeCogs)
@@ -211,7 +215,11 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           </CollapsibleRow>
 
           {/* Promo */}
-          <CollapsibleRow label="Promo" value="$0.00" valueColor="text-gray-500" />
+          <CollapsibleRow
+            label="Promo"
+            value={formatCurrency(-safePromo)}
+            valueColor={safePromo > 0 ? "text-red-600" : "text-gray-500"}
+          />
 
           {/* Advertising cost - Expandable */}
           <CollapsibleRow
