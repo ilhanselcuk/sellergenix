@@ -1173,7 +1173,7 @@ export const syncSettlementFees = inngest.createFunction(
   },
   { event: "amazon/sync.settlement-fees" },
   async ({ event, step }) => {
-    const { userId, refreshToken, marketplaceIds = ['ATVPDKIKX0DER'], monthsBack = 3 } = event.data;
+    const { userId, refreshToken, marketplaceIds = ['ATVPDKIKX0DER'], monthsBack = 24 } = event.data;
 
     console.log(`🚀 [Inngest] Starting Settlement Report fee sync for user ${userId}, months: ${monthsBack}`);
 

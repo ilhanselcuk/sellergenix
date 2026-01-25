@@ -9,7 +9,7 @@
  * Query params:
  * - sync=direct: Run synchronously (for small syncs, may timeout)
  * - sync=background (default): Trigger Inngest job (recommended)
- * - monthsBack: How many months of settlement reports to process (default: 3)
+ * - monthsBack: How many months of settlement reports to process (default: 24)
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     // Get sync mode from query params
     const searchParams = request.nextUrl.searchParams
     const syncMode = searchParams.get('sync') || 'background'
-    const monthsBack = parseInt(searchParams.get('monthsBack') || '3', 10)
+    const monthsBack = parseInt(searchParams.get('monthsBack') || '24', 10)
 
     // Get Amazon connection
     const { data: connection } = await supabase
@@ -282,12 +282,12 @@ export async function GET(request: NextRequest) {
         'background': '(default) Trigger Inngest job - recommended for production',
         'direct': 'Run synchronously - may timeout for large syncs'
       },
-      'monthsBack': 'Number of months to process (default: 3)'
+      'monthsBack': 'Number of months to process (default: 24)'
     },
     examples: [
-      'POST /api/sync/settlement-fees - Background mode (default)',
+      'POST /api/sync/settlement-fees - Background mode (default, 24 months)',
       'POST /api/sync/settlement-fees?sync=direct - Direct mode (may timeout)',
-      'POST /api/sync/settlement-fees?monthsBack=6 - 6 months of reports'
+      'POST /api/sync/settlement-fees?monthsBack=12 - 12 months of reports'
     ]
   })
 }

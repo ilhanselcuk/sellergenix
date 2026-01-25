@@ -87,7 +87,7 @@ export type SyncSettlementFeesEvent = {
     userId: string;
     refreshToken: string;
     marketplaceIds?: string[];
-    monthsBack?: number; // Default 3 months
+    monthsBack?: number; // Default 24 months
   };
 };
 
