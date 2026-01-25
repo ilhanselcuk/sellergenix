@@ -1312,25 +1312,37 @@ export const syncSettlementFees = inngest.createFunction(
             // Detail columns: fee_fba_per_unit, fee_referral, etc.
             // Rollup columns: total_fba_fulfillment_fees, total_referral_fees, etc.
             // Dashboard reads from rollup columns for breakdown display
-            // NOTE: promotionDiscount is stored but NOT included in total_amazon_fees
+            //
+            // NEW (2026-01-25): Added all fee types from expanded OrderFeeBreakdown
+            const f = fees as any;
             const { error: updateError } = await supabase
               .from("order_items")
               .update({
-                // Detail columns (individual fee types)
-                fee_fba_per_unit: (fees as any).fbaFee || null,
-                fee_referral: (fees as any).referralFee || null,
-                fee_storage: (fees as any).storageFee || null,
-                fee_promotion: (fees as any).promotionDiscount || null,
-                fee_other: (fees as any).otherFees || null,
-                // Rollup columns (category totals - what dashboard reads!)
-                total_fba_fulfillment_fees: (fees as any).fbaFee || null,
-                total_referral_fees: (fees as any).referralFee || null,
-                total_storage_fees: (fees as any).storageFee || null,
-                total_promotion_fees: (fees as any).promotionDiscount || null,
-                total_other_fees: (fees as any).otherFees || null,
-                // total_amazon_fees = FBA + Referral + Storage + Other (NOT promo!)
-                total_amazon_fees: (fees as any).totalFees || null,
+                // ========== DETAIL COLUMNS (individual fee types) ==========
+                fee_fba_per_unit: f.fbaFee || null,
+                fee_referral: f.referralFee || null,
+                fee_storage: f.storageFee || null,
+                fee_storage_long_term: f.longTermStorageFee || null,
+                fee_inbound_convenience: f.inboundFee || null,
+                fee_removal: f.disposalFee || null,
+                fee_disposal: f.disposalFee || null,
+                fee_promotion: f.promotionDiscount || null,
+                fee_other: f.otherFees || null,
+                reimbursement_damaged: f.warehouseDamage || null,
+                reimbursement_other: f.reimbursements || null,
+                // ========== ROLLUP COLUMNS (category totals - what dashboard reads!) ==========
+                total_fba_fulfillment_fees: (f.fbaFee || 0) + (f.mcfFee || 0),
+                total_referral_fees: f.referralFee || null,
+                total_storage_fees: (f.storageFee || 0) + (f.longTermStorageFee || 0),
+                total_inbound_fees: f.inboundFee || null,
+                total_removal_fees: f.disposalFee || null,
+                total_return_fees: f.refundCommission || null,
+                total_promotion_fees: f.promotionDiscount || null,
+                total_other_fees: (f.otherFees || 0) + (f.digitalServicesFee || 0),
+                total_reimbursements: (f.warehouseDamage || 0) + (f.reimbursements || 0) + (f.refundedReferralFee || 0),
+                total_amazon_fees: f.totalFees || null,
                 fee_source: "settlement_report",
+                fees_synced_at: new Date().toISOString(),
               })
               .eq("order_item_id", item.order_item_id);
 

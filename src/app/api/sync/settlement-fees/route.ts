@@ -181,24 +181,51 @@ export async function POST(request: NextRequest) {
         // Write to BOTH detail columns AND rollup columns
         // Dashboard reads from rollup columns for breakdown display
         // NOTE: promotionDiscount is stored but NOT included in total_amazon_fees
+        //
+        // NEW (2026-01-25): Added all fee types from expanded OrderFeeBreakdown:
+        // - MCF, disposal, inbound, digital services
+        // - Reimbursements (warehouse damage, reversal, refunded referral)
+        // - Refund commission
         const { error: updateError } = await supabase
           .from('order_items')
           .update({
-            // Detail columns (individual fee types)
+            // ========== DETAIL COLUMNS (individual fee types) ==========
+            // FBA Fees
             fee_fba_per_unit: fees.fbaFee || null,
+            // Referral
             fee_referral: fees.referralFee || null,
+            // Storage
             fee_storage: fees.storageFee || null,
+            fee_storage_long_term: fees.longTermStorageFee || null,
+            // Inbound/Placement
+            fee_inbound_convenience: fees.inboundFee || null,
+            // Removal/Disposal
+            fee_removal: fees.disposalFee || null,
+            fee_disposal: fees.disposalFee || null,
+            // Promotions (NOT included in Amazon fees)
             fee_promotion: fees.promotionDiscount || null,
+            // Other fees
             fee_other: fees.otherFees || null,
-            // Rollup columns (category totals - what dashboard reads!)
-            total_fba_fulfillment_fees: fees.fbaFee || null,
+            // Reimbursements (positive - reduce total fees)
+            reimbursement_damaged: fees.warehouseDamage || null,
+            reimbursement_other: fees.reimbursements || null,
+
+            // ========== ROLLUP COLUMNS (category totals - what dashboard reads!) ==========
+            // These are the columns that appear in the dashboard fee breakdown
+            total_fba_fulfillment_fees: (fees.fbaFee || 0) + (fees.mcfFee || 0),
             total_referral_fees: fees.referralFee || null,
-            total_storage_fees: fees.storageFee || null,
+            total_storage_fees: (fees.storageFee || 0) + (fees.longTermStorageFee || 0),
+            total_inbound_fees: fees.inboundFee || null,
+            total_removal_fees: fees.disposalFee || null,
+            total_return_fees: fees.refundCommission || null, // Refund processing fees
             total_promotion_fees: fees.promotionDiscount || null,
-            total_other_fees: fees.otherFees || null,
-            // total_amazon_fees = FBA + Referral + Storage + Other (NOT promo!)
+            total_other_fees: (fees.otherFees || 0) + (fees.digitalServicesFee || 0),
+            // Reimbursements are POSITIVE (reduce total fees)
+            total_reimbursements: (fees.warehouseDamage || 0) + (fees.reimbursements || 0) + (fees.refundedReferralFee || 0),
+            // total_amazon_fees = All fees - Reimbursements (NOT promo!)
             total_amazon_fees: fees.totalFees || null,
             fee_source: 'settlement_report',
+            fees_synced_at: new Date().toISOString(),
           })
           .eq('order_item_id', item.order_item_id)
 

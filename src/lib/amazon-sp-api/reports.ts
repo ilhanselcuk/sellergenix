@@ -640,16 +640,25 @@ export interface OrderFeeBreakdown {
   sku: string
   quantity: number
   principal: number           // Product price (positive)
-  fbaFee: number              // FBA fulfillment fee
+  fbaFee: number              // FBA fulfillment fee (pick & pack, weight-based)
   referralFee: number         // Amazon commission (may be $0 for new seller incentive)
-  storageFee: number          // Monthly/long-term storage fee
+  storageFee: number          // Monthly storage fee
+  longTermStorageFee: number  // Long-term storage fee (6+ months)
+  mcfFee: number              // Multi-Channel Fulfillment fee
+  disposalFee: number         // FBA disposal/removal fee
+  inboundFee: number          // FBA inbound placement/convenience fee
+  digitalServicesFee: number  // Digital services fee
+  warehouseDamage: number     // Warehouse damage/lost (positive = reimbursement)
+  reimbursements: number      // Reversal/other reimbursements (positive)
+  refundCommission: number    // Refund commission (fee charged on refunds)
+  refundedReferralFee: number // Referral fee refunded to seller (positive)
   promotionDiscount: number   // NOT included in totalFees - separate deduction
   shippingCredit: number
   shippingChargeback: number
   giftWrap: number
-  otherFees: number           // Other Amazon fees (not promotions)
-  refundAmount: number
-  totalFees: number           // Sum of AMAZON fees only (FBA + Referral + Storage + Other)
+  otherFees: number           // Other Amazon fees (not categorized above)
+  refundAmount: number        // Refunded to customer
+  totalFees: number           // Sum of AMAZON fees only (all fees - reimbursements)
   netProceeds: number         // What seller actually receives
 }
 
@@ -675,6 +684,15 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
         fbaFee: 0,
         referralFee: 0,
         storageFee: 0,
+        longTermStorageFee: 0,
+        mcfFee: 0,
+        disposalFee: 0,
+        inboundFee: 0,
+        digitalServicesFee: 0,
+        warehouseDamage: 0,
+        reimbursements: 0,
+        refundCommission: 0,
+        refundedReferralFee: 0,
         promotionDiscount: 0,
         shippingCredit: 0,
         shippingChargeback: 0,
@@ -695,6 +713,7 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
     // Categorize amount based on type and description
     const amountType = (row.amountType || '').toLowerCase()
     const amountDesc = (row.amountDescription || '').toLowerCase()
+    const transactionType = (row.transactionType || '').toLowerCase()
     const amount = row.amount || 0
 
     // Principal (product sale price)
@@ -704,28 +723,75 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
       }
     }
 
-    // FBA Fees (fulfillment, pick & pack, weight-based)
-    if (amountDesc.includes('fba') || amountDesc.includes('fulfillment fee') || amountDesc.includes('pick & pack')) {
+    // ========== FBA FEES ==========
+    // FBA Fulfillment Fees (pick & pack, weight-based) - BUT NOT MCF
+    if ((amountDesc.includes('fba') || amountDesc.includes('fulfillment fee') || amountDesc.includes('pick & pack') || amountDesc.includes('fbaperunitfulfillmentfee'))
+        && !amountDesc.includes('mcf') && !amountDesc.includes('multi-channel')) {
       orderFees.fbaFee += Math.abs(amount)
     }
 
+    // MCF (Multi-Channel Fulfillment) - separate from FBA
+    else if (amountDesc.includes('mcf') || amountDesc.includes('multi-channel') || amountDesc.includes('multichannel')) {
+      orderFees.mcfFee += Math.abs(amount)
+    }
+
+    // ========== REFERRAL FEES ==========
     // Referral Fees / Commission (may be $0 for new seller incentive)
-    else if (amountDesc.includes('referral') || amountDesc.includes('commission')) {
+    else if (amountDesc.includes('referral') && !amountDesc.includes('refund')) {
+      // Check if it's a refunded referral fee (positive = refund to seller)
+      if (amount > 0) {
+        orderFees.refundedReferralFee += amount
+      } else {
+        orderFees.referralFee += Math.abs(amount)
+      }
+    }
+    else if (amountDesc.includes('commission') && !amountDesc.includes('refund')) {
       orderFees.referralFee += Math.abs(amount)
     }
 
-    // Storage Fees (monthly + long-term)
-    else if (amountDesc.includes('storage')) {
+    // ========== STORAGE FEES ==========
+    // Long-term storage (6+ months) - check first (more specific)
+    else if (amountDesc.includes('long-term') || amountDesc.includes('longterm') || amountDesc.includes('long term') || amountDesc.includes('aged inventory')) {
+      orderFees.longTermStorageFee += Math.abs(amount)
+    }
+    // Monthly storage
+    else if (amountDesc.includes('storage') && !amountDesc.includes('long')) {
       orderFees.storageFee += Math.abs(amount)
     }
 
-    // Promotions - NOT Amazon fees, tracked separately!
-    // Sellerboard shows this as "Promo" separate from "Amazon fees"
-    else if (amountType.includes('promotion') || amountDesc.includes('promotion') || amountDesc.includes('coupon') || amountDesc.includes('lightning deal')) {
+    // ========== INBOUND/PLACEMENT FEES ==========
+    else if (amountDesc.includes('inbound') || amountDesc.includes('placement') || amountDesc.includes('transportation')) {
+      orderFees.inboundFee += Math.abs(amount)
+    }
+
+    // ========== DISPOSAL/REMOVAL FEES ==========
+    else if (amountDesc.includes('disposal') || amountDesc.includes('removal')) {
+      orderFees.disposalFee += Math.abs(amount)
+    }
+
+    // ========== DIGITAL SERVICES ==========
+    else if (amountDesc.includes('digital service')) {
+      orderFees.digitalServicesFee += Math.abs(amount)
+    }
+
+    // ========== WAREHOUSE DAMAGE/LOST - REIMBURSEMENTS (POSITIVE!) ==========
+    else if (amountDesc.includes('warehouse') && (amountDesc.includes('damage') || amountDesc.includes('lost'))) {
+      // These are usually positive (Amazon reimbursing the seller)
+      orderFees.warehouseDamage += amount
+    }
+
+    // ========== REIMBURSEMENTS (Reversal, etc.) ==========
+    else if (amountDesc.includes('reimbursement') || amountDesc.includes('reversal') || amountDesc.includes('compensat')) {
+      // These are usually positive (Amazon paying the seller)
+      orderFees.reimbursements += amount
+    }
+
+    // ========== PROMOTIONS - NOT Amazon fees, tracked separately! ==========
+    else if (amountType.includes('promotion') || amountDesc.includes('promotion') || amountDesc.includes('coupon') || amountDesc.includes('lightning deal') || amountDesc.includes('deal')) {
       orderFees.promotionDiscount += Math.abs(amount)
     }
 
-    // Shipping
+    // ========== SHIPPING ==========
     else if (amountDesc.includes('shipping')) {
       if (amountDesc.includes('chargeback')) {
         orderFees.shippingChargeback += Math.abs(amount)
@@ -734,32 +800,52 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
       }
     }
 
-    // Gift Wrap
+    // ========== GIFT WRAP ==========
     else if (amountDesc.includes('gift')) {
       orderFees.giftWrap += amount
     }
 
-    // Refunds
-    else if (row.transactionType === 'Refund' || amountDesc.includes('refund')) {
-      orderFees.refundAmount += Math.abs(amount)
+    // ========== REFUNDS ==========
+    else if (transactionType === 'refund' || (amountDesc.includes('refund') && !amountDesc.includes('referral'))) {
+      // Refund commission (fee charged when refunding)
+      if (amountDesc.includes('commission') || amountDesc.includes('admin')) {
+        orderFees.refundCommission += Math.abs(amount)
+      }
+      // Refunded referral fee (seller gets this back)
+      else if (amountDesc.includes('referral')) {
+        orderFees.refundedReferralFee += Math.abs(amount)
+      }
+      // Actual refund amount
+      else {
+        orderFees.refundAmount += Math.abs(amount)
+      }
     }
 
-    // Other AMAZON fees (negative amounts that are actual fees, not promos)
-    // Only count as otherFees if it looks like a fee, not a deduction
+    // ========== OTHER AMAZON FEES (catch-all) ==========
     else if (amount < 0) {
       // Check if it's a fee type we missed
       if (amountType.includes('fee') || amountDesc.includes('fee')) {
         orderFees.otherFees += Math.abs(amount)
+        // Log for debugging - these are fees we should categorize
+        console.log(`⚠️ Uncategorized fee: type="${amountType}", desc="${amountDesc}", amount=${amount}`)
       }
-      // Otherwise don't add to Amazon fees - might be a promo or other deduction
     }
   }
 
   // Calculate totals for each order
-  // IMPORTANT: totalFees = ONLY Amazon fees (FBA + Referral + Storage + Other)
+  // IMPORTANT: totalFees = AMAZON fees (all fees - reimbursements)
   // Promotions are NOT Amazon fees - they're deducted from sales separately
+  // Reimbursements (positive) REDUCE totalFees
   for (const [orderId, fees] of orderFeesMap) {
-    fees.totalFees = fees.fbaFee + fees.referralFee + fees.storageFee + fees.otherFees
+    // All Amazon fees (negative to seller)
+    const grossFees = fees.fbaFee + fees.referralFee + fees.storageFee + fees.longTermStorageFee +
+                      fees.mcfFee + fees.disposalFee + fees.inboundFee + fees.digitalServicesFee +
+                      fees.refundCommission + fees.otherFees
+
+    // Reimbursements (positive to seller) - reduce total fees
+    const reimbursements = fees.warehouseDamage + fees.reimbursements + fees.refundedReferralFee
+
+    fees.totalFees = grossFees - reimbursements
     fees.netProceeds = fees.principal - fees.totalFees - fees.promotionDiscount - fees.refundAmount + fees.shippingCredit
     orderFeesMap.set(orderId, fees)
   }
