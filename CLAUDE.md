@@ -279,6 +279,63 @@ ORDER BY created_at DESC
 
 ---
 
+### ✅ PROMO FIELD FIX - TypeScript Build Error (25 Ocak 2026)
+
+**Commit:** `77cfe53` - "fix: Add missing promo field to feeBreakdown interface"
+
+#### 🐛 Problem
+
+Vercel build failed with TypeScript error:
+```
+Error: src/components/dashboard/NewDashboardClient.tsx:187:7
+Type '{ fbaFulfillment: number; referral: number; storage: number; ... }'
+is missing the following properties from type: 'promo'
+```
+
+#### ✅ Çözüm
+
+`feeBreakdown` interface'ine `promo: number` eklendi:
+
+```typescript
+// /src/components/dashboard/NewDashboardClient.tsx (lines 44-56)
+feeBreakdown?: {
+  fbaFulfillment: number
+  referral: number
+  storage: number
+  inbound: number
+  removal: number
+  returns: number
+  chargebacks: number
+  other: number
+  reimbursements: number
+  promo: number  // ← EKLENDİ
+}
+```
+
+#### ⚠️ feeBreakdown Interface Standartları
+
+**Tüm feeBreakdown objeleri şu field'ları İÇERMELİ:**
+
+| Field | Açıklama | Kaynak |
+|-------|----------|--------|
+| `fbaFulfillment` | FBA pick/pack/ship | Finances API |
+| `referral` | Amazon komisyon | Finances API |
+| `storage` | Aylık storage fee | Reports API |
+| `inbound` | FBA inbound fee | Finances API |
+| `removal` | Removal/disposal | Finances API |
+| `returns` | Return processing | Finances API |
+| `chargebacks` | Chargebacks | Finances API |
+| `other` | Other fees | Finances API |
+| `reimbursements` | Reimbursements (+) | Finances API |
+| `promo` | Promotional rebates | Settlement Report |
+
+**Dosyalar:**
+- `/src/components/dashboard/NewDashboardClient.tsx` (line 44-56)
+- `/src/components/dashboard/PeriodCard.tsx` (line 22-35)
+- `/src/app/api/dashboard/metrics/route.ts` (multiple locations)
+
+---
+
 ### 🚨🚨🚨 PST TIMEZONE FIX - KRİTİK BİLGİ (20 Ocak 2026) 🚨🚨🚨
 
 **⚠️ AYNI HATAYI TEKRARLAMA! BU FIX KALICI, DEĞİŞTİRME!**
@@ -865,27 +922,143 @@ Sellerboard sadece Finances API kullanmıyor, **Reports API** ile de raporları 
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### ⚠️ Şu An Aktif Olan
+### ⚠️ Şu An Aktif Olan (25 Ocak 2026)
 
 **✅ Çalışıyor:**
 - Finances API → ShipmentEventList (FBA, referral fees)
 - Finances API → ServiceFeeEventList (subscription, storage - aggregate)
 - Finances API → RefundEventList (refunds)
 - Orders API → Sipariş detayları
+- **✅ Reports API → FBA Storage Fee Raporu (ASIN bazlı) - YENİ!**
 
 **❌ Henüz Yok (Gelecek):**
-- Reports API → Storage fee raporu (ASIN bazlı detay)
 - Reports API → Inventory raporu
+
+---
+
+### ✅ FBA STORAGE FEE REPORT IMPLEMENTASYONU (25 Ocak 2026 - Phase 1.9)
+
+**Commit:** `7a5e25a` - "feat: Add FBA Storage Fee Report sync from Reports API"
+
+#### 🎯 Problem Çözüldü
+
+**Sellerboard vs SellerGenix Karşılaştırması:**
+- Sellerboard: FBA Storage = $16.04
+- SellerGenix: FBA Storage = $0.00 (eksikti!)
+
+**Neden?**
+- Settlement Report sadece **Long-term storage fees** (6+ ay) içerir
+- **Aylık normal storage fee** için `GET_FBA_STORAGE_FEE_CHARGES_DATA` raporu gerekiyor
+
+#### 📁 Yeni Dosyalar & Fonksiyonlar
+
+**1. `parseStorageFeeReport()` - `/src/lib/amazon-sp-api/reports.ts`**
+```typescript
+export interface ParsedStorageFeeRow {
+  asin: string
+  fnsku: string
+  productName: string
+  fulfillmentCenter: string
+  countryCode: string
+  longestSide: number
+  medianSide: number
+  shortestSide: number
+  measurementUnits: string
+  weight: number
+  weightUnits: string
+  itemVolume: number
+  volumeUnits: string
+  averageQuantityOnHand: number
+  averageQuantityPendingRemoval: number
+  totalItemStorageFee: number        // Deprecated field
+  estimatedMonthlyStorageFee: number // ← BU ALAN KULLANILIYOR!
+  monthOfCharge: string              // "2026-01" format
+  currency: string                   // "USD"
+  storageUtilizationRatio: string
+  storageUtilizationRatioUnits: string
+  baseFee: number
+  utilSurcharge: number
+  surchargeTier: string
+  totalStorageFee: number            // base + surcharge
+  dangerousGoodsStorageType: string
+  productGroupName: string
+  eligibleForDiscount: string
+  qualifiesForDiscount: string
+}
+
+export function parseStorageFeeReport(content: string): ParsedStorageFeeRow[] {
+  // TSV (tab-separated) format parse
+  // Header satırı + data satırları
+}
+```
+
+**2. `getFBAStorageFeeReport()` - `/src/lib/amazon-sp-api/reports.ts`**
+```typescript
+export async function getFBAStorageFeeReport(
+  refreshToken: string,
+  marketplaceIds?: string[]
+): Promise<{
+  success: boolean
+  data?: ParsedStorageFeeRow[]
+  totalStorageFee?: number        // Tüm ASIN'lerin toplamı
+  byMonth?: Map<string, number>   // Ay bazlı toplam (key: "2026-01")
+  error?: string
+}>
+```
+
+**3. API Endpoint - `/src/app/api/sync/storage-fees/route.ts`**
+```typescript
+// POST: FBA Storage Fee sync tetikle
+POST /api/sync/storage-fees
+
+Response:
+{
+  success: true,
+  data: {
+    totalStorageFee: 16.04,
+    currentMonthFee: 16.04,
+    feesByMonth: { "2026-01": 16.04 },
+    asinCount: 12,
+    sampleData: [ /* ilk 5 ASIN */ ]
+  }
+}
+```
+
+#### ⚠️ Settlement vs Reports API Storage Fees
+
+| Kaynak | Ne İçerir | Ne Zaman |
+|--------|-----------|----------|
+| **Settlement Report** | Long-term storage (6+ ay) | 2 haftada bir |
+| **Reports API** | **Aylık normal storage fee** | İstendiğinde |
+
+**Sellerboard'ın Yaptığı:**
+- Settlement'tan: Long-term storage fee çeker
+- Reports API'dan: Aylık storage fee çeker
+- İkisini toplar = Gerçek toplam
+
+**SellerGenix Şimdi:**
+- ✅ Settlement'tan: Long-term storage fee (zaten vardı)
+- ✅ Reports API'dan: Aylık storage fee (YENİ!)
+
+#### 📋 Dashboard Entegrasyonu (TODO)
+
+```typescript
+// Dashboard'da kullanım örneği:
+const storageFees = await fetch('/api/sync/storage-fees', { method: 'POST' })
+const { currentMonthFee } = await storageFees.json()
+
+// Fee breakdown'a ekle:
+feeBreakdown.storage = currentMonthFee
+```
+
+---
 
 ### 📋 Reports API Entegrasyonu TODO
 
 ```typescript
-// Öncelik 1: Storage Fees Raporu
-const storageReport = await requestReport(
-  refreshToken,
-  'GET_FBA_STORAGE_FEE_CHARGES_DATA'
-)
-// → ASIN bazlı storage fee kırılımı
+// ✅ Öncelik 1: Storage Fees Raporu - TAMAMLANDI!
+const storageResult = await getFBAStorageFeeReport(refreshToken, marketplaceIds)
+// → totalStorageFee, byMonth, data (ASIN bazlı)
 
 // Öncelik 2: FBA Inventory
 const inventoryReport = await requestReport(
