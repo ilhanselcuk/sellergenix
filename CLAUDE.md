@@ -1579,6 +1579,130 @@ POST /api/sync/settlement-fees
 
 ---
 
+### 🚨 ACCOUNT-LEVEL FEE EXTRACTION (26 Ocak 2026)
+
+**Commit:** `dd5a4a5` - "feat: Add account-level fee extraction from Settlement Reports"
+
+#### 🐛 SORUN NEYDİ?
+
+**Belirti:** Storage, Subscription, Long-term storage fee'ler $0 veya eksik gösteriliyordu.
+
+- **Storage:** Sellerboard $76.37 vs SellerGenix $28.28
+- **Subscription:** Sellerboard $119.97 vs SellerGenix $79.98
+- **Long-term Storage:** Sellerboard $2.95 vs SellerGenix $0
+
+**Kök Neden:** `calculateFeesFromSettlement()` fonksiyonunda (reports.ts:669):
+```typescript
+// Bu satır account-level fee'leri SKIP ediyordu!
+if (!row.orderId || row.transactionType === 'Transfer') continue
+```
+
+Storage Fee, Subscription Fee, StorageRenewalBilling gibi fee'ler orderId'siz gelir - bunlar account-level charge'lar.
+
+#### 📊 Settlement Report Fee Tipleri
+
+**Order-Level Fees (orderId VAR):**
+- FBAPerUnitFulfillmentFee → `order_items.fee_fba_per_unit`
+- Commission (Referral) → `order_items.fee_referral`
+- Promotion → `order_items.fee_promotion`
+- Refund → `order_items.refund_amount`
+
+**Account-Level Fees (orderId YOK):**
+- Storage Fee → `service_fees.category = 'storage'`
+- StorageRenewalBilling → `service_fees.category = 'storage'`
+- Subscription Fee → `service_fees.category = 'subscription'`
+- FBALongTermStorageFee → `service_fees.category = 'long_term_storage'`
+- Cost of Advertising → `service_fees.category = 'advertising'`
+
+#### ✅ ÇÖZÜM
+
+**Yeni Fonksiyon:** `extractAccountLevelFees()` (reports.ts:877-934)
+```typescript
+export function extractAccountLevelFees(rows: ParsedSettlementRow[]): AccountLevelFee[] {
+  const accountFees: AccountLevelFee[] = []
+
+  for (const row of rows) {
+    // Skip if has orderId (order-level fee) or is a Transfer
+    if (row.orderId || row.transactionType === 'Transfer') continue
+
+    // Only process other-transaction and ServiceFee types
+    const transactionType = (row.transactionType || '').toLowerCase()
+    if (!transactionType.includes('other-transaction') && !transactionType.includes('servicefee')) continue
+
+    // Categorize by amountDescription
+    const amountDesc = (row.amountDescription || '').toLowerCase()
+    let feeType: 'storage' | 'long_term_storage' | 'subscription' | 'advertising' | 'other' = 'other'
+
+    if (amountDesc.includes('storage fee') || amountDesc.includes('storagerenewalbilling')) {
+      feeType = 'storage'
+    } else if (amountDesc.includes('long-term')) {
+      feeType = 'long_term_storage'
+    } else if (amountDesc.includes('subscription')) {
+      feeType = 'subscription'
+    } else if (amountDesc.includes('advertising')) {
+      feeType = 'advertising'
+    }
+
+    accountFees.push({ feeType, amount, description, settlementId, postedDate })
+  }
+
+  return accountFees
+}
+```
+
+**Inngest Güncellemesi:** (functions.ts:1377-1442)
+- Step 6 eklendi: `save-account-level-fees`
+- `extractAccountLevelFees()` çağrılıyor
+- `service_fees` tablosuna upsert yapılıyor
+
+#### 📁 TABLOLAR
+
+**order_items (order-level fees):**
+```sql
+fee_fba_per_unit, fee_referral, fee_storage, fee_promotion, fee_other...
+```
+
+**service_fees (account-level fees):**
+```sql
+id, user_id, fee_date, fee_type, fee_description, amount, category, amazon_transaction_id
+-- category: 'storage' | 'subscription' | 'long_term_storage' | 'advertising' | 'other'
+```
+
+#### 🔄 SYNC AKIŞI
+
+```
+1. POST /api/sync/settlement-fees
+   ↓
+2. Inngest: syncSettlementFees
+   ↓
+3. getAvailableSettlementReports() - Son 24 ay
+   ↓
+4. downloadReport() + parseSettlementReport() - Her report için
+   ↓
+5. calculateFeesFromSettlement() → order_items güncelle (orderId olan fee'ler)
+   ↓
+6. extractAccountLevelFees() → service_fees upsert (orderId olmayan fee'ler) ← YENİ!
+```
+
+#### ⚠️ ÖNEMLİ NOTLAR
+
+1. **Dashboard fee hesaplaması iki tablodan okur:**
+   - `order_items` → Per-order fees (FBA, referral)
+   - `service_fees` → Account-level fees (storage, subscription)
+
+2. **Duplicate önleme:** `amazon_transaction_id` UNIQUE constraint
+   - Format: `{settlementId}_{feeType}_{description}_{amount}`
+
+3. **3 aylık veri için ~5-8 settlement report var** - her biri parse edilir
+
+4. **Settlement Report fee isimleri:**
+   - `FBAPerUnitFulfillmentFee` = FBA fee
+   - `StorageRenewalBilling` = Monthly storage (account-level!)
+   - `Storage Fee` = Monthly storage (account-level!)
+   - `Subscription Fee` = Professional selling plan
+
+---
+
 ### 📋 Reports API Entegrasyonu TODO
 
 ```typescript
