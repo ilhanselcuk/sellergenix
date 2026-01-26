@@ -49,6 +49,55 @@
 - Tamamlanan işleri "completed" olarak işaretle
 - Devam eden işleri "in_progress" olarak işaretle
 
+#### 🖥️ API TETİKLEME KURALI (ÖNEMLİ!)
+**Kullanıcı bir API/sync işlemi tetiklemek istediğinde:**
+- ❌ curl komutu VERME
+- ❌ Terminal komutu VERME
+- ❌ UI butonu eklemeye KALKMA
+- ✅ **Dashboard sayfasında F12 → Console'da çalıştırılacak JavaScript kodu VER**
+
+**Örnek Format:**
+```javascript
+// [İşlem Adı] - [Açıklama]
+fetch('/api/endpoint', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ param: value })
+})
+.then(r => r.json())
+.then(data => console.log('✅ Sonuç:', data))
+.catch(err => console.error('❌ Hata:', err))
+```
+
+**Sık Kullanılan Console Kodları:**
+
+```javascript
+// 🔄 Settlement Fee Sync (3 ay)
+fetch('/api/sync/settlement-fees', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ monthsBack: 3, sync: 'direct' })
+}).then(r => r.json()).then(d => console.log('✅ Settlement Sync:', d))
+
+// 📊 Fee Breakdown Kontrol
+fetch('/api/debug/fee-breakdown').then(r => r.json()).then(d => {
+  console.log('📊 Fee Breakdown:', d)
+  console.log('🎯 Sellerboard Karşılaştırma:', d.comparison)
+})
+
+// 🔍 Settlement Raw Fees (hangi fee'ler var)
+fetch('/api/debug/settlement-raw-fees').then(r => r.json()).then(d => console.log('📋 Raw Fees:', d))
+
+// 🔗 Settlement Match Debug (eşleşme kontrolü)
+fetch('/api/debug/settlement-match').then(r => r.json()).then(d => console.log('🔗 Match:', d))
+
+// 🧹 Service Fees Cleanup (önizleme)
+fetch('/api/debug/cleanup-service-fees').then(r => r.json()).then(d => console.log('🧹 Cleanup Preview:', d))
+
+// 🗑️ Service Fees Cleanup (gerçek silme)
+fetch('/api/debug/cleanup-service-fees', { method: 'POST' }).then(r => r.json()).then(d => console.log('🗑️ Cleaned:', d))
+```
+
 ---
 
 ## 🚨🚨🚨 ACİL TODO: SELLERBOARD İLE FEE FARKLILIKLARI (26 Ocak 2026) 🚨🚨🚨
