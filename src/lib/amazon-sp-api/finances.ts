@@ -2432,6 +2432,9 @@ export function extractMCFFees(
  *
  * Retrieves MCF fees from Finances API for a date range.
  * These fees are NOT in Settlement Reports - they're only in Finances API!
+ *
+ * NOTE: Amazon Finances API has a 180-day max date range limit.
+ * This function automatically chunks longer ranges into 180-day periods.
  */
 export async function fetchMCFFees(
   refreshToken: string,
@@ -2448,47 +2451,50 @@ export async function fetchMCFFees(
     console.log(`📊 Fetching MCF fees from ${startDate.toISOString()} to ${endDate.toISOString()}`)
 
     // Amazon requires dates to be at least 2 minutes before current time
-    const safeEndDate = new Date(endDate.getTime() - 3 * 60 * 1000)
+    const safeEndDate = new Date(Math.min(endDate.getTime(), Date.now() - 3 * 60 * 1000))
 
-    const params: Record<string, string | number> = {
-      MaxResultsPerPage: 100,
-      PostedAfter: startDate.toISOString(),
-    }
+    // Amazon Finances API has 180-day max range - chunk if needed
+    const MAX_DAYS = 180
+    const MS_PER_DAY = 24 * 60 * 60 * 1000
+    const totalDays = Math.ceil((safeEndDate.getTime() - startDate.getTime()) / MS_PER_DAY)
 
-    if (safeEndDate) {
-      params.PostedBefore = safeEndDate.toISOString()
-    }
-
-    // We may need to paginate for large date ranges
     let allMCFEvents: Array<Record<string, unknown>> = []
-    let nextToken: string | undefined
 
-    do {
-      const queryParams = nextToken ? { ...params, NextToken: nextToken } : params
+    if (totalDays <= MAX_DAYS) {
+      // Single request for small ranges
+      allMCFEvents = await fetchMCFEventsForRange(client, startDate, safeEndDate)
+    } else {
+      // Chunk into 180-day periods
+      const numChunks = Math.ceil(totalDays / MAX_DAYS)
+      console.log(`📆 Range is ${totalDays} days, splitting into ${numChunks} chunks of ${MAX_DAYS} days`)
 
-      const response = await client.callAPI({
-        operation: 'listFinancialEvents',
-        endpoint: 'finances',
-        query: queryParams,
-      })
+      let chunkStart = new Date(startDate)
 
-      // API returns FinancialEvents directly
-      const payload = response.FinancialEvents || response.payload?.FinancialEvents || {}
-      const mcfEvents = payload.FBAOutboundShipmentEventList || []
+      for (let i = 0; i < numChunks; i++) {
+        const chunkEnd = new Date(Math.min(
+          chunkStart.getTime() + MAX_DAYS * MS_PER_DAY,
+          safeEndDate.getTime()
+        ))
 
-      allMCFEvents = allMCFEvents.concat(mcfEvents)
-      nextToken = response.NextToken || response.payload?.NextToken
+        console.log(`   Chunk ${i + 1}/${numChunks}: ${chunkStart.toISOString().split('T')[0]} to ${chunkEnd.toISOString().split('T')[0]}`)
 
-      // Small delay to respect rate limits
-      if (nextToken) {
-        await new Promise(resolve => setTimeout(resolve, 200))
+        const chunkEvents = await fetchMCFEventsForRange(client, chunkStart, chunkEnd)
+        allMCFEvents = allMCFEvents.concat(chunkEvents)
+
+        // Move to next chunk
+        chunkStart = new Date(chunkEnd.getTime() + 1000) // Add 1 second to avoid overlap
+
+        // Delay between chunks
+        if (i < numChunks - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
       }
-    } while (nextToken)
+    }
 
     const summary = extractMCFFees(
       allMCFEvents,
       startDate.toISOString(),
-      endDate.toISOString()
+      safeEndDate.toISOString()
     )
 
     console.log(`✅ Found ${summary.events.length} MCF events with total fee: $${summary.totalFulfillmentFee.toFixed(2)}`)
@@ -2504,4 +2510,46 @@ export async function fetchMCFFees(
       error: error instanceof Error ? error.message : 'Unknown error',
     }
   }
+}
+
+/**
+ * Helper function to fetch MCF events for a single date range (max 180 days)
+ */
+async function fetchMCFEventsForRange(
+  client: ReturnType<typeof createAmazonSPAPIClient>,
+  startDate: Date,
+  endDate: Date
+): Promise<Array<Record<string, unknown>>> {
+  const params: Record<string, string | number> = {
+    MaxResultsPerPage: 100,
+    PostedAfter: startDate.toISOString(),
+    PostedBefore: endDate.toISOString(),
+  }
+
+  let allMCFEvents: Array<Record<string, unknown>> = []
+  let nextToken: string | undefined
+
+  do {
+    const queryParams = nextToken ? { ...params, NextToken: nextToken } : params
+
+    const response = await client.callAPI({
+      operation: 'listFinancialEvents',
+      endpoint: 'finances',
+      query: queryParams,
+    })
+
+    // API returns FinancialEvents directly
+    const payload = response.FinancialEvents || response.payload?.FinancialEvents || {}
+    const mcfEvents = payload.FBAOutboundShipmentEventList || []
+
+    allMCFEvents = allMCFEvents.concat(mcfEvents)
+    nextToken = response.NextToken || response.payload?.NextToken
+
+    // Small delay to respect rate limits
+    if (nextToken) {
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
+  } while (nextToken)
+
+  return allMCFEvents
 }

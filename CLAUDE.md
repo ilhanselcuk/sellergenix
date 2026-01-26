@@ -103,7 +103,7 @@ fetch('/api/debug/cleanup-service-fees', { method: 'POST' }).then(r => r.json())
 ## 🚨🚨🚨 SELLERBOARD FEE KARŞILAŞTIRMASI (26 Ocak 2026 - GÜNCEL) 🚨🚨🚨
 
 **Tarih Aralığı:** 25 Ekim 2025 - 26 Ocak 2026 (3 ay)
-**Son Güncelleme:** 26 Ocak 2026
+**Son Güncelleme:** 26 Ocak 2026, 21:30
 
 ### 📊 GÜNCEL DURUM:
 
@@ -113,11 +113,11 @@ fetch('/api/debug/cleanup-service-fees', { method: 'POST' }).then(r => r.json())
 | 2 | Storage | $76.37 | $76.37 | $0.00 | ✅ EŞLEŞTİ |
 | 3 | Long-term storage | $2.95 | $2.94 | $0.01 | ✅ EŞLEŞTİ |
 | 4 | Subscription | $119.97 | $119.97 | $0.00 | ✅ EŞLEŞTİ |
-| 5 | MCF fee | $15.26 | $0.00 | **$15.26** | ❌ EKSİK |
-| 6 | Disposal fee | $1.53 | $0.00 | **$1.53** | ❌ EKSİK |
+| 5 | **Disposal fee** | $1.53 | $1.53 | $0.00 | ✅ EŞLEŞTİ |
+| 6 | MCF fee | $15.26 | $0.00 | **$15.26** | ❌ EKSİK |
 | 7 | Promo | $456.20 | $367.03 | **$89.17** | ❌ EKSİK |
 
-### ✅ ÇÖZÜLENLER (26 Ocak 2026):
+### ✅ ÇÖZÜLENLER:
 
 1. **FBA per unit fee** ✅
    - Settlement sync düzeltildi
@@ -138,22 +138,28 @@ fetch('/api/debug/cleanup-service-fees', { method: 'POST' }).then(r => r.json())
    - 3 aylık ($119.97) doğru toplandı
    - Tam eşleşme
 
+5. **Disposal fee** ✅ (26 Ocak 2026 - YENİ!)
+   - **Sorun:** Disposal fee'ler removal order ID'si ile geliyordu (`xnUbAcnBvL` formatı)
+   - Bu format normal sales order (`111-1234567-1234567`) ile eşleşmiyordu
+   - **Çözüm:** `extractAccountLevelFees()` fonksiyonuna disposal için özel durum eklendi
+   - Disposal fee'ler artık `service_fees` tablosuna kaydediliyor (order_items değil)
+   - **Commit:** `fix: Add 'disposal' to AccountLevelFee type for Settlement Report processing`
+   - Tam eşleşme: $1.53
+
 ### ❌ ÇÖZÜLECEKLER:
 
-**1. MCF fee ($15.26)**
-- **Sorun:** Settlement Report'larda MCF fee BULUNAMIYOR
-- **Analiz:** `foundFees.mcf = []` (boş array)
-- **Olası neden:** MCF ayrı rapor tipi gerektirebilir
-- **TODO:** MCF fee'lerin hangi Amazon raporunda olduğunu araştır
+**1. MCF fee ($15.26)** - 🔴 **YÜKSEK ÖNCELİK**
+- **Sorun:** Settlement Report'larda MCF fee **HİÇ YOK** (`foundFees.mcf = []`)
+- **Neden:** MCF (Multi-Channel Fulfillment) fee'leri Settlement'tan gelmiyor!
+- **Çözüm:** Finances API'den `FBAOutboundShipmentEventList` kullanılmalı
+- **TODO:**
+  1. `listFinancialEvents()` fonksiyonuna `FBAOutboundShipmentEventList` ekle
+  2. MCF fee'leri parse edip `service_fees` tablosuna kaydet
+  3. Inngest job oluştur: `amazon/sync.mcf-fees`
 
-**2. Disposal fee ($1.53)**
-- **Sorun:** Settlement'ta var (`withOrder: 1.53`) ama order_items'a kaydedilmiyor
-- **Analiz:** OrderId ile eşleşme problemi var
-- **TODO:** Settlement-match debug ile disposal order'ın eşleşip eşleşmediğini kontrol et
-
-**3. Promo farkı ($89.17)**
+**2. Promo farkı ($89.17)**
 - **Sorun:** $456.20 olması lazım, biz $367.03 gösteriyoruz
-- **TODO:** Eksik promo türlerini tespit et
+- **TODO:** 24 aylık Settlement sync tamamlanınca tekrar kontrol et
 
 ### ⏳ BEKLEYENLER (Ads API - Faz 2):
 - Advertising cost: $1,620.69 → Amazon Ads API entegrasyonu gerekli
