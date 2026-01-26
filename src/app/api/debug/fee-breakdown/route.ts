@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
         fee_referral,
         fee_storage,
         fee_storage_long_term,
-        fee_inbound,
+        fee_inbound_convenience,
         fee_removal,
         fee_disposal,
         fee_digital_services,
@@ -138,8 +138,8 @@ export async function GET(request: NextRequest) {
           total: item.fee_storage_long_term * qty
         })
       }
-      if (item.fee_inbound) {
-        totals.inbound += item.fee_inbound * qty
+      if (item.fee_inbound_convenience) {
+        totals.inbound += item.fee_inbound_convenience * qty
         counts.withInbound++
       }
       if (item.fee_removal) {
