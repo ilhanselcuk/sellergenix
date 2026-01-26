@@ -314,6 +314,11 @@ await inngest.send({
 **Tarih:** _App publish edildiğinde buraya yaz_
 **Durum:** ⏳ BEKLİYOR
 
+**📝 ÖN HAZIRLIK TAMAMLANAN İŞLER:**
+- ✅ `inngest/functions.ts` - `scheduledStorageSync` storage fee'leri `service_fees` tablosuna kaydediyor (commit: `aa5d029`, 26 Ocak 2026)
+- ✅ `/api/debug/service-fees-raw` - Finance API ServiceFeeEventList debug endpoint (commit: `7fe4a94`)
+- ⏳ Publish bekliyor: `GET_FBA_STORAGE_FEE_CHARGES_DATA` raporu için Amazon Fulfillment rolü
+
 #### PUBLISH SONRASI CHECKLIST:
 
 ```
