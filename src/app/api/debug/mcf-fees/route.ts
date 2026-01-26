@@ -36,11 +36,20 @@ export async function GET(request: NextRequest) {
     }
 
     // Calculate date range
+    // Amazon Finances API has 730-day retention limit - cap at 729 days to be safe
+    const MAX_RETENTION_DAYS = 729
     const endDate = new Date()
-    const startDate = new Date()
+    let startDate = new Date()
     startDate.setMonth(startDate.getMonth() - monthsBack)
 
-    console.log(`📊 Fetching MCF fees for ${monthsBack} months: ${startDate.toISOString()} - ${endDate.toISOString()}`)
+    // Check if startDate exceeds retention period
+    const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000))
+    if (daysDiff > MAX_RETENTION_DAYS) {
+      console.log(`⚠️ Requested ${daysDiff} days exceeds 730-day retention, capping to ${MAX_RETENTION_DAYS} days`)
+      startDate = new Date(endDate.getTime() - MAX_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+    }
+
+    console.log(`📊 Fetching MCF fees for ${monthsBack} months (${daysDiff} days): ${startDate.toISOString()} - ${endDate.toISOString()}`)
 
     // Fetch MCF fees
     const result = await fetchMCFFees(connection.refresh_token, startDate, endDate)
