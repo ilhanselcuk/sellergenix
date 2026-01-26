@@ -867,7 +867,7 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
  * These fees don't have an orderId - they're charged at the account level
  */
 export interface AccountLevelFee {
-  feeType: 'storage' | 'long_term_storage' | 'subscription' | 'advertising' | 'other'
+  feeType: 'storage' | 'long_term_storage' | 'subscription' | 'advertising' | 'disposal' | 'other'
   amount: number
   description: string
   settlementId?: string
