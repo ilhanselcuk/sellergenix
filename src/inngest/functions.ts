@@ -1492,13 +1492,78 @@ export const scheduledStorageSync = inngest.createFunction(
           const marketplaceIds = conn.marketplace_ids || ['ATVPDKIKX0DER'];
           const result = await getFBAStorageFeeReport(conn.refresh_token, marketplaceIds);
 
-          if (result.success) {
+          if (result.success && result.totalStorageFee && result.totalStorageFee > 0) {
             console.log(`✅ Storage sync for ${conn.user_id}: $${result.totalStorageFee}`);
+
+            // CRITICAL FIX: Save storage fees to database!
+            // Calculate period (current month for monthly storage fees)
+            const now = new Date();
+            const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+            const { error: saveError } = await supabase
+              .from('service_fees')
+              .upsert({
+                user_id: conn.user_id,
+                period_start: periodStart.toISOString().split('T')[0],
+                period_end: periodEnd.toISOString().split('T')[0],
+                fee_type: 'storage',
+                amount: result.totalStorageFee,
+                description: 'FBA Monthly Storage Fee (from Storage Fee Report)',
+                source: 'storage_fee_report',
+                updated_at: new Date().toISOString(),
+              }, {
+                onConflict: 'user_id,period_start,period_end,fee_type',
+              });
+
+            if (saveError) {
+              console.error(`⚠️ Failed to save storage fee for ${conn.user_id}:`, saveError.message);
+            } else {
+              console.log(`💾 Saved storage fee to database: $${result.totalStorageFee}`);
+            }
+
+            // Also save per-month breakdown if available
+            if (result.byMonth && result.byMonth.size > 0) {
+              for (const [month, fee] of result.byMonth.entries()) {
+                // Parse month string (e.g., "2025-12" or "December 2025")
+                let monthStart: Date | null = null;
+                let monthEnd: Date | null = null;
+
+                // Try YYYY-MM format first
+                if (/^\d{4}-\d{2}$/.test(month)) {
+                  const [year, monthNum] = month.split('-').map(Number);
+                  monthStart = new Date(year, monthNum - 1, 1);
+                  monthEnd = new Date(year, monthNum, 0);
+                }
+
+                if (monthStart && monthEnd && fee > 0) {
+                  await supabase
+                    .from('service_fees')
+                    .upsert({
+                      user_id: conn.user_id,
+                      period_start: monthStart.toISOString().split('T')[0],
+                      period_end: monthEnd.toISOString().split('T')[0],
+                      fee_type: 'storage',
+                      amount: fee,
+                      description: `FBA Storage Fee for ${month}`,
+                      source: 'storage_fee_report',
+                      updated_at: new Date().toISOString(),
+                    }, {
+                      onConflict: 'user_id,period_start,period_end,fee_type',
+                    });
+                }
+              }
+            }
+
             return {
               userId: conn.user_id,
               success: true,
-              totalStorageFee: result.totalStorageFee
+              totalStorageFee: result.totalStorageFee,
+              saved: true
             };
+          } else if (result.success) {
+            console.log(`ℹ️ Storage sync for ${conn.user_id}: No storage fees found`);
+            return { userId: conn.user_id, success: true, totalStorageFee: 0 };
           } else {
             console.log(`⚠️ Storage sync failed for ${conn.user_id}: ${result.error}`);
             return { userId: conn.user_id, success: false, error: result.error };
@@ -1516,10 +1581,12 @@ export const scheduledStorageSync = inngest.createFunction(
     }
 
     const successful = results.filter(r => r.success).length;
+    const totalStorageFees = results.reduce((sum, r) => sum + (r.totalStorageFee || 0), 0);
     return {
       usersProcessed: results.length,
       successful,
       failed: results.length - successful,
+      totalStorageFees,
       completedAt: new Date().toISOString(),
     };
   }
