@@ -1190,6 +1190,7 @@ export const syncSettlementFees = inngest.createFunction(
       downloadReport,
       parseSettlementReport,
       calculateFeesFromSettlement,
+      extractAccountLevelFees,
     } = await import("@/lib/amazon-sp-api/reports");
 
     // Step 1: Get Settlement Reports
@@ -1373,6 +1374,73 @@ export const syncSettlementFees = inngest.createFunction(
       }
     }
 
+    // Step 6: Extract and save account-level fees (storage, subscription, long-term storage)
+    // These fees don't have orderId - they're charged at account level
+    const accountFeesResult = await step.run("save-account-level-fees", async () => {
+      console.log("💳 [Settlement] Extracting account-level fees...");
+
+      const accountFees = extractAccountLevelFees(allSettlementRows);
+
+      if (accountFees.length === 0) {
+        console.log("⚠️ [Settlement] No account-level fees found");
+        return { saved: 0, errors: 0 };
+      }
+
+      let saved = 0;
+      let errors = 0;
+
+      for (const fee of accountFees) {
+        // Parse the date from postedDate (format: "2026-01-15T12:00:00Z" or "15.01.2026")
+        let feeDate = new Date();
+        if (fee.postedDate) {
+          // Try ISO format first
+          const isoDate = new Date(fee.postedDate);
+          if (!isNaN(isoDate.getTime())) {
+            feeDate = isoDate;
+          } else {
+            // Try DD.MM.YYYY format
+            const parts = fee.postedDate.split(".");
+            if (parts.length === 3) {
+              feeDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+            }
+          }
+        }
+
+        // Create unique transaction ID to prevent duplicates
+        const transactionId = `${fee.settlementId || 'unknown'}_${fee.feeType}_${fee.description}_${fee.amount}`;
+
+        const { error: upsertError } = await supabase
+          .from("service_fees")
+          .upsert({
+            user_id: userId,
+            fee_date: feeDate.toISOString().split("T")[0],
+            fee_type: fee.description,
+            fee_description: fee.description,
+            amount: fee.amount,
+            currency_code: "USD",
+            category: fee.feeType, // 'storage' | 'subscription' | 'long_term_storage' | 'advertising' | 'other'
+            amazon_transaction_id: transactionId,
+          }, {
+            onConflict: "user_id,amazon_transaction_id",
+            ignoreDuplicates: false,
+          });
+
+        if (upsertError) {
+          // Check if it's a duplicate error (which is fine)
+          if (!upsertError.message.includes("duplicate")) {
+            errors++;
+            console.error(`❌ Failed to save account fee: ${upsertError.message}`);
+          }
+        } else {
+          saved++;
+          console.log(`✅ Saved account fee: ${fee.feeType} = $${fee.amount} (${fee.description})`);
+        }
+      }
+
+      console.log(`💰 [Settlement] Saved ${saved} account-level fees (${errors} errors)`);
+      return { total: accountFees.length, saved, errors };
+    });
+
     results.settlementReports = reportsResult.count;
     results.settlementRows = allSettlementRows.length;
     results.uniqueFeeKeys = orderFees.size;
@@ -1380,6 +1448,7 @@ export const syncSettlementFees = inngest.createFunction(
     results.matched = totalMatched;
     results.updated = totalUpdated;
     results.errors = totalErrors;
+    results.accountLevelFees = accountFeesResult;
     results.completedAt = new Date().toISOString();
 
     console.log(`🎉 [Inngest] Settlement fee sync completed for user ${userId}:`, results);
