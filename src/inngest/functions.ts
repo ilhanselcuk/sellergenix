@@ -1430,15 +1430,22 @@ export const syncSettlementFees = inngest.createFunction(
       for (const [groupKey, data] of Object.entries(feesByTypeAndMonth)) {
         const [feeType] = groupKey.split('_');
 
+        // Skip "other" category - these are usually reserves or unknown fees
+        if (feeType === 'other') {
+          console.log(`⏭️ Skipping "other" category: $${data.amount} (${data.description})`);
+          continue;
+        }
+
         // Map feeType to the expected fee_type values in the table
-        let dbFeeType = 'other';
+        let dbFeeType = feeType;
         let description = data.description;
 
-        if (feeType === 'storage' || feeType === 'long_term_storage') {
+        if (feeType === 'storage') {
           dbFeeType = 'storage';
-          description = feeType === 'long_term_storage'
-            ? 'FBA Long-term Storage Fees'
-            : 'FBA Storage Fees (Monthly)';
+          description = 'FBA Storage Fees (Monthly)';
+        } else if (feeType === 'long_term_storage') {
+          dbFeeType = 'storage'; // Store as storage type but with different description
+          description = 'FBA Long-term Storage Fees';
         } else if (feeType === 'subscription') {
           dbFeeType = 'subscription';
           description = 'Professional Seller Subscription Fee';
