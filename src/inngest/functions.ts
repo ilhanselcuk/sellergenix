@@ -12,6 +12,7 @@ import {
   estimatePendingOrderFees,
   refreshAllProductFeeAverages,
   syncAllHistoricalFees,
+  fetchMCFFees,
 } from "@/lib/amazon-sp-api";
 
 // Initialize Supabase
@@ -1738,6 +1739,99 @@ export const scheduledStorageSync = inngest.createFunction(
   }
 );
 
+/**
+ * MCF (Multi-Channel Fulfillment) Fee Sync
+ *
+ * Fetches MCF fees from Finances API and saves to service_fees table.
+ * MCF fees are NOT in Settlement Reports - they're only in Finances API!
+ *
+ * Event: amazon/sync.mcf-fees
+ */
+export const syncMCFFees = inngest.createFunction(
+  {
+    id: "sync-mcf-fees",
+    retries: 2,
+    concurrency: {
+      limit: 1,
+      key: "event.data.userId",
+    },
+  },
+  { event: "amazon/sync.mcf-fees" },
+  async ({ event, step }) => {
+    const { userId, refreshToken, monthsBack = 24 } = event.data;
+
+    console.log(`🚀 [Inngest] Starting MCF fee sync for user ${userId}, ${monthsBack} months back`);
+
+    // Step 1: Fetch MCF fees from Finances API
+    const mcfResult = await step.run("fetch-mcf-fees", async () => {
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - monthsBack);
+
+      const result = await fetchMCFFees(refreshToken, startDate, endDate);
+
+      if (!result.success || !result.data) {
+        throw new Error(result.error || "Failed to fetch MCF fees");
+      }
+
+      return result.data;
+    });
+
+    console.log(`📊 Found ${mcfResult.events.length} MCF events with total: $${mcfResult.totalFulfillmentFee.toFixed(2)}`);
+
+    // Step 2: Save MCF fees to service_fees table
+    const saveResult = await step.run("save-mcf-fees", async () => {
+      if (mcfResult.events.length === 0) {
+        return { saved: 0, skipped: 0 };
+      }
+
+      let saved = 0;
+      let skipped = 0;
+
+      for (const event of mcfResult.events) {
+        // Create unique ID for upsert
+        const uniqueId = `mcf_${event.shipmentId}_${event.sellerSku || 'unknown'}_${event.postedDate}`;
+
+        const { error } = await supabase
+          .from('service_fees')
+          .upsert({
+            user_id: userId,
+            fee_type: 'mcf',
+            amount: -Math.abs(event.fulfillmentFee), // Negative because it's a cost
+            description: `MCF Fulfillment Fee - ${event.sellerSku || 'SKU Unknown'}`,
+            source: 'finances_api',
+            posted_date: event.postedDate,
+            unique_id: uniqueId,
+          }, {
+            onConflict: 'unique_id'
+          });
+
+        if (error) {
+          console.error(`❌ Failed to save MCF fee ${uniqueId}:`, error.message);
+          skipped++;
+        } else {
+          saved++;
+        }
+      }
+
+      return { saved, skipped };
+    });
+
+    console.log(`✅ MCF fee sync completed: ${saveResult.saved} saved, ${saveResult.skipped} skipped`);
+
+    return {
+      userId,
+      monthsBack,
+      totalMCFFee: mcfResult.totalFulfillmentFee,
+      totalUnits: mcfResult.totalUnits,
+      eventsFound: mcfResult.events.length,
+      saved: saveResult.saved,
+      skipped: saveResult.skipped,
+      completedAt: new Date().toISOString(),
+    };
+  }
+);
+
 // Export all functions
 export const functions = [
   syncAmazonFees,
@@ -1749,4 +1843,5 @@ export const functions = [
   syncHistoricalDataKiosk,
   syncHistoricalDataReports,
   syncSettlementFees,
+  syncMCFFees, // NEW: MCF fee sync from Finances API
 ];

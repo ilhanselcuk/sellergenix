@@ -91,6 +91,20 @@ export type SyncSettlementFeesEvent = {
   };
 };
 
+/**
+ * MCF (Multi-Channel Fulfillment) Fee Sync
+ * Fetches MCF fees from Finances API and saves to service_fees table
+ * MCF fees are NOT in Settlement Reports - they're only in Finances API!
+ */
+export type SyncMCFFeesEvent = {
+  name: "amazon/sync.mcf-fees";
+  data: {
+    userId: string;
+    refreshToken: string;
+    monthsBack?: number; // Default 24 months
+  };
+};
+
 // Union type for all events
 export type InngestEvents =
   | SyncFeesEvent
@@ -99,4 +113,5 @@ export type InngestEvents =
   | SyncHistoricalDataEvent
   | SyncHistoricalDataKioskEvent
   | SyncHistoricalDataReportsEvent
-  | SyncSettlementFeesEvent;
+  | SyncSettlementFeesEvent
+  | SyncMCFFeesEvent;

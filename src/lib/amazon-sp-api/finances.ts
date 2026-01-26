@@ -139,6 +139,10 @@ export async function listFinancialEvents(
         serviceFeeEvents: payload.ServiceFeeEventList || [],
         adjustmentEvents: payload.AdjustmentEventList || [],
         chargebackEvents: payload.ChargebackEventList || [],
+        // MCF (Multi-Channel Fulfillment) events - separate from regular shipments
+        fbaOutboundShipmentEvents: payload.FBAOutboundShipmentEventList || [],
+        // Removal/Disposal events
+        removalShipmentEvents: payload.RemovalShipmentEventList || [],
       },
       nextToken: response.NextToken || response.payload?.NextToken,
     }
@@ -2316,6 +2320,185 @@ export async function getFBALiquidationsForPeriod(
     }
   } catch (error) {
     console.error('❌ Failed to fetch FBA liquidations:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+// =============================================
+// MCF (MULTI-CHANNEL FULFILLMENT) FEE FUNCTIONS
+// =============================================
+
+/**
+ * MCF Fee Summary
+ * Multi-Channel Fulfillment fees from FBAOutboundShipmentEventList
+ */
+export interface MCFFeeEvent {
+  shipmentId: string
+  postedDate: string
+  sellerSku?: string
+  quantity: number
+  fulfillmentFee: number
+  perUnitFee: number
+  postedDateISO: string
+}
+
+export interface MCFFeeSummary {
+  events: MCFFeeEvent[]
+  totalFulfillmentFee: number
+  totalUnits: number
+  averagePerUnitFee: number
+  startDate: string
+  endDate: string
+}
+
+/**
+ * Extract MCF fees from FBAOutboundShipmentEventList
+ *
+ * MCF (Multi-Channel Fulfillment) fees are charged when Amazon fulfills
+ * orders from OTHER sales channels (e.g., Shopify, eBay, your website).
+ * These are SEPARATE from regular FBA fees and don't appear in Settlement Reports!
+ */
+export function extractMCFFees(
+  fbaOutboundEvents: Array<Record<string, unknown>>,
+  startDate: string,
+  endDate: string
+): MCFFeeSummary {
+  const events: MCFFeeEvent[] = []
+  let totalFulfillmentFee = 0
+  let totalUnits = 0
+
+  for (const event of fbaOutboundEvents) {
+    const shipmentId = String(event.ShipmentId || event.shipmentId || '')
+    const postedDate = String(event.PostedDate || event.postedDate || '')
+
+    // Get shipment item list
+    const itemList = (event.FBAOutboundShipmentItemList || event.fbaOutboundShipmentItemList || []) as Array<Record<string, unknown>>
+
+    for (const item of itemList) {
+      const sellerSku = String(item.SellerSKU || item.sellerSKU || '')
+      const quantity = Number(item.Quantity || item.quantity || 0)
+
+      // MCF fees are in the FeeList
+      const feeList = (item.FeeList || item.feeList || []) as Array<Record<string, unknown>>
+
+      let itemFulfillmentFee = 0
+
+      for (const fee of feeList) {
+        const feeType = String(fee.FeeType || fee.feeType || '')
+        const feeAmount = fee.FeeAmount || fee.feeAmount || {}
+        const amount = Math.abs(Number((feeAmount as Record<string, number>).CurrencyAmount || (feeAmount as Record<string, number>).currencyAmount || 0))
+
+        // MCF fees can have various types
+        if (feeType.toLowerCase().includes('fulfillment') ||
+            feeType.toLowerCase().includes('fba') ||
+            feeType.toLowerCase().includes('mcf') ||
+            feeType.toLowerCase().includes('outbound')) {
+          itemFulfillmentFee += amount
+        }
+      }
+
+      if (itemFulfillmentFee > 0 || quantity > 0) {
+        events.push({
+          shipmentId,
+          postedDate: postedDate,
+          postedDateISO: postedDate,
+          sellerSku,
+          quantity,
+          fulfillmentFee: itemFulfillmentFee,
+          perUnitFee: quantity > 0 ? itemFulfillmentFee / quantity : 0,
+        })
+
+        totalFulfillmentFee += itemFulfillmentFee
+        totalUnits += quantity
+      }
+    }
+  }
+
+  return {
+    events,
+    totalFulfillmentFee,
+    totalUnits,
+    averagePerUnitFee: totalUnits > 0 ? totalFulfillmentFee / totalUnits : 0,
+    startDate,
+    endDate,
+  }
+}
+
+/**
+ * Fetch MCF (Multi-Channel Fulfillment) Fees
+ *
+ * Retrieves MCF fees from Finances API for a date range.
+ * These fees are NOT in Settlement Reports - they're only in Finances API!
+ */
+export async function fetchMCFFees(
+  refreshToken: string,
+  startDate: Date,
+  endDate: Date
+): Promise<{
+  success: boolean
+  data?: MCFFeeSummary
+  error?: string
+}> {
+  const client = createAmazonSPAPIClient(refreshToken)
+
+  try {
+    console.log(`📊 Fetching MCF fees from ${startDate.toISOString()} to ${endDate.toISOString()}`)
+
+    // Amazon requires dates to be at least 2 minutes before current time
+    const safeEndDate = new Date(endDate.getTime() - 3 * 60 * 1000)
+
+    const params: Record<string, string | number> = {
+      MaxResultsPerPage: 100,
+      PostedAfter: startDate.toISOString(),
+    }
+
+    if (safeEndDate) {
+      params.PostedBefore = safeEndDate.toISOString()
+    }
+
+    // We may need to paginate for large date ranges
+    let allMCFEvents: Array<Record<string, unknown>> = []
+    let nextToken: string | undefined
+
+    do {
+      const queryParams = nextToken ? { ...params, NextToken: nextToken } : params
+
+      const response = await client.callAPI({
+        operation: 'listFinancialEvents',
+        endpoint: 'finances',
+        query: queryParams,
+      })
+
+      // API returns FinancialEvents directly
+      const payload = response.FinancialEvents || response.payload?.FinancialEvents || {}
+      const mcfEvents = payload.FBAOutboundShipmentEventList || []
+
+      allMCFEvents = allMCFEvents.concat(mcfEvents)
+      nextToken = response.NextToken || response.payload?.NextToken
+
+      // Small delay to respect rate limits
+      if (nextToken) {
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+    } while (nextToken)
+
+    const summary = extractMCFFees(
+      allMCFEvents,
+      startDate.toISOString(),
+      endDate.toISOString()
+    )
+
+    console.log(`✅ Found ${summary.events.length} MCF events with total fee: $${summary.totalFulfillmentFee.toFixed(2)}`)
+
+    return {
+      success: true,
+      data: summary,
+    }
+  } catch (error) {
+    console.error('❌ Failed to fetch MCF fees:', error)
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

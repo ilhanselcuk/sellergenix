@@ -76,6 +76,9 @@ export {
   // FBA Liquidation functions (Phase 1.7)
   extractFBALiquidationFees,
   getFBALiquidationsForPeriod,
+  // MCF (Multi-Channel Fulfillment) functions
+  extractMCFFees,
+  fetchMCFFees,
 } from './finances'
 export type {
   OrderItemFees,
@@ -96,6 +99,9 @@ export type {
   FBALiquidationItem,
   FBALiquidationEvent,
   FBALiquidationSummary,
+  // MCF types
+  MCFFeeEvent,
+  MCFFeeSummary,
 } from './finances'
 
 // Fee Service (Shipped & Pending Order Fees)
