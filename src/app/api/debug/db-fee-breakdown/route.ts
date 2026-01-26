@@ -25,13 +25,21 @@ export async function GET(request: NextRequest) {
     // Get period from query params
     const { searchParams } = new URL(request.url)
     const period = searchParams.get('period') || 'this-month'
+    const customStart = searchParams.get('start') // Format: YYYY-MM-DD
+    const customEnd = searchParams.get('end') // Format: YYYY-MM-DD
 
     // Calculate date range (PST timezone)
     const now = new Date()
     let startDate: Date
     let endDate: Date
 
-    if (period === 'today') {
+    if (period === 'custom' && customStart && customEnd) {
+      // Custom date range
+      const [startYear, startMonth, startDay] = customStart.split('-').map(Number)
+      const [endYear, endMonth, endDay] = customEnd.split('-').map(Number)
+      startDate = new Date(Date.UTC(startYear, startMonth - 1, startDay, 8, 0, 0))
+      endDate = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 7, 59, 59, 999))
+    } else if (period === 'today') {
       // PST today
       const pstNow = new Date(now.getTime() - 8 * 60 * 60 * 1000)
       startDate = new Date(Date.UTC(pstNow.getUTCFullYear(), pstNow.getUTCMonth(), pstNow.getUTCDate(), 8, 0, 0))
