@@ -254,7 +254,7 @@ export async function GET(request: NextRequest) {
         ours: {
           fbaPerUnit: totals.fba.toFixed(2),
           storage: serviceFeesByType['storage']?.total.toFixed(2) || '0.00',
-          longTermStorage: (totals.longTermStorage + (serviceFeesByType['long_term_storage']?.total || 0)).toFixed(2),
+          longTermStorage: (totals.longTermStorage + (serviceFeesByType['long_term_storage']?.total || 0) + (serviceFeesByType['long']?.total || 0)).toFixed(2),
           mcf: totals.mcf.toFixed(2),
           disposal: totals.disposal.toFixed(2),
           subscription: serviceFeesByType['subscription']?.total.toFixed(2) || '0.00',
@@ -264,7 +264,7 @@ export async function GET(request: NextRequest) {
         gaps: {
           fba: (sellerboardExpected.fbaPerUnit - totals.fba).toFixed(2),
           storage: (sellerboardExpected.storage - (serviceFeesByType['storage']?.total || 0)).toFixed(2),
-          longTermStorage: (sellerboardExpected.longTermStorage - totals.longTermStorage - (serviceFeesByType['long_term_storage']?.total || 0)).toFixed(2),
+          longTermStorage: (sellerboardExpected.longTermStorage - totals.longTermStorage - (serviceFeesByType['long_term_storage']?.total || 0) - (serviceFeesByType['long']?.total || 0)).toFixed(2),
           mcf: (sellerboardExpected.mcf - totals.mcf).toFixed(2),
           disposal: (sellerboardExpected.disposal - totals.disposal).toFixed(2),
           subscription: (sellerboardExpected.subscription - (serviceFeesByType['subscription']?.total || 0)).toFixed(2),
