@@ -48,6 +48,71 @@
 - `TodoWrite` tool'unu kullan
 - Tamamlanan işleri "completed" olarak işaretle
 - Devam eden işleri "in_progress" olarak işaretle
+
+---
+
+## 🚨🚨🚨 ACİL TODO: SELLERBOARD İLE FEE FARKLILIKLARI (26 Ocak 2026) 🚨🚨🚨
+
+**⚠️ BU BÖLÜMÜ ÇÖZENE KADAR BAŞKA İŞ YAPMA! ⚠️**
+
+**Tarih Aralığı:** 25 Ekim 2025 - 25 Ocak 2026 (3 ay)
+**Referans:** Sellerboard screenshot'ları yukarıda
+
+### ❌ ÇÖZÜLMESİ GEREKEN FARKLILIKLAR:
+
+| # | Metrik | Sellerboard | SellerGenix | Fark | Öncelik |
+|---|--------|-------------|-------------|------|---------|
+| 1 | FBA per unit fee | -$1,938.23 | -$1,569.43 | **-$368.80** | 🔴 KRİTİK |
+| 2 | Subscription | -$119.97 | -$39.99 | **-$79.98** | 🔴 KRİTİK |
+| 3 | MCF fee | -$15.26 | $0.00 | **-$15.26** | 🟡 ORTA |
+| 4 | Long-term storage | -$2.95 | $0.00 | **-$2.95** | 🟡 ORTA |
+| 5 | Disposal fee | -$1.53 | $0.00 | **-$1.53** | 🟡 ORTA |
+| 6 | Refund cost | -$35.99 | $0.00 | **-$35.99** | 🔴 KRİTİK |
+| 7 | Promo | -$456.20 | -$351.35 | **-$104.85** | 🟡 ORTA |
+| 8 | Warehouse damage | +$3.03 | $0.00 | **+$3.03** | 🟢 DÜŞÜK |
+| 9 | Warehouse lost | +$15.15 | $0.00 | **+$15.15** | 🟢 DÜŞÜK |
+| 10 | Reversal reimb. | +$21.32 | $0.00 | **+$21.32** | 🟢 DÜŞÜK |
+
+### ⏳ BEKLEYENler (Publish sonrası):
+- FBA storage fee: -$76.37 → Amazon Fulfillment rolü publish bekliyor
+- Advertising cost: -$1,620.69 → Ads API yok (Faz 2)
+
+### 🔧 ÇÖZÜM PLANI:
+
+**1. Subscription Fee (3 ay değil 1 ay gösteriyor)**
+- [ ] `service_fees` tablosundan tüm subscription kayıtlarını çek
+- [ ] Tarih aralığına göre TÜMÜNÜ topla (prorate değil!)
+- [ ] Dosya: `/src/app/api/dashboard/metrics/route.ts`
+
+**2. FBA per unit fee eksik ($368.80)**
+- [ ] Settlement Report parsing kontrol et
+- [ ] `order_items.fee_fba_per_unit` veya `total_fba_fulfillment_fees` kullanılıyor mu?
+- [ ] Dosya: `/src/lib/amazon-sp-api/reports.ts` (calculateFeesFromSettlement)
+- [ ] Dosya: `/src/app/api/dashboard/metrics/route.ts` (feeBreakdown)
+
+**3. MCF, Long-term storage, Disposal ($19.74 total)**
+- [ ] Settlement Report'tan parse ediliyor mu kontrol et
+- [ ] Dashboard'a aktarılıyor mu kontrol et
+- [ ] Dosya: `/src/lib/amazon-sp-api/reports.ts`
+
+**4. Refund cost ($35.99)**
+- [ ] Finance API RefundEventList çekiliyor mu?
+- [ ] `order_items.refund_amount` dolduruluyor mu?
+- [ ] Dashboard refund hesaplaması
+
+**5. Promo farkı ($104.85)**
+- [ ] Settlement parsing "Promotion" ve "PromotionalRebates" kontrol
+- [ ] Tüm promo türleri çekilmiş mi?
+
+**6. Reimbursements (Warehouse damage/lost/reversal)**
+- [ ] Finance API'den çekiliyor mu?
+- [ ] Settlement'tan mı geliyor?
+- [ ] Pozitif değer olarak mı kaydediliyor?
+
+### ✅ ÇÖZÜLDÜ:
+- [ ] (buraya çözülenler eklenecek)
+
+---
 - Yeni işleri "pending" olarak ekle
 - **SAKIN** batch update yapma - her iş bitince hemen güncelle!
 
