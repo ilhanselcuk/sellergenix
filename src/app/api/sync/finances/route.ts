@@ -161,7 +161,9 @@ export async function POST(request: NextRequest) {
     }>()
 
     // Account-level fees (not order-level - attributed to posted date)
-    let totalSubscriptionFees = 0
+    // Track subscription fees BY MONTH to save each month separately
+    const subscriptionFeesByMonth = new Map<string, number>() // key: YYYY-MM
+    let totalSubscriptionFees = 0 // Keep for backwards compat / logging
     let totalStorageFees = 0
     let totalOtherServiceFees = 0
 
@@ -362,7 +364,10 @@ export async function POST(request: NextRequest) {
             totalSubscriptionFees += amount
             summary.fees += amount
             summary.feeBreakdown['SubscriptionFee'] = (summary.feeBreakdown['SubscriptionFee'] || 0) + amount
-            log(`   📌 Subscription fee: $${amount.toFixed(2)} on ${dateKey}`)
+            // Track by month for separate saving (YYYY-MM)
+            const monthKey = dateKey.substring(0, 7) // "2025-11" from "2025-11-15"
+            subscriptionFeesByMonth.set(monthKey, (subscriptionFeesByMonth.get(monthKey) || 0) + amount)
+            log(`   📌 Subscription fee: $${amount.toFixed(2)} on ${dateKey} (month: ${monthKey})`)
           } else if (feeType.includes('storage') || feeType.includes('longterm')) {
             totalStorageFees += amount
             summary.fees += amount
@@ -380,7 +385,7 @@ export async function POST(request: NextRequest) {
     }
 
     log(`\n📊 Service fee totals:`)
-    log(`   Subscription: $${totalSubscriptionFees.toFixed(2)}`)
+    log(`   Subscription: $${totalSubscriptionFees.toFixed(2)} (${subscriptionFeesByMonth.size} months)`)
     log(`   Storage: $${totalStorageFees.toFixed(2)}`)
     log(`   Other: $${totalOtherServiceFees.toFixed(2)}`)
 
@@ -392,28 +397,36 @@ export async function POST(request: NextRequest) {
 
     const serviceFeesSaved: string[] = []
 
-    // Save subscription fee
-    if (totalSubscriptionFees > 0) {
-      const { error } = await supabase
-        .from('service_fees')
-        .upsert({
-          user_id: connection.user_id,
-          period_start: startDate.toISOString().split('T')[0],
-          period_end: endDate.toISOString().split('T')[0],
-          fee_type: 'subscription',
-          amount: totalSubscriptionFees,
-          description: 'Professional Seller Subscription Fee',
-          source: 'finances_api',
-          updated_at: new Date().toISOString(),
-        }, {
-          onConflict: 'user_id,period_start,period_end,fee_type',
-        })
+    // Save subscription fees BY MONTH (each month separately!)
+    // This allows dashboard to sum all months in a date range
+    if (subscriptionFeesByMonth.size > 0) {
+      for (const [monthKey, amount] of subscriptionFeesByMonth.entries()) {
+        // monthKey is "YYYY-MM", calculate period_start and period_end
+        const [year, month] = monthKey.split('-').map(Number)
+        const periodStart = new Date(year, month - 1, 1) // First day of month
+        const periodEnd = new Date(year, month, 0) // Last day of month
 
-      if (error) {
-        log(`   ⚠️ Error saving subscription fee: ${error.message}`)
-      } else {
-        serviceFeesSaved.push(`subscription: $${totalSubscriptionFees.toFixed(2)}`)
-        log(`   ✅ Saved subscription fee: $${totalSubscriptionFees.toFixed(2)}`)
+        const { error } = await supabase
+          .from('service_fees')
+          .upsert({
+            user_id: connection.user_id,
+            period_start: periodStart.toISOString().split('T')[0],
+            period_end: periodEnd.toISOString().split('T')[0],
+            fee_type: 'subscription',
+            amount: amount,
+            description: `Professional Seller Subscription Fee (${monthKey})`,
+            source: 'finances_api',
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'user_id,period_start,period_end,fee_type',
+          })
+
+        if (error) {
+          log(`   ⚠️ Error saving subscription fee for ${monthKey}: ${error.message}`)
+        } else {
+          serviceFeesSaved.push(`subscription ${monthKey}: $${amount.toFixed(2)}`)
+          log(`   ✅ Saved subscription fee for ${monthKey}: $${amount.toFixed(2)}`)
+        }
       }
     }
 
