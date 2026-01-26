@@ -371,10 +371,14 @@ async function getRealFeesForPeriod(
     // =====================================================
 
     // Collect ASINs that need historical fee lookup (ANY items without real fees)
-    // This includes both pending orders AND shipped orders that don't have fee_source='api'
+    // This includes both pending orders AND shipped orders that don't have fee_source set
+    // CRITICAL FIX: Check BOTH 'api' AND 'settlement_report' sources!
     const asinsNeedingFees = new Set<string>()
     for (const item of items || []) {
-      const hasRealFees = item.fee_source === 'api' && item.total_amazon_fees
+      // Real fees can come from EITHER source:
+      // - fee_source='api' → Finance API (order-level fees)
+      // - fee_source='settlement_report' → Settlement Reports (REAL per-item fees)
+      const hasRealFees = (item.fee_source === 'api' || item.fee_source === 'settlement_report') && item.total_amazon_fees
       // Include ALL orders without real fees - both pending and shipped
       if (!hasRealFees && item.asin) {
         asinsNeedingFees.add(item.asin)
