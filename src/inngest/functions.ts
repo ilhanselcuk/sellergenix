@@ -1389,16 +1389,17 @@ export const syncSettlementFees = inngest.createFunction(
       let saved = 0;
       let errors = 0;
 
+      // Group fees by type and month for aggregation
+      const feesByTypeAndMonth: Record<string, { amount: number; description: string; periodStart: Date; periodEnd: Date }> = {};
+
       for (const fee of accountFees) {
-        // Parse the date from postedDate (format: "2026-01-15T12:00:00Z" or "15.01.2026")
+        // Parse the date from postedDate
         let feeDate = new Date();
         if (fee.postedDate) {
-          // Try ISO format first
           const isoDate = new Date(fee.postedDate);
           if (!isNaN(isoDate.getTime())) {
             feeDate = isoDate;
           } else {
-            // Try DD.MM.YYYY format
             const parts = fee.postedDate.split(".");
             if (parts.length === 3) {
               feeDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
@@ -1406,39 +1407,105 @@ export const syncSettlementFees = inngest.createFunction(
           }
         }
 
-        // Create unique transaction ID to prevent duplicates
-        const transactionId = `${fee.settlementId || 'unknown'}_${fee.feeType}_${fee.description}_${fee.amount}`;
+        // Create key for grouping: feeType + month
+        const monthKey = `${feeDate.getFullYear()}-${String(feeDate.getMonth() + 1).padStart(2, '0')}`;
+        const groupKey = `${fee.feeType}_${monthKey}`;
 
-        const { error: upsertError } = await supabase
+        if (!feesByTypeAndMonth[groupKey]) {
+          // Calculate period start/end for the month
+          const periodStart = new Date(feeDate.getFullYear(), feeDate.getMonth(), 1);
+          const periodEnd = new Date(feeDate.getFullYear(), feeDate.getMonth() + 1, 0);
+
+          feesByTypeAndMonth[groupKey] = {
+            amount: 0,
+            description: fee.description,
+            periodStart,
+            periodEnd,
+          };
+        }
+        feesByTypeAndMonth[groupKey].amount += fee.amount;
+      }
+
+      // Now save aggregated fees to service_fees table
+      for (const [groupKey, data] of Object.entries(feesByTypeAndMonth)) {
+        const [feeType] = groupKey.split('_');
+
+        // Map feeType to the expected fee_type values in the table
+        let dbFeeType = 'other';
+        let description = data.description;
+
+        if (feeType === 'storage' || feeType === 'long_term_storage') {
+          dbFeeType = 'storage';
+          description = feeType === 'long_term_storage'
+            ? 'FBA Long-term Storage Fees'
+            : 'FBA Storage Fees (Monthly)';
+        } else if (feeType === 'subscription') {
+          dbFeeType = 'subscription';
+          description = 'Professional Seller Subscription Fee';
+        } else if (feeType === 'advertising') {
+          dbFeeType = 'advertising';
+          description = 'Amazon Advertising Costs';
+        }
+
+        // Check if entry already exists for this period and type
+        const { data: existing } = await supabase
           .from("service_fees")
-          .upsert({
-            user_id: userId,
-            fee_date: feeDate.toISOString().split("T")[0],
-            fee_type: fee.description,
-            fee_description: fee.description,
-            amount: fee.amount,
-            currency_code: "USD",
-            category: fee.feeType, // 'storage' | 'subscription' | 'long_term_storage' | 'advertising' | 'other'
-            amazon_transaction_id: transactionId,
-          }, {
-            onConflict: "user_id,amazon_transaction_id",
-            ignoreDuplicates: false,
-          });
+          .select("id, amount")
+          .eq("user_id", userId)
+          .eq("fee_type", dbFeeType)
+          .eq("period_start", data.periodStart.toISOString().split("T")[0])
+          .eq("period_end", data.periodEnd.toISOString().split("T")[0])
+          .single();
 
-        if (upsertError) {
-          // Check if it's a duplicate error (which is fine)
-          if (!upsertError.message.includes("duplicate")) {
-            errors++;
-            console.error(`❌ Failed to save account fee: ${upsertError.message}`);
+        if (existing) {
+          // Update existing entry if amount is different
+          if (Math.abs(existing.amount - data.amount) > 0.01) {
+            const { error: updateError } = await supabase
+              .from("service_fees")
+              .update({
+                amount: data.amount,
+                description,
+                source: "settlement_report",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", existing.id);
+
+            if (updateError) {
+              errors++;
+              console.error(`❌ Failed to update ${dbFeeType}: ${updateError.message}`);
+            } else {
+              saved++;
+              console.log(`✅ Updated ${dbFeeType}: $${data.amount} (was $${existing.amount})`);
+            }
+          } else {
+            console.log(`⏭️ Skipped ${dbFeeType}: already exists with same amount $${data.amount}`);
           }
         } else {
-          saved++;
-          console.log(`✅ Saved account fee: ${fee.feeType} = $${fee.amount} (${fee.description})`);
+          // Insert new entry
+          const { error: insertError } = await supabase
+            .from("service_fees")
+            .insert({
+              user_id: userId,
+              period_start: data.periodStart.toISOString().split("T")[0],
+              period_end: data.periodEnd.toISOString().split("T")[0],
+              fee_type: dbFeeType,
+              amount: data.amount,
+              description,
+              source: "settlement_report",
+            });
+
+          if (insertError) {
+            errors++;
+            console.error(`❌ Failed to insert ${dbFeeType}: ${insertError.message}`);
+          } else {
+            saved++;
+            console.log(`✅ Inserted ${dbFeeType}: $${data.amount} for ${data.periodStart.toISOString().split("T")[0]}`);
+          }
         }
       }
 
-      console.log(`💰 [Settlement] Saved ${saved} account-level fees (${errors} errors)`);
-      return { total: accountFees.length, saved, errors };
+      console.log(`💰 [Settlement] Processed ${Object.keys(feesByTypeAndMonth).length} aggregated fees, saved/updated ${saved} (${errors} errors)`);
+      return { total: accountFees.length, aggregated: Object.keys(feesByTypeAndMonth).length, saved, errors };
     });
 
     results.settlementReports = reportsResult.count;
