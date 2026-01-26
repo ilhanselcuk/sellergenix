@@ -100,66 +100,88 @@ fetch('/api/debug/cleanup-service-fees', { method: 'POST' }).then(r => r.json())
 
 ---
 
-## 🚨🚨🚨 ACİL TODO: SELLERBOARD İLE FEE FARKLILIKLARI (26 Ocak 2026) 🚨🚨🚨
+## 🚨🚨🚨 SELLERBOARD FEE KARŞILAŞTIRMASI (26 Ocak 2026 - GÜNCEL) 🚨🚨🚨
 
-**⚠️ BU BÖLÜMÜ ÇÖZENE KADAR BAŞKA İŞ YAPMA! ⚠️**
+**Tarih Aralığı:** 25 Ekim 2025 - 26 Ocak 2026 (3 ay)
+**Son Güncelleme:** 26 Ocak 2026
 
-**Tarih Aralığı:** 25 Ekim 2025 - 25 Ocak 2026 (3 ay)
-**Referans:** Sellerboard screenshot'ları yukarıda
+### 📊 GÜNCEL DURUM:
 
-### ❌ ÇÖZÜLMESİ GEREKEN FARKLILIKLAR:
+| # | Metrik | Sellerboard | SellerGenix | Fark | Durum |
+|---|--------|-------------|-------------|------|-------|
+| 1 | FBA per unit fee | $1,938.23 | $2,025.13 | **+$86.90** | ✅ FAZLA |
+| 2 | Storage | $76.37 | $76.37 | $0.00 | ✅ EŞLEŞTİ |
+| 3 | Long-term storage | $2.95 | $2.94 | $0.01 | ✅ EŞLEŞTİ |
+| 4 | Subscription | $119.97 | $119.97 | $0.00 | ✅ EŞLEŞTİ |
+| 5 | MCF fee | $15.26 | $0.00 | **$15.26** | ❌ EKSİK |
+| 6 | Disposal fee | $1.53 | $0.00 | **$1.53** | ❌ EKSİK |
+| 7 | Promo | $456.20 | $367.03 | **$89.17** | ❌ EKSİK |
 
-| # | Metrik | Sellerboard | SellerGenix | Fark | Öncelik |
-|---|--------|-------------|-------------|------|---------|
-| 1 | FBA per unit fee | -$1,938.23 | -$1,569.43 | **-$368.80** | 🔴 KRİTİK |
-| 2 | Subscription | -$119.97 | -$39.99 | **-$79.98** | 🔴 KRİTİK |
-| 3 | MCF fee | -$15.26 | $0.00 | **-$15.26** | 🟡 ORTA |
-| 4 | Long-term storage | -$2.95 | $0.00 | **-$2.95** | 🟡 ORTA |
-| 5 | Disposal fee | -$1.53 | $0.00 | **-$1.53** | 🟡 ORTA |
-| 6 | Refund cost | -$35.99 | $0.00 | **-$35.99** | 🔴 KRİTİK |
-| 7 | Promo | -$456.20 | -$351.35 | **-$104.85** | 🟡 ORTA |
-| 8 | Warehouse damage | +$3.03 | $0.00 | **+$3.03** | 🟢 DÜŞÜK |
-| 9 | Warehouse lost | +$15.15 | $0.00 | **+$15.15** | 🟢 DÜŞÜK |
-| 10 | Reversal reimb. | +$21.32 | $0.00 | **+$21.32** | 🟢 DÜŞÜK |
+### ✅ ÇÖZÜLENLER (26 Ocak 2026):
 
-### ⏳ BEKLEYENler (Publish sonrası):
-- FBA storage fee: -$76.37 → Amazon Fulfillment rolü publish bekliyor
-- Advertising cost: -$1,620.69 → Ads API yok (Faz 2)
+1. **FBA per unit fee** ✅
+   - Settlement sync düzeltildi
+   - Artık Sellerboard'dan bile $86.90 FAZLA gösteriyor
+   - Commit: `fix: Add admin endpoint for settlement sync trigger`
 
-### 🔧 ÇÖZÜM PLANI:
+2. **Storage** ✅
+   - `service_fees` tablosundan doğru çekiliyor
+   - Tam eşleşme: $76.37
 
-**1. Subscription Fee (3 ay değil 1 ay gösteriyor)**
-- [ ] `service_fees` tablosundan tüm subscription kayıtlarını çek
-- [ ] Tarih aralığına göre TÜMÜNÜ topla (prorate değil!)
-- [ ] Dosya: `/src/app/api/dashboard/metrics/route.ts`
+3. **Long-term storage** ✅
+   - `service_fees` tablosunda `long` type olarak kaydediliyordu
+   - `fee-breakdown` endpoint'i `long_term_storage` arıyordu
+   - Düzeltildi: Her iki key de kontrol ediliyor
+   - Commit: `fix: Include 'long' type in long-term storage calculation`
 
-**2. FBA per unit fee eksik ($368.80)**
-- [ ] Settlement Report parsing kontrol et
-- [ ] `order_items.fee_fba_per_unit` veya `total_fba_fulfillment_fees` kullanılıyor mu?
-- [ ] Dosya: `/src/lib/amazon-sp-api/reports.ts` (calculateFeesFromSettlement)
-- [ ] Dosya: `/src/app/api/dashboard/metrics/route.ts` (feeBreakdown)
+4. **Subscription** ✅
+   - 3 aylık ($119.97) doğru toplandı
+   - Tam eşleşme
 
-**3. MCF, Long-term storage, Disposal ($19.74 total)**
-- [ ] Settlement Report'tan parse ediliyor mu kontrol et
-- [ ] Dashboard'a aktarılıyor mu kontrol et
-- [ ] Dosya: `/src/lib/amazon-sp-api/reports.ts`
+### ❌ ÇÖZÜLECEKLER:
 
-**4. Refund cost ($35.99)**
-- [ ] Finance API RefundEventList çekiliyor mu?
-- [ ] `order_items.refund_amount` dolduruluyor mu?
-- [ ] Dashboard refund hesaplaması
+**1. MCF fee ($15.26)**
+- **Sorun:** Settlement Report'larda MCF fee BULUNAMIYOR
+- **Analiz:** `foundFees.mcf = []` (boş array)
+- **Olası neden:** MCF ayrı rapor tipi gerektirebilir
+- **TODO:** MCF fee'lerin hangi Amazon raporunda olduğunu araştır
 
-**5. Promo farkı ($104.85)**
-- [ ] Settlement parsing "Promotion" ve "PromotionalRebates" kontrol
-- [ ] Tüm promo türleri çekilmiş mi?
+**2. Disposal fee ($1.53)**
+- **Sorun:** Settlement'ta var (`withOrder: 1.53`) ama order_items'a kaydedilmiyor
+- **Analiz:** OrderId ile eşleşme problemi var
+- **TODO:** Settlement-match debug ile disposal order'ın eşleşip eşleşmediğini kontrol et
 
-**6. Reimbursements (Warehouse damage/lost/reversal)**
-- [ ] Finance API'den çekiliyor mu?
-- [ ] Settlement'tan mı geliyor?
-- [ ] Pozitif değer olarak mı kaydediliyor?
+**3. Promo farkı ($89.17)**
+- **Sorun:** $456.20 olması lazım, biz $367.03 gösteriyoruz
+- **TODO:** Eksik promo türlerini tespit et
 
-### ✅ ÇÖZÜLDÜ:
-- [ ] (buraya çözülenler eklenecek)
+### ⏳ BEKLEYENLER (Ads API - Faz 2):
+- Advertising cost: $1,620.69 → Amazon Ads API entegrasyonu gerekli
+
+### 🔧 DEBUG CONSOLE KODLARI:
+
+```javascript
+// Tüm fee karşılaştırması (tablo formatında)
+fetch('/api/debug/fee-breakdown').then(r => r.json()).then(d => {
+  console.table([
+    { metric: 'FBA Per Unit', sellerboard: d.comparison.sellerboard.fbaPerUnit, ours: d.comparison.ours.fbaPerUnit, gap: d.comparison.gaps.fba },
+    { metric: 'Storage', sellerboard: d.comparison.sellerboard.storage, ours: d.comparison.ours.storage, gap: d.comparison.gaps.storage },
+    { metric: 'Long-term Storage', sellerboard: d.comparison.sellerboard.longTermStorage, ours: d.comparison.ours.longTermStorage, gap: d.comparison.gaps.longTermStorage },
+    { metric: 'MCF', sellerboard: d.comparison.sellerboard.mcf, ours: d.comparison.ours.mcf, gap: d.comparison.gaps.mcf },
+    { metric: 'Disposal', sellerboard: d.comparison.sellerboard.disposal, ours: d.comparison.ours.disposal, gap: d.comparison.gaps.disposal },
+    { metric: 'Subscription', sellerboard: d.comparison.sellerboard.subscription, ours: d.comparison.ours.subscription, gap: d.comparison.gaps.subscription },
+    { metric: 'Promo', sellerboard: d.comparison.sellerboard.promo, ours: d.comparison.ours.promo, gap: d.comparison.gaps.promo }
+  ])
+})
+
+// Service fees detay
+fetch('/api/debug/fee-breakdown').then(r => r.json()).then(d => {
+  console.log('=== SERVICE FEES ===')
+  Object.entries(d.serviceFees).forEach(([type, data]) => {
+    console.log(`📦 ${type}: $${data.total.toFixed(2)} (${data.count} kayıt)`)
+  })
+})
+```
 
 ---
 - Yeni işleri "pending" olarak ekle
