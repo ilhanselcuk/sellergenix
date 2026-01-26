@@ -1444,7 +1444,7 @@ export const syncSettlementFees = inngest.createFunction(
           dbFeeType = 'storage';
           description = 'FBA Storage Fees (Monthly)';
         } else if (feeType === 'long_term_storage') {
-          dbFeeType = 'storage'; // Store as storage type but with different description
+          dbFeeType = 'long'; // Use 'long' to match fee-breakdown comparison
           description = 'FBA Long-term Storage Fees';
         } else if (feeType === 'subscription') {
           dbFeeType = 'subscription';
@@ -1452,6 +1452,9 @@ export const syncSettlementFees = inngest.createFunction(
         } else if (feeType === 'advertising') {
           dbFeeType = 'advertising';
           description = 'Amazon Advertising Costs';
+        } else if (feeType === 'disposal') {
+          dbFeeType = 'disposal';
+          description = 'FBA Disposal/Removal Fees';
         }
 
         // Check if entry already exists for this period and type

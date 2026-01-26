@@ -886,24 +886,38 @@ export function extractAccountLevelFees(rows: ParsedSettlementRow[]): AccountLev
   const accountFees: AccountLevelFee[] = []
 
   for (const row of rows) {
-    // Skip if has orderId (order-level fee) or is a Transfer
-    if (row.orderId || row.transactionType === 'Transfer') continue
-
-    // Only process other-transaction and ServiceFee types
-    const transactionType = (row.transactionType || '').toLowerCase()
-    if (!transactionType.includes('other-transaction') && !transactionType.includes('servicefee')) continue
-
     const amountDesc = (row.amountDescription || '').toLowerCase()
     const amount = Math.abs(row.amount || 0)
 
     if (amount === 0) continue
 
+    // Skip Transfer transactions
+    if (row.transactionType === 'Transfer') continue
+
+    // SPECIAL CASE: Disposal/Removal fees have orderId but it's a removal order, not a sales order
+    // These orderIds won't match any order_items, so we save them as account-level fees
+    const isDisposalFee = amountDesc.includes('disposal') || amountDesc.includes('removal') ||
+                          amountDesc.includes('fbadisposal') || amountDesc.includes('fbaremoval') ||
+                          amountDesc.includes('disposalcomplete')
+
+    // Skip regular orders (they're handled in calculateFeesFromSettlement)
+    // BUT allow disposal fees even if they have orderId
+    if (row.orderId && !isDisposalFee) continue
+
+    // Only process other-transaction and ServiceFee types (plus disposal which may have different types)
+    const transactionType = (row.transactionType || '').toLowerCase()
+    if (!isDisposalFee && !transactionType.includes('other-transaction') && !transactionType.includes('servicefee')) continue
+
     // Categorize the fee
     let feeType: AccountLevelFee['feeType'] = 'other'
 
-    // Long-term storage (check first - more specific)
+    // Disposal/Removal fees (check first - special handling)
+    if (isDisposalFee) {
+      feeType = 'disposal'
+    }
+    // Long-term storage (check before regular storage - more specific)
     // Note: StorageRenewalBilling is actually the aged inventory surcharge (long-term storage), NOT monthly storage
-    if (amountDesc.includes('long-term') || amountDesc.includes('longterm') || amountDesc.includes('aged') ||
+    else if (amountDesc.includes('long-term') || amountDesc.includes('longterm') || amountDesc.includes('aged') ||
         amountDesc.includes('storagerenewalbilling') || amountDesc.includes('storage renewal')) {
       feeType = 'long_term_storage'
     }
