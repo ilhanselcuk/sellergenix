@@ -1581,7 +1581,7 @@ export const scheduledStorageSync = inngest.createFunction(
     }
 
     const successful = results.filter(r => r.success).length;
-    const totalStorageFees = results.reduce((sum, r) => sum + (r.totalStorageFee || 0), 0);
+    const totalStorageFees = results.reduce((sum, r) => sum + ('totalStorageFee' in r ? (r.totalStorageFee || 0) : 0), 0);
     return {
       usersProcessed: results.length,
       successful,
