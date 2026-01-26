@@ -723,16 +723,19 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
       }
     }
 
-    // ========== FBA FEES ==========
-    // FBA Fulfillment Fees (pick & pack, weight-based) - BUT NOT MCF
-    if ((amountDesc.includes('fba') || amountDesc.includes('fulfillment fee') || amountDesc.includes('pick & pack') || amountDesc.includes('fbaperunitfulfillmentfee'))
-        && !amountDesc.includes('mcf') && !amountDesc.includes('multi-channel')) {
-      orderFees.fbaFee += Math.abs(amount)
+    // ========== MCF FEES (check first - more specific) ==========
+    // MCF (Multi-Channel Fulfillment) - charged for fulfilling orders from other channels (Shopify, eBay, etc.)
+    // Must check BEFORE FBA because MCF contains "fba" in some descriptions
+    if (amountDesc.includes('mcf') || amountDesc.includes('multi-channel') || amountDesc.includes('multichannel') ||
+        amountDesc.includes('multichanneldelivery') || amountDesc.includes('fbamultichannel')) {
+      orderFees.mcfFee += Math.abs(amount)
     }
 
-    // MCF (Multi-Channel Fulfillment) - separate from FBA
-    else if (amountDesc.includes('mcf') || amountDesc.includes('multi-channel') || amountDesc.includes('multichannel')) {
-      orderFees.mcfFee += Math.abs(amount)
+    // ========== FBA FEES ==========
+    // FBA Fulfillment Fees (pick & pack, weight-based) - BUT NOT MCF
+    else if ((amountDesc.includes('fba') || amountDesc.includes('fulfillment fee') || amountDesc.includes('pick & pack') || amountDesc.includes('fbaperunitfulfillmentfee'))
+        && !amountDesc.includes('mcf') && !amountDesc.includes('multi-channel') && !amountDesc.includes('multichannel')) {
+      orderFees.fbaFee += Math.abs(amount)
     }
 
     // ========== REFERRAL FEES ==========
@@ -751,11 +754,14 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
 
     // ========== STORAGE FEES ==========
     // Long-term storage (6+ months) - check first (more specific)
-    else if (amountDesc.includes('long-term') || amountDesc.includes('longterm') || amountDesc.includes('long term') || amountDesc.includes('aged inventory')) {
+    // Note: StorageRenewalBilling is the aged inventory surcharge (long-term storage)
+    else if (amountDesc.includes('long-term') || amountDesc.includes('longterm') || amountDesc.includes('long term') ||
+             amountDesc.includes('aged inventory') || amountDesc.includes('aged') ||
+             amountDesc.includes('storagerenewalbilling') || amountDesc.includes('storage renewal')) {
       orderFees.longTermStorageFee += Math.abs(amount)
     }
-    // Monthly storage
-    else if (amountDesc.includes('storage') && !amountDesc.includes('long')) {
+    // Monthly storage - only if NOT long-term
+    else if (amountDesc.includes('storage') && !amountDesc.includes('long') && !amountDesc.includes('aged') && !amountDesc.includes('renewal')) {
       orderFees.storageFee += Math.abs(amount)
     }
 
@@ -765,7 +771,9 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
     }
 
     // ========== DISPOSAL/REMOVAL FEES ==========
-    else if (amountDesc.includes('disposal') || amountDesc.includes('removal')) {
+    // Amazon charges these when you request removal or disposal of inventory
+    else if (amountDesc.includes('disposal') || amountDesc.includes('removal') ||
+             amountDesc.includes('fbadisposal') || amountDesc.includes('fbaremoval')) {
       orderFees.disposalFee += Math.abs(amount)
     }
 
@@ -893,17 +901,15 @@ export function extractAccountLevelFees(rows: ParsedSettlementRow[]): AccountLev
     // Categorize the fee
     let feeType: AccountLevelFee['feeType'] = 'other'
 
-    // Storage Fee (monthly)
-    if (amountDesc.includes('storage fee') && !amountDesc.includes('long') && !amountDesc.includes('renewal')) {
-      feeType = 'storage'
-    }
-    // StorageRenewalBilling - This is monthly storage billing, NOT long-term
-    else if (amountDesc.includes('storagerenewalbilling') || amountDesc.includes('storage renewal')) {
-      feeType = 'storage'
-    }
-    // Long-term storage
-    else if (amountDesc.includes('long-term') || amountDesc.includes('longterm') || amountDesc.includes('aged')) {
+    // Long-term storage (check first - more specific)
+    // Note: StorageRenewalBilling is actually the aged inventory surcharge (long-term storage), NOT monthly storage
+    if (amountDesc.includes('long-term') || amountDesc.includes('longterm') || amountDesc.includes('aged') ||
+        amountDesc.includes('storagerenewalbilling') || amountDesc.includes('storage renewal')) {
       feeType = 'long_term_storage'
+    }
+    // Storage Fee (monthly) - only if not long-term
+    else if (amountDesc.includes('storage fee') || amountDesc.includes('storage')) {
+      feeType = 'storage'
     }
     // Subscription
     else if (amountDesc.includes('subscription')) {
