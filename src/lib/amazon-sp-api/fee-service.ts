@@ -162,6 +162,21 @@ export async function syncShippedOrderFees(
     let totalFeesApplied = 0
 
     for (const itemFee of orderFees.items) {
+      // ⚠️ CRITICAL: Check if this item already has settlement_report data
+      // Settlement Report data is MORE ACCURATE than API data - NEVER overwrite it!
+      const { data: existingItem } = await supabase
+        .from('order_items')
+        .select('fee_source')
+        .eq('user_id', userId)
+        .eq('amazon_order_id', amazonOrderId)
+        .eq('order_item_id', itemFee.orderItemId)
+        .single()
+
+      if (existingItem?.fee_source === 'settlement_report') {
+        console.log(`  ⏭️ Skipping ${itemFee.orderItemId} - already has settlement_report data (more accurate)`)
+        continue
+      }
+
       // Calculate fee per unit for backward compatibility
       const feePerUnit = itemFee.quantity > 0 ? itemFee.totalFee / itemFee.quantity : itemFee.totalFee
 
@@ -909,6 +924,20 @@ export async function bulkSyncFeesForDateRange(
       for (const orderItemId of batchIds) {
         const feeData = feesByOrderItem.get(orderItemId)
         if (!feeData) continue
+
+        // ⚠️ CRITICAL: Check if this item already has settlement_report data
+        // Settlement Report data is MORE ACCURATE than API data - NEVER overwrite it!
+        const { data: existingItem } = await supabase
+          .from('order_items')
+          .select('fee_source')
+          .eq('user_id', userId)
+          .eq('order_item_id', orderItemId)
+          .single()
+
+        if (existingItem?.fee_source === 'settlement_report') {
+          // Skip - settlement data is more accurate
+          continue
+        }
 
         // Calculate fee per unit for backward compatibility
         const feePerUnit = feeData.quantity > 0 ? feeData.totalFee / feeData.quantity : feeData.totalFee
