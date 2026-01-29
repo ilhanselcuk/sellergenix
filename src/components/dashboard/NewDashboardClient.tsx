@@ -3,15 +3,48 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Package,
+  ShoppingCart,
+  BarChart3,
+  ArrowUpRight,
+  ArrowDownRight,
+  Sparkles,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  RefreshCw,
+  ChevronRight,
+  Zap,
+  Target,
+  Wallet,
+  PiggyBank,
+  Activity,
+  Eye,
+  Settings,
+  Download,
+  Filter,
+  Search,
+  MoreHorizontal,
+  Info,
+  Percent,
+  Box,
+  Truck,
+  CreditCard,
+  ReceiptText,
+  Globe
+} from 'lucide-react'
 import MarketplaceSelector from '@/components/dashboard/MarketplaceSelector'
-import PeriodSelector, { PERIOD_SETS } from '@/components/dashboard/PeriodSelector'
+import { PERIOD_SETS, getDateRange } from '@/components/dashboard/PeriodSelector'
 import PeriodCardsGrid from '@/components/dashboard/PeriodCardsGrid'
 import { PeriodData } from '@/components/dashboard/PeriodCard'
 import DetailedBreakdownModal from '@/components/dashboard/DetailedBreakdownModal'
 import ProductTable, { ProductData } from '@/components/dashboard/ProductTable'
 import ProductSettingsModal, { ProductCosts } from '@/components/dashboard/ProductSettingsModal'
-import AIChatBar from '@/components/dashboard/AIChatBar'
-// SyncStatusIndicator removed - was causing confusion with stuck progress
+import { ChatBot } from '@/components/ai/ChatBot'
 
 // Dashboard data from database
 interface DashboardData {
@@ -34,35 +67,30 @@ interface PeriodMetrics {
   refunds: number
   adSpend: number
   amazonFees: number
-  cogs?: number  // Cost of Goods Sold
+  cogs?: number
   grossProfit: number
   netProfit: number
   margin: number
   roi: number
-  // Fee source and breakdown (Phase 1.8) - Sellerboard Parity
   feeSource?: 'real' | 'estimated' | 'mixed'
   feeBreakdown?: {
-    // === AMAZON FEES (charges) ===
-    fbaFulfillment: number      // FBA per-unit fulfillment fee
-    mcf: number                 // Multi-Channel Fulfillment (SEPARATE from FBA!)
-    referral: number            // Amazon commission (8-15%)
-    storage: number             // Monthly FBA storage
-    longTermStorage: number     // Long-term storage (6+ months) - SEPARATE!
-    inbound: number             // Inbound placement/convenience fee
-    removal: number             // Disposal/removal fee
-    digitalServices: number     // Digital services fee
-    refundCommission: number    // Refund commission charge
-    returns: number             // Return processing fees
-    chargebacks: number         // Chargebacks
-    other: number               // Other miscellaneous fees
-    // === REIMBURSEMENTS (credits - positive values) ===
-    warehouseDamage: number     // Warehouse damage reimbursement
-    warehouseLost: number       // Warehouse lost reimbursement
-    reversalReimbursement: number // Reversal/compensation
-    refundedReferral: number    // Referral fee refunded back to seller
-    // === PROMO (separate from Amazon fees) ===
-    promo: number               // Promotional discounts
-    // Legacy field for backward compatibility
+    fbaFulfillment: number
+    mcf: number
+    referral: number
+    storage: number
+    longTermStorage: number
+    inbound: number
+    removal: number
+    digitalServices: number
+    refundCommission: number
+    returns: number
+    chargebacks: number
+    other: number
+    warehouseDamage: number
+    warehouseLost: number
+    reversalReimbursement: number
+    refundedReferral: number
+    promo: number
     reimbursements: number
   }
   serviceFees?: {
@@ -83,7 +111,6 @@ interface DatabaseProduct {
   price: number | null
   cogs: number | null
   fba_stock?: number
-  // Calculated stats
   units?: number
   unitsSold?: number
   orders?: number
@@ -103,11 +130,11 @@ interface NewDashboardClientProps {
   profileName: string
   email: string
   hasAmazonConnection: boolean
+  hasAdsApiConnection?: boolean
   dashboardData?: DashboardData
   lastSyncAt?: string | null
 }
 
-// Sales API response type (for default set - backwards compatibility)
 interface SalesApiMetrics {
   today: PeriodMetrics
   yesterday: PeriodMetrics
@@ -115,38 +142,85 @@ interface SalesApiMetrics {
   lastMonth: PeriodMetrics
 }
 
-// Dynamic period metrics (for any period set)
 interface DynamicPeriodMetrics {
   [label: string]: PeriodMetrics | null
 }
 
-// Helper function to format time ago
 function formatTimeAgo(dateString: string | null | undefined): string {
   if (!dateString) return 'Never'
-
   const date = new Date(dateString)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffMins = Math.floor(diffMs / 60000)
   const diffHours = Math.floor(diffMs / 3600000)
   const diffDays = Math.floor(diffMs / 86400000)
-
   if (diffMins < 1) return 'Just now'
   if (diffMins < 60) return `${diffMins} min ago`
-  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
-  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
+  if (diffHours < 24) return `${diffHours}h ago`
+  return `${diffDays}d ago`
 }
 
-// NOTE: Mock data generator removed - using real database data now via generateRealPeriodData
-
-// NOTE: MOCK_PRODUCTS removed - dashboard now uses real database data
-
-// Transform database products to ProductData format for ProductTable
-function transformDatabaseProducts(dbProducts: DatabaseProduct[]): ProductData[] {
-  if (!dbProducts || dbProducts.length === 0) {
-    return []
+function formatCurrency(value: number, compact = false): string {
+  if (compact) {
+    if (Math.abs(value) >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
+    if (Math.abs(value) >= 1000) return `$${(value / 1000).toFixed(1)}K`
   }
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value)
+}
 
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat('en-US').format(value)
+}
+
+function formatPercent(value: number): string {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
+}
+
+// Mini sparkline component
+function Sparkline({ data, color = '#10b981', height = 32 }: { data: number[], color?: string, height?: number }) {
+  const max = Math.max(...data)
+  const min = Math.min(...data)
+  const range = max - min || 1
+
+  const points = data.map((value, index) => {
+    const x = (index / (data.length - 1)) * 100
+    const y = 100 - ((value - min) / range) * 100
+    return `${x},${y}`
+  }).join(' ')
+
+  return (
+    <svg viewBox="0 0 100 100" className="w-full" style={{ height }} preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={`gradient-${color}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points}
+        vectorEffect="non-scaling-stroke"
+      />
+      <polygon
+        fill={`url(#gradient-${color})`}
+        points={`0,100 ${points} 100,100`}
+      />
+    </svg>
+  )
+}
+
+// Transform database products to ProductData format
+function transformDatabaseProducts(dbProducts: DatabaseProduct[]): ProductData[] {
+  if (!dbProducts || dbProducts.length === 0) return []
   return dbProducts.map((p, index) => ({
     id: p.id || `db-${index}`,
     asin: p.asin,
@@ -167,18 +241,20 @@ function transformDatabaseProducts(dbProducts: DatabaseProduct[]): ProductData[]
   }))
 }
 
-// Generate period data from database metrics
 function generateRealPeriodData(
   label: string,
   startDate: Date,
   endDate: Date,
-  metrics: PeriodMetrics
+  metrics: PeriodMetrics,
+  previousMetrics?: PeriodMetrics
 ): PeriodData {
-  // Calculate ACOS: (adSpend / sales) * 100
   const acos = metrics.sales > 0 ? (metrics.adSpend / metrics.sales) * 100 : 0
 
-  // Calculate change (placeholder - could be calculated from comparing periods)
-  const netProfitChange = 0 // Would need previous period data to calculate
+  // Calculate net profit change vs previous period
+  let netProfitChange = 0
+  if (previousMetrics && previousMetrics.netProfit !== 0) {
+    netProfitChange = ((metrics.netProfit - previousMetrics.netProfit) / Math.abs(previousMetrics.netProfit)) * 100
+  }
 
   return {
     label,
@@ -193,9 +269,8 @@ function generateRealPeriodData(
     adSpend: metrics.adSpend,
     refunds: metrics.refunds,
     amazonFees: metrics.amazonFees,
-    cogs: 0, // Would need COGS from products
+    cogs: 0,
     grossProfit: metrics.grossProfit,
-    // Fee source and breakdown (Phase 1.8 - Sellerboard-style)
     feeSource: metrics.feeSource,
     feeBreakdown: metrics.feeBreakdown,
     serviceFees: metrics.serviceFees
@@ -207,66 +282,75 @@ export default function NewDashboardClient({
   profileName,
   email,
   hasAmazonConnection,
+  hasAdsApiConnection = false,
   dashboardData,
   lastSyncAt
 }: NewDashboardClientProps) {
-  // Check if we have real data
   const hasRealData = dashboardData?.hasRealData || false
 
-  // Period state (must be declared before useEffects that use them)
-  const [selectedSetId, setSelectedSetId] = useState('default')
+  // State
+  const [selectedSetId] = useState('default') // Only default period set
   const [selectedPeriodIndex, setSelectedPeriodIndex] = useState(0)
-  const [isCustomMode, setIsCustomMode] = useState(false)
-  const [customRange, setCustomRange] = useState<{ start: Date | null; end: Date | null }>({
-    start: null,
-    end: null
-  })
-
-  // Sales API metrics state - this is the SOURCE OF TRUTH for period cards
   const [salesApiMetrics, setSalesApiMetrics] = useState<SalesApiMetrics | null>(null)
   const [dynamicPeriodMetrics, setDynamicPeriodMetrics] = useState<DynamicPeriodMetrics | null>(null)
   const [salesApiLoading, setSalesApiLoading] = useState(false)
   const [salesApiError, setSalesApiError] = useState<string | null>(null)
+  const [selectedRegion, setSelectedRegion] = useState('north-america')
+  const [selectedCountry, setSelectedCountry] = useState('ATVPDKIKX0DER')
+  const [breakdownModalOpen, setBreakdownModalOpen] = useState(false)
+  const [breakdownModalData, setBreakdownModalData] = useState<PeriodData | null>(null)
+  const [productSettingsOpen, setProductSettingsOpen] = useState(false)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState('')
+  const [syncProgress, setSyncProgress] = useState({ total: 0, synced: 0, remaining: 0 })
+  const [showOnboarding, setShowOnboarding] = useState(!hasAmazonConnection)
 
-  // Fetch Sales API metrics for the selected period set
-  // This uses the POST endpoint which supports ANY date range
+  // Fetch Sales API metrics
   useEffect(() => {
     if (!hasAmazonConnection || !userId) return
-    if (isCustomMode) return // Custom mode handled separately
 
     const fetchPeriodMetrics = async () => {
       setSalesApiLoading(true)
       setSalesApiError(null)
 
       try {
-        // Get the selected period set
         const selectedSet = PERIOD_SETS.find(s => s.id === selectedSetId) || PERIOD_SETS[0]
 
-        // Build periods array for POST request
+        // Main periods for display
         const periodsPayload = selectedSet.periods.map(period => ({
           label: period.label,
-          startDate: period.startDate.toISOString().split('T')[0], // YYYY-MM-DD
+          startDate: period.startDate.toISOString().split('T')[0],
           endDate: period.endDate.toISOString().split('T')[0]
         }))
 
-        console.log(`📊 Fetching Sales API metrics for ${selectedSetId}:`, periodsPayload)
+        // Add comparison periods (not displayed, only for % change calculation)
+        // PST timezone aware - uses getDateRange from PeriodSelector
+        const twoDaysAgoRange = getDateRange('two-days-ago')
+        const twoMonthsAgoRange = getDateRange('two-months-ago')
+
+        periodsPayload.push({
+          label: '2 Days Ago',
+          startDate: twoDaysAgoRange.startDate.toISOString().split('T')[0],
+          endDate: twoDaysAgoRange.endDate.toISOString().split('T')[0]
+        })
+        periodsPayload.push({
+          label: '2 Months Ago',
+          startDate: twoMonthsAgoRange.startDate.toISOString().split('T')[0],
+          endDate: twoMonthsAgoRange.endDate.toISOString().split('T')[0]
+        })
 
         const response = await fetch('/api/dashboard/metrics', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId,
-            periods: periodsPayload
-          })
+          body: JSON.stringify({ userId, periods: periodsPayload })
         })
 
         const data = await response.json()
 
         if (data.success && data.metrics) {
-          console.log('📊 Sales API metrics loaded:', data.metrics)
           setDynamicPeriodMetrics(data.metrics)
-
-          // Also update the legacy salesApiMetrics if this is the default set
           if (selectedSetId === 'default' && data.metrics) {
             setSalesApiMetrics({
               today: data.metrics['Today'] || null,
@@ -275,17 +359,11 @@ export default function NewDashboardClient({
               lastMonth: data.metrics['Last Month'] || null
             })
           }
-        } else if (data.fallbackToDatabase) {
-          console.log('⚠️ Sales API not available, using database')
-          setSalesApiError('Sales API unavailable, using cached data')
-          setDynamicPeriodMetrics(null)
         } else {
-          console.error('❌ Sales API error:', data.error)
           setSalesApiError(data.error || 'Failed to fetch metrics')
           setDynamicPeriodMetrics(null)
         }
       } catch (error: any) {
-        console.error('❌ Sales API fetch error:', error)
         setSalesApiError(error.message || 'Network error')
         setDynamicPeriodMetrics(null)
       } finally {
@@ -294,91 +372,22 @@ export default function NewDashboardClient({
     }
 
     fetchPeriodMetrics()
-  }, [userId, hasAmazonConnection, selectedSetId, isCustomMode])
+  }, [userId, hasAmazonConnection, selectedSetId])
 
-  // Fetch Sales API metrics for custom date range
-  useEffect(() => {
-    if (!hasAmazonConnection || !userId) return
-    if (!isCustomMode || !customRange.start || !customRange.end) return
-
-    const fetchCustomRangeMetrics = async () => {
-      setSalesApiLoading(true)
-      setSalesApiError(null)
-
-      try {
-        const periodsPayload = [{
-          label: 'Custom Range',
-          startDate: customRange.start!.toISOString().split('T')[0],
-          endDate: customRange.end!.toISOString().split('T')[0]
-        }]
-
-        console.log('📊 Fetching Sales API metrics for custom range:', periodsPayload)
-
-        const response = await fetch('/api/dashboard/metrics', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId,
-            periods: periodsPayload
-          })
-        })
-
-        const data = await response.json()
-
-        if (data.success && data.metrics) {
-          console.log('📊 Custom range Sales API metrics loaded:', data.metrics)
-          setDynamicPeriodMetrics(data.metrics)
-        } else {
-          console.error('❌ Custom range Sales API error:', data.error)
-          setSalesApiError(data.error || 'Failed to fetch custom range metrics')
-          setDynamicPeriodMetrics(null)
-        }
-      } catch (error: any) {
-        console.error('❌ Custom range Sales API fetch error:', error)
-        setSalesApiError(error.message || 'Network error')
-        setDynamicPeriodMetrics(null)
-      } finally {
-        setSalesApiLoading(false)
-      }
-    }
-
-    fetchCustomRangeMetrics()
-  }, [userId, hasAmazonConnection, isCustomMode, customRange.start, customRange.end])
-
-  // Marketplace state
-  const [selectedRegion, setSelectedRegion] = useState('north-america')
-  const [selectedCountry, setSelectedCountry] = useState('ATVPDKIKX0DER')
-
-  // Modal state
-  const [breakdownModalOpen, setBreakdownModalOpen] = useState(false)
-  const [breakdownModalData, setBreakdownModalData] = useState<PeriodData | null>(null)
-  const [productSettingsOpen, setProductSettingsOpen] = useState(false)
-
-  // Auto-sync and refresh state
-  const searchParams = useSearchParams()
-  const router = useRouter()
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [syncMessage, setSyncMessage] = useState('')
-  const [syncProgress, setSyncProgress] = useState({ total: 0, synced: 0, remaining: 0 })
-
-  // Check for auto_sync param and start sync automatically
+  // Auto-sync check
   useEffect(() => {
     const autoSync = searchParams.get('auto_sync')
     if (autoSync === 'true' && hasAmazonConnection) {
-      // Remove the param from URL
       const url = new URL(window.location.href)
       url.searchParams.delete('auto_sync')
       router.replace(url.pathname + url.search)
-
-      // Start sync automatically
       startBatchSync()
     }
   }, [searchParams, hasAmazonConnection])
 
-  // Start batch sync function - loops automatically until complete
+  // Batch sync
   const startBatchSync = useCallback(async () => {
     if (isSyncing) return
-
     setIsSyncing(true)
     setSyncMessage('Starting order items sync...')
     setSyncProgress({ total: 0, synced: 0, remaining: 0 })
@@ -397,7 +406,6 @@ export default function NewDashboardClient({
           break
         }
 
-        // Update progress
         setSyncProgress({
           total: data.total || 0,
           synced: data.synced || 0,
@@ -405,45 +413,20 @@ export default function NewDashboardClient({
         })
         totalItemsSaved += data.itemsSaved || 0
 
-        const progressPercent = data.total > 0
-          ? Math.round((data.synced / data.total) * 100)
-          : 0
+        const progressPercent = data.total > 0 ? Math.round((data.synced / data.total) * 100) : 0
+        setSyncMessage(`Syncing orders... ${data.synced}/${data.total} (${progressPercent}%)`)
 
-        setSyncMessage(
-          `Syncing orders... ${data.synced}/${data.total} (${progressPercent}%) - ${totalItemsSaved} items saved`
-        )
-
-        // Check if complete
         if (data.remaining === 0) {
           keepSyncing = false
-
-          // Fix $0 prices on pending orders using catalog prices
           setSyncMessage(`Fixing pending order prices...`)
-          try {
-            await fetch('/api/fix-zero-prices')
-          } catch (e) {
-            // Ignore fix price errors
-          }
-
-          // Update product prices from synced order items
+          try { await fetch('/api/fix-zero-prices') } catch (e) {}
           setSyncMessage(`Updating product prices...`)
-          try {
-            await fetch('/api/update-product-prices')
-          } catch (e) {
-            // Ignore price update errors
-          }
-
-          setSyncMessage(`Sync complete! ${totalItemsSaved} items synced from ${data.total} orders.`)
-
-          // Wait a moment then refresh
-          setTimeout(() => {
-            window.location.reload()
-          }, 2000)
+          try { await fetch('/api/update-product-prices') } catch (e) {}
+          setSyncMessage(`Sync complete! ${totalItemsSaved} items synced.`)
+          setTimeout(() => window.location.reload(), 2000)
         }
 
-        // Small delay between batches to prevent overwhelming
         await new Promise(resolve => setTimeout(resolve, 500))
-
       } catch (error: any) {
         setSyncMessage(`Sync error: ${error.message}`)
         keepSyncing = false
@@ -453,10 +436,7 @@ export default function NewDashboardClient({
     setIsSyncing(false)
   }, [isSyncing])
 
-  // Onboarding popup - show if no Amazon connection
-  const [showOnboarding, setShowOnboarding] = useState(!hasAmazonConnection)
-
-  // Product state - use real data if available, otherwise empty array
+  // Product data
   const initialProducts = useMemo(() => {
     if (dashboardData?.products && dashboardData.products.length > 0) {
       return transformDatabaseProducts(dashboardData.products)
@@ -466,505 +446,603 @@ export default function NewDashboardClient({
 
   const [products, setProducts] = useState<ProductData[]>(initialProducts)
 
-  // Build product fee data map for SKU-based fee lookup
-  // This uses historical fee data from Finance API (Sellerboard-style)
-  const productFeeMap = useMemo(() => {
-    const map = new Map<string, number>()
-    if (dashboardData?.products) {
-      for (const product of dashboardData.products) {
-        const feePerUnit = (product as any).avg_fee_per_unit
-        if (feePerUnit && feePerUnit > 0) {
-          // Map by both ASIN and SKU for flexible lookup
-          if (product.asin) map.set(product.asin, feePerUnit)
-          if (product.sku) map.set(product.sku, feePerUnit)
-        }
-      }
-    }
-    console.log('📊 Product fee map loaded:', map.size, 'entries')
-    return map
-  }, [dashboardData?.products])
+  // CRITICAL: NO FALLBACK CALCULATIONS - Only use real API data
+  // If API returns no data, show $0 - NEVER use fake/estimated data
+  const getEmptyMetrics = (): PeriodMetrics => ({
+    sales: 0,
+    units: 0,
+    orders: 0,
+    refunds: 0,
+    adSpend: 0,
+    amazonFees: 0,
+    cogs: 0,
+    grossProfit: 0,
+    netProfit: 0,
+    margin: 0,
+    roi: 0
+  })
 
-  // Build historical price map from order_items (for pending orders with $0 price)
-  // CRITICAL: Amazon doesn't provide ItemPrice for Pending orders, so we use historical data
-  const historicalPriceMap = useMemo(() => {
-    const map = new Map<string, number>()
-    if (dashboardData?.orderItems) {
-      // Group by ASIN and calculate average price per unit
-      const priceData: { [asin: string]: { totalPrice: number; totalUnits: number } } = {}
+  // Map period labels to dashboardData keys
+  const getDashboardMetricsForPeriod = (label: string): PeriodMetrics => {
+    if (!dashboardData) return getEmptyMetrics()
 
-      for (const item of dashboardData.orderItems) {
-        const asin = item.asin
-        const price = item.item_price || 0
-        const qty = item.quantity_ordered || 1
-
-        // Only use items with actual prices (shipped orders)
-        if (asin && price > 0) {
-          if (!priceData[asin]) {
-            priceData[asin] = { totalPrice: 0, totalUnits: 0 }
-          }
-          priceData[asin].totalPrice += price
-          priceData[asin].totalUnits += qty
-        }
-      }
-
-      // Calculate average price per unit for each ASIN
-      for (const [asin, data] of Object.entries(priceData)) {
-        if (data.totalUnits > 0) {
-          map.set(asin, data.totalPrice / data.totalUnits)
-        }
-      }
-    }
-    console.log('💰 Historical price map loaded:', map.size, 'ASINs')
-    return map
-  }, [dashboardData?.orderItems])
-
-  // Build COGS map from products table
-  const cogsMap = useMemo(() => {
-    const map = new Map<string, number>()
-    if (dashboardData?.products) {
-      for (const product of dashboardData.products) {
-        const cogs = (product as any).cogs
-        if (cogs && cogs > 0 && product.asin) {
-          map.set(product.asin, cogs)
-        }
-      }
-    }
-    console.log('📦 COGS map loaded:', map.size, 'products')
-    return map
-  }, [dashboardData?.products])
-
-  // Helper function to calculate fee for a single item using SKU lookup
-  const calculateFeeForItem = (asin: string, sellerSku: string | null, itemPrice: number, quantity: number): number => {
-    // Try lookup by ASIN first, then by SKU
-    let feePerUnit = productFeeMap.get(asin)
-
-    if (!feePerUnit && sellerSku) {
-      feePerUnit = productFeeMap.get(sellerSku)
-    }
-
-    // If we found historical fee data, use it
-    if (feePerUnit && feePerUnit > 0) {
-      return feePerUnit * quantity
-    }
-
-    // Fallback to 15% estimate
-    return itemPrice * 0.15
-  }
-
-  // Helper function to calculate metrics for any date range
-  // IMPORTANT: Amazon US uses PST timezone. We must convert dates to PST for accurate filtering.
-  const calculateMetricsForDateRange = (startDate: Date, endDate: Date): PeriodMetrics => {
-    // Convert selected dates to PST range in UTC
-    // PST = UTC - 8 hours
-    // So Jan 3 00:00 PST = Jan 3 08:00 UTC
-    // And Jan 3 23:59:59 PST = Jan 4 07:59:59 UTC
-
-    // Get year, month, day from the input dates (treating them as PST dates)
-    // CRITICAL: Use UTC methods! Dates are created with Date.UTC in PeriodSelector
-    const startYear = startDate.getUTCFullYear()
-    const startMonth = startDate.getUTCMonth()
-    const startDay = startDate.getUTCDate()
-
-    const endYear = endDate.getUTCFullYear()
-    const endMonth = endDate.getUTCMonth()
-    const endDay = endDate.getUTCDate()
-
-    // Create UTC times that represent PST midnight and end of day
-    // PST midnight = UTC 08:00 same day
-    const pstStartUTC = new Date(Date.UTC(startYear, startMonth, startDay, 8, 0, 0, 0))
-    // PST 23:59:59.999 = UTC next day 07:59:59.999
-    const pstEndUTC = new Date(Date.UTC(endYear, endMonth, endDay + 1, 7, 59, 59, 999))
-
-    // Filter orders in PST date range
-    const filteredOrders = (dashboardData?.recentOrders || []).filter((order: any) => {
-      const orderDate = new Date(order.purchase_date)
-      return orderDate >= pstStartUTC && orderDate <= pstEndUTC
-    })
-
-    // Get order IDs
-    const orderIds = new Set(filteredOrders.map((o: any) => o.amazon_order_id))
-
-    // Filter order items for these orders
-    const filteredItems = (dashboardData?.orderItems || []).filter((item: any) =>
-      orderIds.has(item.amazon_order_id)
-    )
-
-    // Calculate metrics from filtered items
-    // CRITICAL: Use historical price for items with $0 price (pending orders)
-    let totalSales = 0
-    let totalUnits = 0
-    let totalCogs = 0
-    let totalFees = 0
-
-    for (const item of filteredItems) {
-      const asin = item.asin || ''
-      const sellerSku = item.seller_sku || null
-      const quantity = item.quantity_ordered || 1
-      let itemPrice = item.item_price || 0
-
-      // FIX: If price is $0, use historical average price for this ASIN
-      if (itemPrice === 0 && asin && historicalPriceMap.has(asin)) {
-        itemPrice = historicalPriceMap.get(asin)! * quantity
-        console.log(`💰 Using historical price for ${asin}: $${itemPrice.toFixed(2)}`)
-      }
-
-      totalSales += itemPrice
-      totalUnits += quantity
-
-      // Calculate Amazon fees (using historical data)
-      totalFees += calculateFeeForItem(asin, sellerSku, itemPrice, quantity)
-
-      // Calculate COGS (if available in products table)
-      if (asin && cogsMap.has(asin)) {
-        totalCogs += cogsMap.get(asin)! * quantity
-      }
-    }
-
-    // Ad Spend: Use Sales API data if available, otherwise estimate at 8%
-    // Note: Sellerboard uses real ad spend from Advertising API
-    const estimatedAdSpend = totalSales * 0.08
-
-    // CORRECT Net Profit formula (Sellerboard-style):
-    // Net Profit = Sales - COGS - Amazon Fees - Ad Spend
-    const grossProfit = totalSales - totalCogs - totalFees
-    const netProfit = grossProfit - estimatedAdSpend
-
-    return {
-      sales: totalSales,
-      units: totalUnits,
-      orders: filteredOrders.length,
-      refunds: 0,
-      adSpend: estimatedAdSpend,
-      amazonFees: totalFees,
-      cogs: totalCogs,
-      grossProfit: grossProfit,
-      netProfit: netProfit,
-      margin: totalSales > 0 ? (netProfit / totalSales) * 100 : 0,
-      roi: (totalCogs + estimatedAdSpend) > 0 ? (netProfit / (totalCogs + estimatedAdSpend)) * 100 : 0
+    switch (label) {
+      case 'Today': return dashboardData.today || getEmptyMetrics()
+      case 'Yesterday': return dashboardData.yesterday || getEmptyMetrics()
+      case 'This Month': return dashboardData.thisMonth || getEmptyMetrics()
+      case 'Last Month': return dashboardData.lastMonth || getEmptyMetrics()
+      default: return getEmptyMetrics()
     }
   }
 
-  // Generate period data - PREFER Sales API data over database calculations!
-  // Now supports ALL period sets via dynamicPeriodMetrics (including custom range)
+  // Get previous period metrics for comparison (PST timezone aware)
+  // Today → Yesterday, Yesterday → 2 Days Ago, This Month → Last Month, Last Month → 2 Months Ago
+  const getPreviousPeriodMetrics = (label: string): PeriodMetrics | undefined => {
+    if (!dashboardData) return undefined
+
+    switch (label) {
+      case 'Today':
+        // Today compares with Yesterday
+        return dynamicPeriodMetrics?.['Yesterday'] || dashboardData.yesterday || undefined
+      case 'Yesterday':
+        // Yesterday compares with 2 Days Ago (fetched via API)
+        return dynamicPeriodMetrics?.['2 Days Ago'] || undefined
+      case 'This Month':
+        // This Month compares with Last Month
+        return dynamicPeriodMetrics?.['Last Month'] || dashboardData.lastMonth || undefined
+      case 'Last Month':
+        // Last Month compares with 2 Months Ago (fetched via API)
+        return dynamicPeriodMetrics?.['2 Months Ago'] || undefined
+      default:
+        return undefined
+    }
+  }
+
+  // Period data generation - use server-side dashboardData (REAL DATA)
   const periodData = useMemo(() => {
-    if (isCustomMode && customRange.start && customRange.end) {
-      // Custom range: Use Sales API if available, otherwise database
-      if (dynamicPeriodMetrics && dynamicPeriodMetrics['Custom Range']) {
-        console.log('📊 Using Sales API metrics for custom range')
-        return [generateRealPeriodData('Custom Range', customRange.start, customRange.end, dynamicPeriodMetrics['Custom Range'])]
-      }
-      // Fallback to database calculation
-      console.log('📦 Using database calculation for custom range (Sales API not available)')
-      const metrics = calculateMetricsForDateRange(customRange.start, customRange.end)
-      return [generateRealPeriodData('Custom Range', customRange.start, customRange.end, metrics)]
-    }
-
     const selectedSet = PERIOD_SETS.find(s => s.id === selectedSetId) || PERIOD_SETS[0]
 
-    // If dynamic period metrics are available (from POST endpoint), use them for ALL period sets
-    if (dynamicPeriodMetrics) {
-      console.log(`📊 Using Sales API metrics for ${selectedSetId} period set`)
-
-      return selectedSet.periods.map(period => {
-        // Look up metrics by period label
-        const metrics = dynamicPeriodMetrics[period.label]
-
-        if (metrics) {
-          return generateRealPeriodData(period.label, period.startDate, period.endDate, metrics)
-        }
-
-        // Fallback to database calculation if API didn't return this period
-        console.log(`⚠️ No Sales API data for "${period.label}", using database`)
-        const dbMetrics = calculateMetricsForDateRange(period.startDate, period.endDate)
-        return generateRealPeriodData(period.label, period.startDate, period.endDate, dbMetrics)
-      })
-    }
-
-    // Fallback: Build period data from database calculations
-    console.log('📦 Using database calculations for period cards (Sales API not available)')
+    // Use API data if available, otherwise server-side data
     return selectedSet.periods.map(period => {
-      const metrics = calculateMetricsForDateRange(period.startDate, period.endDate)
-      return generateRealPeriodData(period.label, period.startDate, period.endDate, metrics)
+      const apiMetrics = dynamicPeriodMetrics?.[period.label]
+      const serverMetrics = getDashboardMetricsForPeriod(period.label)
+      const metrics = apiMetrics || serverMetrics
+      const previousMetrics = getPreviousPeriodMetrics(period.label)
+      return generateRealPeriodData(period.label, period.startDate, period.endDate, metrics, previousMetrics)
     })
-  }, [selectedSetId, isCustomMode, customRange, dashboardData, dynamicPeriodMetrics, historicalPriceMap, cogsMap, productFeeMap])
+  }, [selectedSetId, dynamicPeriodMetrics, dashboardData])
 
-  // Selected period for product table
   const selectedPeriod = periodData[selectedPeriodIndex] || periodData[0]
 
-  // Calculate products filtered by selected period
-  const filteredProducts = useMemo(() => {
-    if (!selectedPeriod || !dashboardData?.orderItems || !dashboardData?.recentOrders) {
-      return initialProducts
-    }
+  // This Month Forecast Calculation
+  const thisMonthForecast = useMemo(() => {
+    // Find "This Month" period data
+    const thisMonthData = periodData.find(p => p.label === 'This Month')
+    if (!thisMonthData) return null
 
-    // PST date conversion (same as calculateMetricsForDateRange)
-    // CRITICAL: Use UTC methods! Dates are now created with Date.UTC in PeriodSelector
+    const today = new Date()
+    const dayOfMonth = today.getDate()
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+    const daysRemaining = daysInMonth - dayOfMonth
+
+    // If we're on day 1, we don't have enough data for forecast
+    if (dayOfMonth < 2) return null
+
+    // Calculate daily averages based on current month's data
+    const dailySales = thisMonthData.sales / dayOfMonth
+    const dailyOrders = thisMonthData.orders / dayOfMonth
+    const dailyUnits = thisMonthData.units / dayOfMonth
+    const dailyNetProfit = thisMonthData.netProfit / dayOfMonth
+
+    // Project end of month values
+    const forecastSales = thisMonthData.sales + (dailySales * daysRemaining)
+    const forecastOrders = thisMonthData.orders + (dailyOrders * daysRemaining)
+    const forecastUnits = thisMonthData.units + (dailyUnits * daysRemaining)
+    const forecastNetProfit = thisMonthData.netProfit + (dailyNetProfit * daysRemaining)
+
+    // Calculate forecast vs last month (if available)
+    const lastMonthData = periodData.find(p => p.label === 'Last Month')
+    const vsLastMonth = lastMonthData && lastMonthData.netProfit > 0
+      ? ((forecastNetProfit - lastMonthData.netProfit) / lastMonthData.netProfit) * 100
+      : 0
+
+    return {
+      sales: forecastSales,
+      orders: Math.round(forecastOrders),
+      units: Math.round(forecastUnits),
+      netProfit: forecastNetProfit,
+      vsLastMonth,
+      daysRemaining,
+      dayOfMonth,
+      daysInMonth,
+      progress: (dayOfMonth / daysInMonth) * 100
+    }
+  }, [periodData])
+
+  // Filtered products for selected period - ONLY REAL DATA, NO ESTIMATES
+  const filteredProducts = useMemo(() => {
+    if (!selectedPeriod || !dashboardData?.orderItems || !dashboardData?.recentOrders) return initialProducts
+
     const startYear = selectedPeriod.startDate.getUTCFullYear()
     const startMonth = selectedPeriod.startDate.getUTCMonth()
     const startDay = selectedPeriod.startDate.getUTCDate()
     const endYear = selectedPeriod.endDate.getUTCFullYear()
     const endMonth = selectedPeriod.endDate.getUTCMonth()
     const endDay = selectedPeriod.endDate.getUTCDate()
-
     const pstStartUTC = new Date(Date.UTC(startYear, startMonth, startDay, 8, 0, 0, 0))
     const pstEndUTC = new Date(Date.UTC(endYear, endMonth, endDay + 1, 7, 59, 59, 999))
 
-    // Filter orders in date range
     const filteredOrders = dashboardData.recentOrders.filter((order: any) => {
       const orderDate = new Date(order.purchase_date)
       return orderDate >= pstStartUTC && orderDate <= pstEndUTC
     })
 
     const orderIds = new Set(filteredOrders.map((o: any) => o.amazon_order_id))
+    const filteredItems = dashboardData.orderItems.filter((item: any) => orderIds.has(item.amazon_order_id))
 
-    // Filter order items
-    const filteredItems = dashboardData.orderItems.filter((item: any) =>
-      orderIds.has(item.amazon_order_id)
-    )
-
-    // Auto-fix $0 prices with catalog prices
-    const productPriceMap: { [asin: string]: number } = {}
-    initialProducts.forEach(p => {
-      if (p.asin && p.sales && p.units && p.units > 0) {
-        productPriceMap[p.asin] = p.sales / p.units // Average price per unit
-      }
-    })
-
-    // Group by ASIN and calculate stats
-    const statsByAsin: { [asin: string]: { units: number; sales: number; orders: Set<string>; refunds: number } } = {}
+    // Calculate REAL stats from order items - NO ESTIMATES
+    const statsByAsin: { [asin: string]: {
+      units: number
+      sales: number
+      orders: Set<string>
+      amazonFees: number  // Real fees from order_items (fee_source = 'api')
+      refunds: number     // Real refunds (if available)
+    } } = {}
 
     filteredItems.forEach((item: any) => {
       const asin = item.asin
-      if (!statsByAsin[asin]) {
-        statsByAsin[asin] = { units: 0, sales: 0, orders: new Set(), refunds: 0 }
-      }
+      if (!statsByAsin[asin]) statsByAsin[asin] = { units: 0, sales: 0, orders: new Set(), amazonFees: 0, refunds: 0 }
       statsByAsin[asin].units += item.quantity_ordered || 0
-
-      // Use catalog price if item_price is $0
-      let itemPrice = item.item_price || 0
-      if (itemPrice === 0 && productPriceMap[asin]) {
-        itemPrice = productPriceMap[asin] * (item.quantity_ordered || 1)
-      }
-      statsByAsin[asin].sales += itemPrice
+      statsByAsin[asin].sales += item.item_price || 0
       statsByAsin[asin].orders.add(item.amazon_order_id)
+      // Only use REAL fees from API or Settlement Report
+      if ((item.fee_source === 'api' || item.fee_source === 'settlement_report') && item.total_amazon_fees) {
+        statsByAsin[asin].amazonFees += item.total_amazon_fees
+      }
     })
 
-    // Map to products with period-specific stats
     return initialProducts.map(product => {
-      const stats = statsByAsin[product.asin] || { units: 0, sales: 0, orders: new Set(), refunds: 0 }
+      const stats = statsByAsin[product.asin] || { units: 0, sales: 0, orders: new Set(), amazonFees: 0, refunds: 0 }
       const sales = stats.sales
       const units = stats.units
       const cogs = product.cogs || 0
       const totalCogs = cogs * units
-      const estimatedFees = sales * 0.15
-      const estimatedAdSpend = sales * 0.08
-      const grossProfit = sales - totalCogs - estimatedFees
-      const netProfit = grossProfit - estimatedAdSpend
+      const amazonFees = stats.amazonFees  // REAL fees only, $0 if none
+      // NO ESTIMATED AD SPEND - show $0 (ad spend comes from Amazon Ads API, not yet integrated)
+      const adSpend = 0
+      // Calculate profit ONLY from real data - show $0 if no fees available
+      const grossProfit = amazonFees > 0 ? sales - totalCogs - amazonFees : 0
+      const netProfit = grossProfit - adSpend
 
       return {
         ...product,
         units,
         sales,
-        refunds: Math.floor(units * 0.05),
-        adSpend: estimatedAdSpend,
+        refunds: 0,  // NO FAKE REFUNDS - $0 until we have real data
+        adSpend: 0,  // NO FAKE AD SPEND - $0 until Amazon Ads API integration
         grossProfit,
         netProfit,
-        margin: sales > 0 ? parseFloat(((netProfit / sales) * 100).toFixed(1)) : 0,
-        roi: totalCogs > 0 ? parseFloat(((netProfit / totalCogs) * 100).toFixed(0)) : 0
+        margin: (sales > 0 && grossProfit > 0) ? parseFloat(((netProfit / sales) * 100).toFixed(1)) : 0,
+        roi: (totalCogs > 0 && netProfit > 0) ? parseFloat(((netProfit / totalCogs) * 100).toFixed(0)) : 0
       }
-    }).filter(p => p.units > 0 || p.sales > 0) // Only show products with activity in period
+    }).filter(p => p.units > 0 || p.sales > 0)
   }, [selectedPeriod, dashboardData, initialProducts])
 
-  // Handle period card click
-  const handlePeriodSelect = (index: number) => {
-    setSelectedPeriodIndex(index)
-  }
-
-  // Handle more click (open breakdown modal)
+  // Handlers
+  const handlePeriodSelect = (index: number) => setSelectedPeriodIndex(index)
   const handleMoreClick = (index: number) => {
     setBreakdownModalData(periodData[index])
     setBreakdownModalOpen(true)
   }
-
-  // Handle product click
-  const handleProductClick = (product: ProductData) => {
-    console.log('Product clicked:', product)
-  }
-
-  // Handle COGS save - updates product costs and recalculates profitability
+  const handleProductClick = (_product: ProductData) => { /* Product detail modal can be implemented here */ }
   const handleCostsSave = (productId: string, costs: ProductCosts) => {
-    console.log('Saving costs for product:', productId, costs)
-
-    // Calculate total COGS from all cost components
-    const totalCogs =
-      (costs.cogs || 0) +
-      (costs.customTax || 0) +
-      (costs.warehouseCost || 0) +
+    const totalCogsPerUnit = (costs.cogs || 0) + (costs.customTax || 0) + (costs.warehouseCost || 0) +
       (costs.logistics?.reduce((sum, l) => sum + (l.costPerUnit || 0), 0) || 0)
-
-    setProducts(prevProducts => {
-      const updateProduct = (product: ProductData): ProductData => {
-        if (product.id === productId) {
-          // Calculate new profitability metrics
-          const newCogs = totalCogs * product.units // Total COGS for all units sold
-          const amazonFees = product.sales * 0.15 // Estimated Amazon fees (15% of sales)
-          const newGrossProfit = product.sales - newCogs - amazonFees
-          const newNetProfit = newGrossProfit - product.adSpend
-          const newMargin = product.sales > 0 ? (newNetProfit / product.sales) * 100 : 0
-          const newRoi = newCogs > 0 ? (newNetProfit / newCogs) * 100 : 0
-
-          return {
-            ...product,
-            cogs: newCogs,
-            grossProfit: Math.round(newGrossProfit * 100) / 100,
-            netProfit: Math.round(newNetProfit * 100) / 100,
-            margin: Math.round(newMargin * 10) / 10,
-            roi: Math.round(newRoi)
-          }
+    setProducts(prevProducts => prevProducts.map(product => {
+      if (product.id === productId) {
+        const newCogs = totalCogsPerUnit * product.units
+        // NO ESTIMATED FEES - We don't have real per-product fees here
+        // grossProfit and netProfit will only be accurate when we have real fee data
+        // For now, just update COGS - profit calculations need real API data
+        return {
+          ...product,
+          cogs: newCogs
+          // Don't recalculate grossProfit/netProfit without real fee data
+          // They will be $0 until we have real fees from the API
         }
+      }
+      return product
+    }))
+  }
+  // AI Chat is now handled by the ChatBot component with real Claude API
 
-        // Check children if this is a parent product
-        if (product.children) {
-          const updatedChildren = product.children.map(child => updateProduct(child))
-          const childrenChanged = product.children.some((child, i) => child !== updatedChildren[i])
+  // Get today and month metrics for hero section
+  const todayMetrics = periodData.find(p => p.label === 'Today') || periodData[0]
+  const monthMetrics = periodData.find(p => p.label === 'This Month') || periodData[2]
 
-          if (childrenChanged) {
-            // Recalculate parent totals from children
-            const totalUnits = updatedChildren.reduce((sum, c) => sum + c.units, 0)
-            const totalCogs = updatedChildren.reduce((sum, c) => sum + c.cogs, 0)
-            const totalSales = updatedChildren.reduce((sum, c) => sum + c.sales, 0)
-            const totalAdSpend = updatedChildren.reduce((sum, c) => sum + c.adSpend, 0)
-            const totalGrossProfit = updatedChildren.reduce((sum, c) => sum + c.grossProfit, 0)
-            const totalNetProfit = updatedChildren.reduce((sum, c) => sum + c.netProfit, 0)
-            const avgMargin = totalSales > 0 ? (totalNetProfit / totalSales) * 100 : 0
-            const avgRoi = totalCogs > 0 ? (totalNetProfit / totalCogs) * 100 : 0
+  // Calculate REAL 7-day trend from actual order data (NO MOCK DATA!)
+  const trendData = useMemo(() => {
+    if (!dashboardData?.recentOrders || !dashboardData?.orderItems) {
+      // Return zeros if no data - NEVER use fake data
+      return {
+        salesTrend: [0, 0, 0, 0, 0, 0, 0],
+        profitTrend: [0, 0, 0, 0, 0, 0, 0],  // Will be calculated from REAL fees only
+        ordersTrend: [0, 0, 0, 0, 0, 0, 0]
+      }
+    }
 
-            return {
-              ...product,
-              children: updatedChildren,
-              units: totalUnits,
-              cogs: totalCogs,
-              sales: totalSales,
-              adSpend: totalAdSpend,
-              grossProfit: Math.round(totalGrossProfit * 100) / 100,
-              netProfit: Math.round(totalNetProfit * 100) / 100,
-              margin: Math.round(avgMargin * 10) / 10,
-              roi: Math.round(avgRoi)
-            }
-          }
+    const salesTrend: number[] = []
+    const profitTrend: number[] = []
+    const ordersTrend: number[] = []
+
+    // Get current date in PST
+    const now = new Date()
+    const pstNow = new Date(now.getTime() - 8 * 60 * 60 * 1000)
+
+    // Calculate metrics for each of the last 7 days
+    for (let i = 6; i >= 0; i--) {
+      const dayDate = new Date(pstNow)
+      dayDate.setDate(dayDate.getDate() - i)
+      dayDate.setHours(0, 0, 0, 0)
+
+      const dayStartUTC = new Date(Date.UTC(
+        dayDate.getFullYear(),
+        dayDate.getMonth(),
+        dayDate.getDate(),
+        8, 0, 0, 0 // PST midnight = UTC 08:00
+      ))
+      const dayEndUTC = new Date(Date.UTC(
+        dayDate.getFullYear(),
+        dayDate.getMonth(),
+        dayDate.getDate() + 1,
+        7, 59, 59, 999 // PST 23:59:59 = UTC 07:59:59 next day
+      ))
+
+      // Filter orders for this day
+      const dayOrders = dashboardData.recentOrders.filter((order: any) => {
+        const orderDate = new Date(order.purchase_date)
+        return orderDate >= dayStartUTC && orderDate <= dayEndUTC
+      })
+
+      const dayOrderIds = new Set(dayOrders.map((o: any) => o.amazon_order_id))
+      const dayItems = dashboardData.orderItems.filter((item: any) =>
+        dayOrderIds.has(item.amazon_order_id)
+      )
+
+      // Calculate REAL sales for this day from order items
+      let daySales = 0
+      let dayRealFees = 0
+      for (const item of dayItems) {
+        daySales += item.item_price || 0
+        // Only add REAL fees (fee_source = 'api' OR 'settlement_report')
+        if ((item.fee_source === 'api' || item.fee_source === 'settlement_report') && item.total_amazon_fees) {
+          dayRealFees += item.total_amazon_fees
         }
-
-        return product
       }
 
-      return prevProducts.map(updateProduct)
-    })
-  }
+      // Profit trend: ONLY show real profit if we have real fees, otherwise $0
+      // NO ESTIMATES! If no fee data, show $0 profit (not fake estimates)
+      const dayProfit = dayRealFees > 0 ? daySales - dayRealFees : 0
 
-  // Handle AI commands
-  const handleAICommand = (command: string, data?: any) => {
-    console.log('AI Command:', command, data)
-  }
+      salesTrend.push(Math.round(daySales))
+      profitTrend.push(Math.round(dayProfit))
+      ordersTrend.push(dayOrders.length)
+    }
+
+    return { salesTrend, profitTrend, ordersTrend }
+  }, [dashboardData?.recentOrders, dashboardData?.orderItems])
+
+  const { salesTrend, profitTrend, ordersTrend } = trendData
+
+  // ========================================
+  // STARBUCKS COLOR PALETTE
+  // ========================================
+  // Primary Green: #00704A
+  // Dark Green: #1E3932
+  // Light Green: #D4E9E2
+  // Gold/Accent: #CBA258
+  // Cream: #F2F0EB
+  // ========================================
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-32">
-        {/* Sync Status Banner with Progress Bar */}
-        {isSyncing && (
-          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="animate-spin w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-              <span className="text-blue-800 font-medium">{syncMessage}</span>
+    <div className="min-h-screen" style={{ backgroundColor: '#F2F0EB' }}>
+      {/* ========== STARBUCKS PREMIUM HERO ========== */}
+      <div className="border-b" style={{ backgroundColor: '#1E3932', borderColor: '#00704A' }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* Top Row: Status + Actions */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              {/* Connection Status */}
+              {hasAmazonConnection ? (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium" style={{ backgroundColor: 'rgba(0, 112, 74, 0.2)', color: '#D4E9E2' }}>
+                  <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: '#00704A' }} />
+                  Live Data
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium" style={{ backgroundColor: 'rgba(203, 162, 88, 0.2)', color: '#CBA258' }}>
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Not Connected
+                </div>
+              )}
+              {/* Last Sync */}
+              {hasAmazonConnection && (
+                <div className="flex items-center gap-2 text-sm" style={{ color: '#D4E9E2' }}>
+                  <Clock className="w-4 h-4" />
+                  Updated {formatTimeAgo(lastSyncAt)}
+                  <button
+                    onClick={startBatchSync}
+                    disabled={isSyncing}
+                    className="p-1.5 rounded-lg transition-colors disabled:opacity-50 hover:bg-white/10"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              )}
+              {/* Initial Sync Message */}
+              {hasAmazonConnection && !hasRealData && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium" style={{ backgroundColor: 'rgba(203, 162, 88, 0.2)', color: '#CBA258' }}>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  Syncing data... can take up to 24 hours
+                </div>
+              )}
             </div>
-            {/* Progress Bar */}
-            {syncProgress.total > 0 && (
-              <div className="w-full bg-blue-200 rounded-full h-2.5">
-                <div
-                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.round((syncProgress.synced / syncProgress.total) * 100)}%` }}
-                ></div>
-              </div>
-            )}
-          </div>
-        )}
 
-        {/* Sales API Status Banner */}
-        {hasAmazonConnection && (
-          <div className="mb-4">
-            {salesApiLoading && (
-              <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg flex items-center gap-2">
-                <div className="animate-spin w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full"></div>
-                <span className="text-purple-800 text-sm font-medium">Loading real-time metrics from Amazon...</span>
-              </div>
-            )}
-            {salesApiError && !salesApiLoading && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
-                <span className="text-amber-600">⚠️</span>
-                <span className="text-amber-800 text-sm">{salesApiError}</span>
-              </div>
-            )}
-            {salesApiMetrics && !salesApiLoading && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
-                <span className="text-green-600">✅</span>
-                <span className="text-green-800 text-sm font-medium">Live data from Amazon Sales API</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Welcome Message */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Welcome back, {profileName}!
-          </h1>
-          <p className="text-gray-500">
-            {!hasAmazonConnection
-              ? 'Connect your Amazon account to see real data.'
-              : salesApiMetrics
-                ? 'Showing real-time data from Amazon Sales API.'
-                : hasRealData
-                  ? 'Showing your cached Amazon data.'
-                  : 'Amazon connected. Loading your data...'}
-          </p>
-          {/* Data Status Badge + Sync Button */}
-          {hasAmazonConnection && (
-            <div className="mt-2 flex items-center gap-3">
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                hasRealData
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-yellow-100 text-yellow-800'
-              }`}>
-                {hasRealData
-                  ? `${products.length} products loaded`
-                  : 'No data yet'}
-              </span>
-              {/* Last Synced indicator with manual refresh */}
-              <span className="inline-flex items-center gap-2 text-xs text-gray-500">
-                <svg className="w-3.5 h-3.5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                Last synced: {formatTimeAgo(lastSyncAt)}
-                <button
-                  onClick={startBatchSync}
-                  disabled={isSyncing}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
-                  title="Refresh data"
-                >
-                  {isSyncing ? (
-                    <div className="animate-spin w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full"></div>
-                  ) : (
-                    <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  )}
-                </button>
-              </span>
+            {/* Actions */}
+            <div className="flex items-center gap-2">
+              <button className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors hover:bg-white/10" style={{ color: '#D4E9E2' }}>
+                <Download className="w-4 h-4" />
+                Export
+              </button>
+              <button className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors hover:bg-white/10" style={{ color: '#D4E9E2' }}>
+                <Filter className="w-4 h-4" />
+                Filter
+              </button>
             </div>
-          )}
+          </div>
+
+          {/* Hero Metrics Grid - Starbucks Premium */}
+          <div className="grid grid-cols-12 gap-4">
+            {/* Main Net Profit Card - Large */}
+            <div className="col-span-12 lg:col-span-5 rounded-2xl p-6 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #00704A 0%, #1E3932 100%)' }}>
+              {/* Premium glow effects */}
+              <div className="absolute -top-24 -right-24 w-48 h-48 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(203, 162, 88, 0.15)' }} />
+              <div className="absolute -bottom-24 -left-24 w-48 h-48 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(212, 233, 226, 0.1)' }} />
+
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl backdrop-blur" style={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }}>
+                      <Wallet className="w-5 h-5" />
+                    </div>
+                    <span className="text-sm font-medium" style={{ color: '#D4E9E2' }}>Today's Net Profit</span>
+                  </div>
+                  <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold`}
+                    style={{
+                      backgroundColor: todayMetrics.netProfitChange >= 0 ? 'rgba(212, 233, 226, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      color: todayMetrics.netProfitChange >= 0 ? '#D4E9E2' : '#fca5a5'
+                    }}>
+                    {todayMetrics.netProfitChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                    {formatPercent(todayMetrics.netProfitChange)}
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <div className="text-5xl font-bold tracking-tight mb-1" style={{ color: '#FFFFFF' }}>
+                    {formatCurrency(todayMetrics.netProfit)}
+                  </div>
+                  <p className="text-sm" style={{ color: '#D4E9E2' }}>
+                    vs yesterday {formatCurrency(periodData[1]?.netProfit || 0)}
+                  </p>
+                </div>
+
+                {/* Mini Sparkline */}
+                <div className="h-16 opacity-70">
+                  <Sparkline data={profitTrend} color="#CBA258" height={64} />
+                </div>
+              </div>
+            </div>
+
+            {/* Right Side Metrics - 2x2 Grid */}
+            <div className="col-span-12 lg:col-span-7 grid grid-cols-2 gap-4">
+              {/* Sales Card */}
+              <div className="bg-white rounded-2xl p-5 hover:shadow-lg transition-all group border" style={{ borderColor: '#D4E9E2' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl transition-colors" style={{ backgroundColor: '#D4E9E2' }}>
+                      <DollarSign className="w-4 h-4" style={{ color: '#00704A' }} />
+                    </div>
+                    <span className="text-sm font-medium" style={{ color: '#1E3932' }}>Sales</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 transition-colors" style={{ color: '#CBA258' }} />
+                </div>
+                <div className="text-2xl font-bold mb-1" style={{ color: '#1E3932' }}>
+                  {formatCurrency(todayMetrics.sales, true)}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs" style={{ color: '#00704A' }}>Today</span>
+                  <div className="w-20 h-8">
+                    <Sparkline data={salesTrend} color="#00704A" height={32} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Orders Card */}
+              <div className="bg-white rounded-2xl p-5 hover:shadow-lg transition-all group border" style={{ borderColor: '#D4E9E2' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl transition-colors" style={{ backgroundColor: '#D4E9E2' }}>
+                      <ShoppingCart className="w-4 h-4" style={{ color: '#00704A' }} />
+                    </div>
+                    <span className="text-sm font-medium" style={{ color: '#1E3932' }}>Orders</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 transition-colors" style={{ color: '#CBA258' }} />
+                </div>
+                <div className="text-2xl font-bold mb-1" style={{ color: '#1E3932' }}>
+                  {formatNumber(todayMetrics.orders)}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs" style={{ color: '#00704A' }}>{todayMetrics.units} units</span>
+                  <div className="w-20 h-8">
+                    <Sparkline data={ordersTrend} color="#CBA258" height={32} />
+                  </div>
+                </div>
+              </div>
+
+              {/* ACOS Card */}
+              <div className="bg-white rounded-2xl p-5 hover:shadow-lg transition-all group border" style={{ borderColor: '#D4E9E2' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl transition-colors" style={{
+                      backgroundColor: todayMetrics.acos > 30 ? '#fef2f2' :
+                        todayMetrics.acos > 20 ? '#fffbeb' : '#D4E9E2'
+                    }}>
+                      <Target className="w-4 h-4" style={{
+                        color: todayMetrics.acos > 30 ? '#dc2626' :
+                          todayMetrics.acos > 20 ? '#d97706' : '#00704A'
+                      }} />
+                    </div>
+                    <span className="text-sm font-medium" style={{ color: '#1E3932' }}>ACOS</span>
+                  </div>
+                  <div className="text-xs font-medium px-2 py-0.5 rounded-full" style={{
+                    backgroundColor: todayMetrics.acos > 30 ? '#fef2f2' :
+                      todayMetrics.acos > 20 ? '#fffbeb' : '#D4E9E2',
+                    color: todayMetrics.acos > 30 ? '#dc2626' :
+                      todayMetrics.acos > 20 ? '#d97706' : '#00704A'
+                  }}>
+                    {todayMetrics.acos > 30 ? 'High' : todayMetrics.acos > 20 ? 'Medium' : 'Good'}
+                  </div>
+                </div>
+                <div className="text-2xl font-bold mb-1" style={{
+                  color: todayMetrics.acos > 30 ? '#dc2626' :
+                    todayMetrics.acos > 20 ? '#d97706' : '#1E3932'
+                }}>
+                  {todayMetrics.acos.toFixed(1)}%
+                </div>
+                <div className="text-xs" style={{ color: '#00704A' }}>
+                  Ad Spend: {formatCurrency(todayMetrics.adSpend)}
+                </div>
+              </div>
+
+              {/* Margin Card */}
+              <div className="bg-white rounded-2xl p-5 hover:shadow-lg transition-all group border" style={{ borderColor: '#D4E9E2' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl transition-colors" style={{ backgroundColor: '#D4E9E2' }}>
+                      <Percent className="w-4 h-4" style={{ color: '#00704A' }} />
+                    </div>
+                    <span className="text-sm font-medium" style={{ color: '#1E3932' }}>Profit Margin</span>
+                  </div>
+                </div>
+                <div className="text-2xl font-bold mb-1" style={{ color: '#00704A' }}>
+                  {todayMetrics.sales > 0 ? ((todayMetrics.netProfit / todayMetrics.sales) * 100).toFixed(1) : '0.0'}%
+                </div>
+                <div className="w-full rounded-full h-2" style={{ backgroundColor: '#D4E9E2' }}>
+                  <div
+                    className="h-2 rounded-full transition-all"
+                    style={{
+                      background: 'linear-gradient(90deg, #00704A 0%, #CBA258 100%)',
+                      width: `${todayMetrics.sales > 0 ? Math.min(100, Math.max(0, (todayMetrics.netProfit / todayMetrics.sales) * 100)) : 0}%`
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
 
-        {/* Top Bar: Marketplace + Period Selector */}
+      {/* ========== MAIN CONTENT ========== */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-32">
+        {/* Sync Status Banner - Premium Starbucks Style */}
+        {isSyncing && (
+          <div className="mb-6 p-4 rounded-xl border" style={{ backgroundColor: '#D4E9E2', borderColor: '#00704A' }}>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="animate-spin w-5 h-5 border-2 rounded-full" style={{ borderColor: '#00704A', borderTopColor: 'transparent' }} />
+              <span className="font-medium" style={{ color: '#1E3932' }}>{syncMessage}</span>
+            </div>
+            {syncProgress.total > 0 && (
+              <div className="w-full rounded-full h-2" style={{ backgroundColor: 'rgba(0, 112, 74, 0.2)' }}>
+                <div
+                  className="h-2 rounded-full transition-all duration-500"
+                  style={{ backgroundColor: '#00704A', width: `${Math.round((syncProgress.synced / syncProgress.total) * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Initial Data Sync Info Banner */}
+        {hasAmazonConnection && !hasRealData && !isSyncing && (
+          <div className="mb-6 p-5 rounded-xl border" style={{ backgroundColor: 'rgba(203, 162, 88, 0.1)', borderColor: '#CBA258' }}>
+            <div className="flex items-start gap-4">
+              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(203, 162, 88, 0.2)' }}>
+                <Clock className="w-6 h-6" style={{ color: '#CBA258' }} />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold mb-1" style={{ color: '#1E3932' }}>Initial Data Sync in Progress</h3>
+                <p className="text-sm mb-2" style={{ color: '#00704A' }}>
+                  We're syncing your complete Amazon history (up to 2 years of data). This can take up to 24 hours for accounts with high order volume.
+                </p>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="px-2 py-1 rounded-full" style={{ backgroundColor: '#D4E9E2', color: '#00704A' }}>
+                    📦 Orders & Items
+                  </span>
+                  <span className="px-2 py-1 rounded-full" style={{ backgroundColor: '#D4E9E2', color: '#00704A' }}>
+                    💰 Settlement Reports
+                  </span>
+                  <span className="px-2 py-1 rounded-full" style={{ backgroundColor: '#D4E9E2', color: '#00704A' }}>
+                    📊 Fee Breakdown
+                  </span>
+                  <span className="px-2 py-1 rounded-full" style={{ backgroundColor: '#D4E9E2', color: '#00704A' }}>
+                    🔄 Every 15min updates
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Ads API Connection Banner - Only show if SP-API is connected but Ads API is not */}
+        {hasAmazonConnection && !hasAdsApiConnection && (
+          <div className="mb-6 p-5 rounded-xl border relative overflow-hidden" style={{ backgroundColor: 'rgba(79, 70, 229, 0.05)', borderColor: '#6366f1' }}>
+            {/* Premium gradient background */}
+            <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/5 via-purple-500/5 to-pink-500/5" />
+            <div className="relative flex items-start gap-4">
+              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)' }}>
+                <BarChart3 className="w-6 h-6" style={{ color: '#6366f1' }} />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="font-semibold" style={{ color: '#1E3932' }}>Unlock PPC Analytics</h3>
+                  <span className="px-2 py-0.5 text-xs font-medium rounded-full" style={{ backgroundColor: '#6366f1', color: 'white' }}>
+                    Coming Soon
+                  </span>
+                </div>
+                <p className="text-sm mb-3" style={{ color: '#00704A' }}>
+                  Connect Amazon Ads API to see real ACOS, ad spend breakdown, campaign performance, and AI-powered PPC optimization.
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    disabled
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors opacity-50 cursor-not-allowed"
+                    style={{ backgroundColor: '#6366f1', color: 'white' }}
+                  >
+                    <Zap className="w-4 h-4" />
+                    Connect Amazon Ads
+                  </button>
+                  <span className="text-xs" style={{ color: '#6b7280' }}>
+                    API approval pending • Expected: Jan 29-31, 2026
+                  </span>
+                </div>
+              </div>
+              <button className="p-1 rounded-lg hover:bg-gray-100 transition-colors" title="Dismiss">
+                <span className="text-gray-400 text-xl leading-none">&times;</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Period Selector Bar */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
           <MarketplaceSelector
             selectedRegion={selectedRegion}
@@ -972,39 +1050,126 @@ export default function NewDashboardClient({
             onRegionChange={setSelectedRegion}
             onCountryChange={setSelectedCountry}
           />
-
-          <PeriodSelector
-            selectedSetId={selectedSetId}
-            onSetChange={setSelectedSetId}
-            customRange={customRange}
-            onCustomRangeChange={setCustomRange}
-            isCustomMode={isCustomMode}
-            onCustomModeChange={setIsCustomMode}
-          />
         </div>
 
-        {/* Period Cards Grid */}
-        <div className="mb-8">
+        {/* Period Cards - Default: Today, Yesterday, This Month, Last Month */}
+        <div className="mb-4">
           <PeriodCardsGrid
             periods={periodData}
             selectedIndex={selectedPeriodIndex}
             onSelectPeriod={handlePeriodSelect}
             onMoreClick={handleMoreClick}
-            isCustomMode={isCustomMode}
           />
         </div>
 
-        {/* Selected Period Info */}
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Products for {selectedPeriod.label}
-          </h2>
-          <p className="text-sm text-gray-500">
-            {selectedPeriod.startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-            {selectedPeriod.startDate.toDateString() !== selectedPeriod.endDate.toDateString() && (
-              <> - {selectedPeriod.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
-            )}
-          </p>
+        {/* This Month Forecast Card */}
+        {thisMonthForecast && (
+          <div className="mb-8">
+            <div className="rounded-2xl p-5 border relative overflow-hidden" style={{ backgroundColor: 'rgba(203, 162, 88, 0.08)', borderColor: '#CBA258' }}>
+              {/* Subtle glow effect */}
+              <div className="absolute -top-24 -right-24 w-48 h-48 rounded-full blur-3xl opacity-50" style={{ backgroundColor: 'rgba(203, 162, 88, 0.2)' }} />
+
+              <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(203, 162, 88, 0.2)' }}>
+                    <Sparkles className="w-6 h-6" style={{ color: '#CBA258' }} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold" style={{ color: '#1E3932' }}>This Month Forecast</h3>
+                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#D4E9E2', color: '#00704A' }}>
+                        AI Projected
+                      </span>
+                    </div>
+                    <p className="text-sm" style={{ color: '#00704A' }}>
+                      {thisMonthForecast.daysRemaining} days remaining • Based on {thisMonthForecast.dayOfMonth} days of data
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-6">
+                  {/* Forecast Net Profit */}
+                  <div className="text-center">
+                    <p className="text-xs font-medium mb-1" style={{ color: '#00704A' }}>Projected Profit</p>
+                    <p className="text-2xl font-bold" style={{ color: '#1E3932' }}>
+                      {formatCurrency(thisMonthForecast.netProfit)}
+                    </p>
+                    {thisMonthForecast.vsLastMonth !== 0 && (
+                      <p className={`text-xs font-medium ${thisMonthForecast.vsLastMonth >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        {thisMonthForecast.vsLastMonth >= 0 ? '↑' : '↓'} {Math.abs(thisMonthForecast.vsLastMonth).toFixed(1)}% vs last month
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Forecast Sales */}
+                  <div className="text-center">
+                    <p className="text-xs font-medium mb-1" style={{ color: '#00704A' }}>Projected Sales</p>
+                    <p className="text-xl font-semibold" style={{ color: '#1E3932' }}>
+                      {formatCurrency(thisMonthForecast.sales, true)}
+                    </p>
+                  </div>
+
+                  {/* Forecast Orders */}
+                  <div className="text-center">
+                    <p className="text-xs font-medium mb-1" style={{ color: '#00704A' }}>Projected Orders</p>
+                    <p className="text-xl font-semibold" style={{ color: '#1E3932' }}>
+                      {formatNumber(thisMonthForecast.orders)}
+                    </p>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="w-32">
+                    <div className="flex items-center justify-between text-xs mb-1" style={{ color: '#00704A' }}>
+                      <span>Month Progress</span>
+                      <span className="font-medium">{thisMonthForecast.progress.toFixed(0)}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full" style={{ backgroundColor: '#D4E9E2' }}>
+                      <div
+                        className="h-2 rounded-full transition-all"
+                        style={{
+                          background: 'linear-gradient(90deg, #00704A 0%, #CBA258 100%)',
+                          width: `${thisMonthForecast.progress}%`
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Products Section Header - Starbucks Style */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold" style={{ color: '#1E3932' }}>
+              Products for {selectedPeriod.label}
+            </h2>
+            <p className="text-sm" style={{ color: '#00704A' }}>
+              {selectedPeriod.startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              {selectedPeriod.startDate.toDateString() !== selectedPeriod.endDate.toDateString() && (
+                <> - {selectedPeriod.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</>
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#00704A' }} />
+              <input
+                type="text"
+                placeholder="Search products..."
+                className="pl-9 pr-4 py-2 text-sm rounded-lg focus:outline-none focus:ring-2"
+                style={{ borderColor: '#D4E9E2', borderWidth: 1, borderStyle: 'solid' }}
+              />
+            </div>
+            <button
+              onClick={() => setProductSettingsOpen(true)}
+              className="p-2 rounded-lg transition-colors hover:bg-white"
+              style={{ color: '#00704A' }}
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Product Table or Empty State */}
@@ -1015,56 +1180,50 @@ export default function NewDashboardClient({
             onSettingsClick={() => setProductSettingsOpen(true)}
           />
         ) : initialProducts.length > 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-            <div className="mx-auto w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mb-4">
-              <svg className="w-12 h-12 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+          <div className="rounded-2xl p-12 text-center" style={{ backgroundColor: '#F2F0EB', border: '1px solid #D4E9E2' }}>
+            <div className="mx-auto w-24 h-24 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: '#D4E9E2' }}>
+              <Package className="w-12 h-12" style={{ color: '#00704A' }} />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No sales in this period</h3>
-            <p className="text-gray-500 mb-4">There were no product sales for {selectedPeriod?.label || 'this period'}.</p>
-            <p className="text-sm text-gray-400">Try selecting a different date range.</p>
+            <h3 className="text-lg font-semibold mb-2" style={{ color: '#1E3932' }}>No sales in this period</h3>
+            <p className="mb-4" style={{ color: '#00704A' }}>There were no product sales for {selectedPeriod?.label || 'this period'}.</p>
+            <p className="text-sm" style={{ color: '#00704AAA' }}>Try selecting a different date range.</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-            <div className="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-              <svg className="w-12 h-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-              </svg>
+          <div className="rounded-2xl p-12 text-center" style={{ backgroundColor: '#F2F0EB', border: '1px solid #D4E9E2' }}>
+            <div className="mx-auto w-24 h-24 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: '#D4E9E2' }}>
+              <Box className="w-12 h-12" style={{ color: '#00704A' }} />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No products yet</h3>
-            <p className="text-gray-500 mb-6 max-w-sm mx-auto">
+            <h3 className="text-lg font-semibold mb-2" style={{ color: '#1E3932' }}>No products yet</h3>
+            <p className="mb-6 max-w-sm mx-auto" style={{ color: '#00704A' }}>
               {!hasAmazonConnection
-                ? 'Connect your Amazon account to sync your products and see your sales data.'
-                : 'Your Amazon account is connected. Click below to sync your products.'}
+                ? 'Connect your Amazon account to sync your products.'
+                : 'Click below to sync your products.'}
             </p>
             {!hasAmazonConnection ? (
               <a
                 href="/api/amazon/auth"
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                className="inline-flex items-center px-5 py-2.5 text-white font-medium rounded-xl transition-all hover:shadow-lg"
+                style={{ background: 'linear-gradient(135deg, #1E3932 0%, #00704A 100%)' }}
               >
                 Connect Amazon Account
-                <svg className="w-4 h-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                <ArrowUpRight className="w-4 h-4 ml-2" />
               </a>
             ) : (
               <button
                 onClick={startBatchSync}
                 disabled={isSyncing}
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                className="inline-flex items-center px-5 py-2.5 text-white font-medium rounded-xl transition-all hover:shadow-lg disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg, #1E3932 0%, #00704A 100%)' }}
               >
                 {isSyncing ? (
                   <>
-                    <div className="animate-spin w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full"></div>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                     Syncing...
                   </>
                 ) : (
                   <>
                     Sync All Orders
-                    <svg className="w-4 h-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
+                    <RefreshCw className="w-4 h-4 ml-2" />
                   </>
                 )}
               </button>
@@ -1073,8 +1232,8 @@ export default function NewDashboardClient({
         )}
       </main>
 
-      {/* AI Chat Bar */}
-      <AIChatBar onCommand={handleAICommand} />
+      {/* AI ChatBot - Floating */}
+      {userId && <ChatBot userId={userId} />}
 
       {/* Modals */}
       <DetailedBreakdownModal
@@ -1090,68 +1249,59 @@ export default function NewDashboardClient({
         onSave={handleCostsSave}
       />
 
-      {/* Onboarding Popup - Welcome & Connect Amazon */}
+      {/* Onboarding Popup - Starbucks Theme */}
       {showOnboarding && !hasAmazonConnection && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
-            {/* Header with gradient */}
-            <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-8 text-center">
-              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden" style={{ backgroundColor: '#F2F0EB' }}>
+            {/* Header */}
+            <div className="px-8 py-10 text-center relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #1E3932 0%, #00704A 100%)' }}>
+              <div className="absolute -top-24 -right-24 w-48 h-48 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(203, 162, 88, 0.2)' }} />
+              <div className="absolute -bottom-24 -left-24 w-48 h-48 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(212, 233, 226, 0.2)' }} />
+              <div className="relative">
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
+                  <Zap className="w-8 h-8 text-white" />
+                </div>
+                <h2 className="text-2xl font-bold text-white mb-2">Welcome to SellerGenix!</h2>
+                <p style={{ color: '#D4E9E2' }}>Let's connect your Amazon account</p>
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">Welcome to SellerGenix!</h2>
-              <p className="text-white/80">Let's connect your Amazon account to get started</p>
             </div>
 
             {/* Content */}
-            <div className="px-6 py-8">
+            <div className="px-8 py-8">
               <div className="space-y-4 mb-8">
-                <div className="flex items-start gap-4">
-                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <span className="text-blue-600 font-bold text-sm">1</span>
+                {[
+                  { icon: Globe, title: 'Connect your Amazon account', desc: 'Securely link your seller account' },
+                  { icon: RefreshCw, title: 'We sync automatically', desc: 'Up to 2 years of historical data' },
+                  { icon: BarChart3, title: 'See real-time analytics', desc: 'Track and optimize your business' }
+                ].map((step, i) => (
+                  <div key={i} className="flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#D4E9E2' }}>
+                      <step.icon className="w-5 h-5" style={{ color: '#00704A' }} />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold" style={{ color: '#1E3932' }}>{step.title}</h3>
+                      <p className="text-sm" style={{ color: '#00704A' }}>{step.desc}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Connect your Amazon account</h3>
-                    <p className="text-sm text-gray-500">Securely link your seller account to start tracking</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-4">
-                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
-                    <span className="text-purple-600 font-bold text-sm">2</span>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">We sync your data automatically</h3>
-                    <p className="text-sm text-gray-500">Orders, products, and profits - all in one place</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-4">
-                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                    <span className="text-green-600 font-bold text-sm">3</span>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">See your real-time analytics</h3>
-                    <p className="text-sm text-gray-500">Track sales, profits, and optimize your business</p>
-                  </div>
-                </div>
+                ))}
               </div>
 
-              {/* Actions */}
               <div className="space-y-3">
                 <a
                   href="/api/amazon/auth"
-                  className="flex items-center justify-center w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
+                  className="flex items-center justify-center w-full px-6 py-3.5 text-white font-semibold rounded-xl transition-all hover:shadow-lg"
+                  style={{ background: 'linear-gradient(135deg, #1E3932 0%, #00704A 100%)' }}
                   onClick={() => setShowOnboarding(false)}
                 >
-                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                  </svg>
                   Connect Amazon Account
+                  <ArrowUpRight className="w-4 h-4 ml-2" />
                 </a>
                 <button
                   onClick={() => setShowOnboarding(false)}
-                  className="w-full px-6 py-3 text-gray-600 font-medium rounded-xl hover:bg-gray-100 transition-colors"
+                  className="w-full px-6 py-3 font-medium rounded-xl transition-colors"
+                  style={{ color: '#00704A', backgroundColor: 'transparent' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#D4E9E2'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
                   I'll do this later
                 </button>
@@ -1160,7 +1310,6 @@ export default function NewDashboardClient({
           </div>
         </div>
       )}
-
     </div>
   )
 }

@@ -13,6 +13,16 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
+    // KRITIK: userId ZORUNLU - her müşteri kendi verisini görmeli
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get('userId')
+
+    if (!userId) {
+      return NextResponse.json({
+        error: 'userId is REQUIRED. Usage: /api/debug/fees?userId=xxx'
+      }, { status: 400 })
+    }
+
     // Get yesterday's date in PST
     const now = new Date()
     const pstOffset = -8 * 60
@@ -21,18 +31,18 @@ export async function GET(request: NextRequest) {
     yesterday.setDate(yesterday.getDate() - 1)
     const yesterdayStr = yesterday.toISOString().split('T')[0]
 
-    console.log('Checking data for:', yesterdayStr)
+    console.log('Checking fee data for date:', yesterdayStr)
 
-    // 1. Get user's connection
-    const { data: connections } = await supabase
+    // 1. Get THIS USER's connection - NOT just any connection!
+    const { data: connection } = await supabase
       .from('amazon_connections')
       .select('id, user_id, seller_id, last_sync_at')
+      .eq('user_id', userId)
       .eq('is_active', true)
-      .limit(1)
+      .single()
 
-    const connection = connections?.[0]
     if (!connection) {
-      return NextResponse.json({ error: 'No active connection' })
+      return NextResponse.json({ error: `No active connection for user: ${userId}` })
     }
 
     // 2. Check daily_metrics for yesterday

@@ -12,16 +12,26 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
-    // Get connection
-    const { data: connections } = await supabase
+    // KRITIK: userId ZORUNLU
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get('userId')
+
+    if (!userId) {
+      return NextResponse.json({
+        error: 'userId is REQUIRED. Usage: /api/debug/orders?userId=xxx'
+      }, { status: 400 })
+    }
+
+    // Get THIS USER's connection
+    const { data: connection } = await supabase
       .from('amazon_connections')
       .select('user_id, seller_id')
+      .eq('user_id', userId)
       .eq('is_active', true)
-      .limit(1)
+      .single()
 
-    const connection = connections?.[0]
     if (!connection) {
-      return NextResponse.json({ error: 'No active connection' })
+      return NextResponse.json({ error: 'No active connection for this user' })
     }
 
     // Get last 14 days of orders
@@ -31,7 +41,7 @@ export async function GET(request: NextRequest) {
     const { data: orders, error } = await supabase
       .from('orders')
       .select('amazon_order_id, purchase_date, order_status, order_total, fulfillment_channel')
-      .eq('user_id', connection.user_id)
+      .eq('user_id', userId)
       .gte('purchase_date', startDate.toISOString())
       .order('purchase_date', { ascending: false })
 

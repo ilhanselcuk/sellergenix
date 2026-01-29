@@ -24,34 +24,47 @@ export async function POST(request: NextRequest) {
   try {
     log('🚀 Starting manual finance sync (Sellerboard-style: by PurchaseDate)...')
 
-    // Get active connection
-    const { data: connections, error: connError } = await supabase
-      .from('amazon_connections')
-      .select('id, user_id, refresh_token, seller_id')
-      .eq('is_active', true)
-      .limit(1)
-
-    if (connError || !connections || connections.length === 0) {
-      log('❌ No active Amazon connection found')
-      return NextResponse.json({ error: 'No active connection', logs }, { status: 400 })
-    }
-
-    const connection = connections[0]
-    log(`✅ Found connection for seller: ${connection.seller_id}`)
-
-    // Parse custom date range from request body (for historical sync)
+    // Parse request body - MUST have userId
+    let userId: string | null = null
     let customStartDate: string | null = null
     let customEndDate: string | null = null
 
     try {
       const body = await request.json()
+      userId = body.userId || null
       customStartDate = body.startDate || null
       customEndDate = body.endDate || null
-      if (customStartDate) log(`📅 Custom start date requested: ${customStartDate}`)
-      if (customEndDate) log(`📅 Custom end date requested: ${customEndDate}`)
     } catch {
-      // No body or invalid JSON - use defaults
+      // No body or invalid JSON
     }
+
+    // KRITIK: userId ZORUNLU - her müşteri kendi verisini çekmeli
+    if (!userId) {
+      log('❌ userId is REQUIRED - each customer must sync their own data')
+      return NextResponse.json({
+        error: 'userId is required. Each customer must sync their own Amazon data.',
+        logs
+      }, { status: 400 })
+    }
+
+    log(`👤 Syncing for user: ${userId}`)
+
+    // Get THIS USER's active connection - NOT just any connection!
+    const { data: connection, error: connError } = await supabase
+      .from('amazon_connections')
+      .select('id, user_id, refresh_token, seller_id')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .single()
+
+    if (connError || !connection) {
+      log(`❌ No active Amazon connection found for user: ${userId}`)
+      return NextResponse.json({ error: 'No active connection for this user', logs }, { status: 400 })
+    }
+
+    log(`✅ Found connection for seller: ${connection.seller_id}`)
+    if (customStartDate) log(`📅 Custom start date requested: ${customStartDate}`)
+    if (customEndDate) log(`📅 Custom end date requested: ${customEndDate}`)
 
     // Fetch financial data for specified range or default to last 60 days
     // Storage fees are posted around the 7th-15th of each month for previous month

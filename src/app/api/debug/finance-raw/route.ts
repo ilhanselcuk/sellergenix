@@ -14,16 +14,26 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
-    // Get connection
-    const { data: connections } = await supabase
+    // KRITIK: userId ZORUNLU
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get('userId')
+
+    if (!userId) {
+      return NextResponse.json({
+        error: 'userId is REQUIRED. Usage: /api/debug/finance-raw?userId=xxx'
+      }, { status: 400 })
+    }
+
+    // Get THIS USER's connection
+    const { data: connection } = await supabase
       .from('amazon_connections')
       .select('refresh_token, seller_id')
+      .eq('user_id', userId)
       .eq('is_active', true)
-      .limit(1)
+      .single()
 
-    const connection = connections?.[0]
     if (!connection) {
-      return NextResponse.json({ error: 'No active connection' })
+      return NextResponse.json({ error: 'No active connection for this user' })
     }
 
     const client = createAmazonSPAPIClient(connection.refresh_token)
@@ -112,10 +122,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Test 3: Try with a specific shipped order from yesterday
+    // Test 3: Try with a specific shipped order from THIS USER
     const { data: shippedOrder } = await supabase
       .from('orders')
       .select('amazon_order_id')
+      .eq('user_id', userId)
       .eq('order_status', 'Shipped')
       .order('purchase_date', { ascending: false })
       .limit(1)

@@ -2,7 +2,7 @@
  * Debug endpoint - Check sync status and recent orders
  */
 
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -10,8 +10,18 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // KRITIK: userId ZORUNLU - her müşteri kendi verisini görmeli
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get('userId')
+
+    if (!userId) {
+      return NextResponse.json({
+        error: 'userId is REQUIRED. Usage: /api/debug/sync-status?userId=xxx'
+      }, { status: 400 })
+    }
+
     // Get PST now
     const now = new Date()
     const pstOffset = -8 * 60
@@ -21,25 +31,31 @@ export async function GET() {
     yesterdayPST.setDate(yesterdayPST.getDate() - 1)
     const yesterdayStr = yesterdayPST.toISOString().split('T')[0]
 
-    // Get Amazon connection and last sync
+    // Get THIS USER's Amazon connection - NOT just any connection!
     const { data: connection, error: connError } = await supabase
       .from('amazon_connections')
-      .select('id, seller_id, last_synced_at, connected_at')
+      .select('id, user_id, seller_id, last_synced_at, connected_at')
+      .eq('user_id', userId)
       .eq('is_active', true)
-      .limit(1)
       .single()
 
-    // Get most recent orders
+    if (!connection) {
+      return NextResponse.json({ error: `No active connection for user: ${userId}` })
+    }
+
+    // Get THIS USER's most recent orders
     const { data: recentOrders, error: ordersError } = await supabase
       .from('orders')
       .select('amazon_order_id, purchase_date, order_status, order_total')
+      .eq('user_id', userId)
       .order('purchase_date', { ascending: false })
       .limit(20)
 
-    // Count orders by date
+    // Count THIS USER's orders by date
     const { data: orderCounts, error: countError } = await supabase
       .from('orders')
       .select('purchase_date')
+      .eq('user_id', userId)
 
     // Group by date
     const ordersByDate: { [key: string]: number } = {}
@@ -60,10 +76,11 @@ export async function GET() {
       last7Days[dateStr] = ordersByDate[dateStr] || 0
     }
 
-    // Check sync history
+    // Check THIS USER's sync history
     const { data: syncHistory, error: syncError } = await supabase
       .from('sync_history')
       .select('*')
+      .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(5)
 
