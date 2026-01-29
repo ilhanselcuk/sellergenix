@@ -8,20 +8,15 @@ export { inngest } from "./client";
 export {
   functions,
   syncAmazonFees,
-  syncSingleOrderFees,
   scheduledFeeSync,
-  scheduledSettlementSync, // NEW: Daily Settlement sync
-  scheduledStorageSync,    // NEW: Daily Storage sync
-  syncHistoricalData,
+  scheduledSettlementSync,
+  scheduledStorageSync,
   syncHistoricalDataKiosk,
   syncHistoricalDataReports,
   syncSettlementFees
 } from "./functions";
 export type {
   SyncFeesEvent,
-  SyncOrderFeesEvent,
-  RefreshProductAveragesEvent,
-  SyncHistoricalDataEvent,
   SyncHistoricalDataKioskEvent,
   SyncHistoricalDataReportsEvent,
   SyncSettlementFeesEvent,

@@ -453,7 +453,7 @@ export async function getDashboardData(userId: string) {
     itemsByAsin[asin].push(item)
   })
 
-  // Calculate stats for each product
+  // Calculate stats for each product - ONLY REAL DATA, NO ESTIMATES
   const productsWithStats = products.map(product => {
     const productItems = itemsByAsin[product.asin] || []
 
@@ -462,16 +462,25 @@ export async function getDashboardData(userId: string) {
     const sales = productItems.reduce((sum: number, item: any) => sum + (item.item_price || 0), 0)
     const productOrders = new Set(productItems.map((item: any) => item.order_id)).size
 
-    // Calculate estimated metrics
+    // ONLY use REAL fees from order_items (fee_source = 'api' OR 'settlement_report')
+    // NO FAKE ESTIMATES - show $0 if no real data
+    const realAmazonFees = productItems.reduce((sum: number, item: any) => {
+      if ((item.fee_source === 'api' || item.fee_source === 'settlement_report') && item.total_amazon_fees) {
+        return sum + item.total_amazon_fees
+      }
+      return sum
+    }, 0)
+
     const cogs = product.cogs || 0
     const totalCogs = cogs * unitsSold
-    const estimatedFees = sales * 0.15 // ~15% Amazon fees
-    const estimatedAdSpend = sales * 0.08 // ~8% ad spend
-    const grossProfit = sales - totalCogs - estimatedFees
-    const netProfit = grossProfit - estimatedAdSpend
-    const margin = sales > 0 ? (netProfit / sales) * 100 : 0
-    const roi = totalCogs > 0 ? ((netProfit / totalCogs) * 100) : 0
-    const acos = sales > 0 ? ((estimatedAdSpend / sales) * 100) : 0
+    // Only calculate profit if we have REAL fees
+    const grossProfit = realAmazonFees > 0 ? sales - totalCogs - realAmazonFees : 0
+    // NO FAKE AD SPEND - $0 until Amazon Ads API integration
+    const adSpend = 0
+    const netProfit = grossProfit - adSpend
+    const margin = sales > 0 && grossProfit > 0 ? (netProfit / sales) * 100 : 0
+    const roi = totalCogs > 0 && netProfit > 0 ? ((netProfit / totalCogs) * 100) : 0
+    const acos = 0 // $0 until Amazon Ads API
 
     return {
       ...product,
@@ -484,14 +493,15 @@ export async function getDashboardData(userId: string) {
       orders: productOrders,
       sales,
       profit: netProfit,
-      refunds: Math.floor(unitsSold * 0.05),
-      adSpend: estimatedAdSpend,
+      refunds: 0, // NO FAKE REFUNDS - $0 until real data
+      adSpend: 0, // NO FAKE AD SPEND - $0 until Amazon Ads API
+      amazonFees: realAmazonFees, // REAL fees only
       grossProfit,
       netProfit,
       margin: parseFloat(margin.toFixed(1)),
       roi: parseFloat(roi.toFixed(0)),
       acos: parseFloat(acos.toFixed(1)),
-      sellableReturns: 85,
+      sellableReturns: 0, // NO FAKE DATA
       bsr: null
     }
   }).sort((a, b) => b.sales - a.sales) // Sort by sales descending
@@ -640,7 +650,7 @@ export async function getDashboardData(userId: string) {
     return fallbackFee
   }
 
-  // Helper to aggregate from order_items for accurate sales calculation
+  // Helper to aggregate from order_items - ONLY REAL DATA, NO ESTIMATES
   const aggregateFromOrderItems = (filteredOrders: Order[], allOrderItems: any[]) => {
     if (filteredOrders.length === 0) {
       return {
@@ -667,17 +677,19 @@ export async function getDashboardData(userId: string) {
     const totalSales = relevantItems.reduce((sum, item) => sum + (item.item_price || 0), 0)
     const totalUnits = relevantItems.reduce((sum, item) => sum + (item.quantity_ordered || 0), 0)
 
-    // Calculate Amazon fees based on product dimensions (more accurate!)
-    let totalFees = 0
+    // ONLY use REAL Amazon fees from order_items (fee_source = 'api' OR 'settlement_report')
+    // NO FAKE ESTIMATES - show $0 if no real fee data
+    let totalRealFees = 0
     let totalCogs = 0
     for (const item of relevantItems) {
       const asin = item.asin || ''
       const sellerSku = item.seller_sku || null
-      const itemPrice = item.item_price || 0
       const quantity = item.quantity_ordered || 1
 
-      // FBA + Referral fees (looks up by ASIN first, then by SKU)
-      totalFees += calculateFBAFeeForItem(asin, sellerSku, itemPrice, quantity)
+      // ONLY use REAL fees from Finance API or Settlement Report
+      if ((item.fee_source === 'api' || item.fee_source === 'settlement_report') && item.total_amazon_fees) {
+        totalRealFees += item.total_amazon_fees
+      }
 
       // COGS from product data (try ASIN first, then SKU)
       let productData = productDataMap.get(asin)
@@ -689,22 +701,20 @@ export async function getDashboardData(userId: string) {
       }
     }
 
-    // If no COGS data, estimate at 30% of sales
-    if (totalCogs === 0) {
-      totalCogs = totalSales * 0.30
-    }
-
-    const grossProfit = totalSales - totalCogs - totalFees
-    const estimatedAdSpend = totalSales * 0.05 // Estimate 5%
-    const netProfit = grossProfit - estimatedAdSpend
+    // Only calculate profit if we have REAL fee data
+    // NO FAKE AD SPEND - $0 until Amazon Ads API integration
+    const hasRealFees = totalRealFees > 0
+    const grossProfit = hasRealFees ? totalSales - totalCogs - totalRealFees : 0
+    const adSpend = 0 // NO FAKE AD SPEND
+    const netProfit = grossProfit - adSpend
 
     return {
       sales: totalSales,
       units: totalUnits,
       orders: filteredOrders.length,
-      refunds: 0, // Not available from orders
-      adSpend: estimatedAdSpend,
-      amazonFees: totalFees,
+      refunds: 0, // $0 until real data
+      adSpend: 0, // $0 until Amazon Ads API
+      amazonFees: totalRealFees, // REAL fees only
       grossProfit: grossProfit,
       netProfit: netProfit,
       margin: totalSales > 0 ? (netProfit / totalSales) * 100 : 0,
@@ -929,7 +939,7 @@ export async function getProductsWithStats(
     itemsByAsin[asin].push(item)
   })
 
-  // Calculate stats for each product
+  // Calculate stats for each product - ONLY REAL DATA, NO ESTIMATES
   return products.map(product => {
     const productItems = itemsByAsin[product.asin] || []
 
@@ -938,30 +948,40 @@ export async function getProductsWithStats(
     const sales = productItems.reduce((sum, item) => sum + (item.item_price || 0), 0)
     const orders = new Set(productItems.map(item => item.order_id)).size
 
-    // Calculate estimated metrics
+    // ONLY use REAL fees from order_items (fee_source = 'api' OR 'settlement_report')
+    const realAmazonFees = productItems.reduce((sum, item) => {
+      if ((item.fee_source === 'api' || item.fee_source === 'settlement_report') && item.total_amazon_fees) {
+        return sum + item.total_amazon_fees
+      }
+      return sum
+    }, 0)
+
     const cogs = product.cogs || 0
     const totalCogs = cogs * unitsSold
-    const estimatedFees = sales * 0.15 // ~15% Amazon fees
-    const estimatedAdSpend = sales * 0.08 // ~8% ad spend
-    const grossProfit = sales - totalCogs - estimatedFees
-    const netProfit = grossProfit - estimatedAdSpend
-    const margin = sales > 0 ? (netProfit / sales) * 100 : 0
-    const roi = totalCogs > 0 ? ((netProfit / totalCogs) * 100) : 0
-    const acos = sales > 0 ? ((estimatedAdSpend / sales) * 100) : 0
+    // Only calculate profit if we have REAL fee data
+    const hasRealFees = realAmazonFees > 0
+    const grossProfit = hasRealFees ? sales - totalCogs - realAmazonFees : 0
+    // NO FAKE AD SPEND - $0 until Amazon Ads API
+    const adSpend = 0
+    const netProfit = grossProfit - adSpend
+    const margin = sales > 0 && grossProfit > 0 ? (netProfit / sales) * 100 : 0
+    const roi = totalCogs > 0 && netProfit > 0 ? ((netProfit / totalCogs) * 100) : 0
+    const acos = 0 // $0 until Amazon Ads API
 
     return {
       ...product,
       unitsSold,
       orders,
       sales,
-      refunds: Math.floor(unitsSold * 0.05), // Estimate 5% refund rate
-      adSpend: estimatedAdSpend,
+      refunds: 0, // NO FAKE DATA - $0 until real refund data
+      adSpend: 0, // NO FAKE DATA - $0 until Amazon Ads API
+      amazonFees: realAmazonFees, // REAL fees only
       grossProfit,
       netProfit,
       margin: parseFloat(margin.toFixed(1)),
       roi: parseFloat(roi.toFixed(0)),
       acos: parseFloat(acos.toFixed(1)),
-      sellableReturns: 85, // Default estimate
+      sellableReturns: 0, // NO FAKE DATA
       bsr: null // Not available from orders
     }
   }).sort((a, b) => b.sales - a.sales) // Sort by sales descending

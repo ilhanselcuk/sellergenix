@@ -3,6 +3,16 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Send, Sparkles, Paperclip, X, FileSpreadsheet, Loader2, ChevronUp, ChevronDown, Bot, User } from 'lucide-react'
 
+// Starbucks Color Palette
+const STARBUCKS = {
+  primaryGreen: '#00704A',
+  darkGreen: '#1E3932',
+  lightGreen: '#D4E9E2',
+  gold: '#CBA258',
+  cream: '#F2F0EB',
+  white: '#FFFFFF',
+}
+
 interface Message {
   id: string
   type: 'user' | 'assistant'
@@ -178,22 +188,25 @@ export default function AIChatBar({ onCommand }: AIChatBarProps) {
     <div className="fixed bottom-0 left-0 right-0 z-40">
       {/* Expanded Chat Panel */}
       {isExpanded && (
-        <div className="bg-white border-t border-gray-200 shadow-2xl">
+        <div className="shadow-2xl" style={{ backgroundColor: STARBUCKS.white, borderTop: `1px solid ${STARBUCKS.lightGreen}` }}>
           <div className="max-w-4xl mx-auto">
             {/* Chat Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${STARBUCKS.lightGreen}` }}>
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${STARBUCKS.darkGreen} 0%, ${STARBUCKS.primaryGreen} 100%)` }}>
                   <Sparkles className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-gray-900">SellerGenix AI</h4>
-                  <p className="text-xs text-gray-500">Your intelligent assistant</p>
+                  <h4 className="text-sm font-semibold" style={{ color: STARBUCKS.darkGreen }}>SellerGenix AI</h4>
+                  <p className="text-xs" style={{ color: STARBUCKS.primaryGreen }}>Your intelligent assistant</p>
                 </div>
               </div>
               <button
                 onClick={() => setIsExpanded(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: STARBUCKS.primaryGreen }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.lightGreen}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               >
                 <ChevronDown className="w-5 h-5" />
               </button>
@@ -206,25 +219,36 @@ export default function AIChatBar({ onCommand }: AIChatBarProps) {
                   key={message.id}
                   className={`flex items-start gap-3 ${message.type === 'user' ? 'flex-row-reverse' : ''}`}
                 >
-                  <div className={`
-                    w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0
-                    ${message.type === 'user' ? 'bg-gray-200' : 'bg-gradient-to-r from-blue-500 to-purple-500'}
-                  `}>
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{
+                      background: message.type === 'user'
+                        ? STARBUCKS.lightGreen
+                        : `linear-gradient(135deg, ${STARBUCKS.darkGreen} 0%, ${STARBUCKS.primaryGreen} 100%)`
+                    }}
+                  >
                     {message.type === 'user' ? (
-                      <User className="w-4 h-4 text-gray-600" />
+                      <User className="w-4 h-4" style={{ color: STARBUCKS.darkGreen }} />
                     ) : (
                       <Bot className="w-4 h-4 text-white" />
                     )}
                   </div>
-                  <div className={`
-                    max-w-[80%] px-4 py-3 rounded-2xl
-                    ${message.type === 'user'
-                      ? 'bg-blue-600 text-white rounded-tr-none'
-                      : 'bg-gray-100 text-gray-800 rounded-tl-none'
-                    }
-                  `}>
+                  <div
+                    className="max-w-[80%] px-4 py-3 rounded-2xl"
+                    style={{
+                      background: message.type === 'user'
+                        ? `linear-gradient(135deg, ${STARBUCKS.darkGreen} 0%, ${STARBUCKS.primaryGreen} 100%)`
+                        : STARBUCKS.cream,
+                      color: message.type === 'user' ? STARBUCKS.white : STARBUCKS.darkGreen,
+                      borderTopRightRadius: message.type === 'user' ? 0 : undefined,
+                      borderTopLeftRadius: message.type === 'user' ? undefined : 0,
+                    }}
+                  >
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    <p className={`text-xs mt-1 ${message.type === 'user' ? 'text-blue-200' : 'text-gray-400'}`}>
+                    <p
+                      className="text-xs mt-1"
+                      style={{ color: message.type === 'user' ? 'rgba(255,255,255,0.6)' : STARBUCKS.primaryGreen }}
+                    >
                       {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
@@ -233,14 +257,17 @@ export default function AIChatBar({ onCommand }: AIChatBarProps) {
 
               {isTyping && (
                 <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center"
+                    style={{ background: `linear-gradient(135deg, ${STARBUCKS.darkGreen} 0%, ${STARBUCKS.primaryGreen} 100%)` }}
+                  >
                     <Bot className="w-4 h-4 text-white" />
                   </div>
-                  <div className="bg-gray-100 px-4 py-3 rounded-2xl rounded-tl-none">
+                  <div className="px-4 py-3 rounded-2xl rounded-tl-none" style={{ backgroundColor: STARBUCKS.cream }}>
                     <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: STARBUCKS.primaryGreen, animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: STARBUCKS.primaryGreen, animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: STARBUCKS.primaryGreen, animationDelay: '300ms' }} />
                     </div>
                   </div>
                 </div>
@@ -253,33 +280,43 @@ export default function AIChatBar({ onCommand }: AIChatBarProps) {
       )}
 
       {/* Chat Input Bar */}
-      <div className="bg-white border-t border-gray-200 shadow-lg">
+      <div className="shadow-lg" style={{ backgroundColor: STARBUCKS.white, borderTop: `1px solid ${STARBUCKS.lightGreen}` }}>
         <div className="max-w-4xl mx-auto px-4 py-3">
           <div className="flex items-center gap-3">
             {/* Expand Toggle (when collapsed) */}
             {!isExpanded && (
               <button
                 onClick={() => setIsExpanded(true)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: STARBUCKS.primaryGreen }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.lightGreen}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               >
                 <ChevronUp className="w-5 h-5" />
               </button>
             )}
 
             {/* AI Icon */}
-            <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center flex-shrink-0">
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ background: `linear-gradient(135deg, ${STARBUCKS.darkGreen} 0%, ${STARBUCKS.primaryGreen} 100%)` }}
+            >
               <Sparkles className="w-5 h-5 text-white" />
             </div>
 
             {/* Input */}
             <div className="flex-1 relative">
               {uploadedFile && (
-                <div className="absolute -top-12 left-0 flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
-                  <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-blue-700">{uploadedFile.name}</span>
+                <div
+                  className="absolute -top-12 left-0 flex items-center gap-2 px-3 py-1.5 rounded-lg"
+                  style={{ backgroundColor: STARBUCKS.lightGreen, border: `1px solid ${STARBUCKS.primaryGreen}30` }}
+                >
+                  <FileSpreadsheet className="w-4 h-4" style={{ color: STARBUCKS.primaryGreen }} />
+                  <span className="text-sm" style={{ color: STARBUCKS.darkGreen }}>{uploadedFile.name}</span>
                   <button
                     onClick={() => setUploadedFile(null)}
-                    className="p-0.5 text-blue-400 hover:text-blue-600"
+                    className="p-0.5"
+                    style={{ color: STARBUCKS.primaryGreen }}
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -292,7 +329,14 @@ export default function AIChatBar({ onCommand }: AIChatBarProps) {
                 onKeyPress={handleKeyPress}
                 onFocus={() => setIsExpanded(true)}
                 placeholder='Ask anything... Try "Set COGS $5.50 for B08XYZ123" or "help"'
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-24"
+                className="w-full px-4 py-3 rounded-xl focus:outline-none focus:ring-2 pr-24"
+                style={{
+                  backgroundColor: STARBUCKS.cream,
+                  border: `1px solid ${STARBUCKS.lightGreen}`,
+                  color: STARBUCKS.darkGreen,
+                }}
+                onFocusCapture={(e) => e.currentTarget.style.borderColor = STARBUCKS.primaryGreen}
+                onBlur={(e) => e.currentTarget.style.borderColor = STARBUCKS.lightGreen}
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                 {/* File Upload */}
@@ -305,8 +349,11 @@ export default function AIChatBar({ onCommand }: AIChatBarProps) {
                 />
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-2 rounded-lg transition-colors"
+                  style={{ color: STARBUCKS.primaryGreen }}
                   title="Upload Excel/CSV"
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.lightGreen}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
                   <Paperclip className="w-5 h-5" />
                 </button>
@@ -315,13 +362,14 @@ export default function AIChatBar({ onCommand }: AIChatBarProps) {
                 <button
                   onClick={handleSend}
                   disabled={!inputValue.trim() && !uploadedFile}
-                  className={`
-                    p-2 rounded-lg transition-colors
-                    ${inputValue.trim() || uploadedFile
-                      ? 'text-white bg-blue-600 hover:bg-blue-700'
-                      : 'text-gray-400 bg-gray-100 cursor-not-allowed'
-                    }
-                  `}
+                  className="p-2 rounded-lg transition-all"
+                  style={{
+                    background: inputValue.trim() || uploadedFile
+                      ? `linear-gradient(135deg, ${STARBUCKS.darkGreen} 0%, ${STARBUCKS.primaryGreen} 100%)`
+                      : STARBUCKS.lightGreen,
+                    color: inputValue.trim() || uploadedFile ? STARBUCKS.white : STARBUCKS.primaryGreen,
+                    cursor: inputValue.trim() || uploadedFile ? 'pointer' : 'not-allowed',
+                  }}
                 >
                   {isTyping ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -341,13 +389,19 @@ export default function AIChatBar({ onCommand }: AIChatBarProps) {
                   setInputValue('Set COGS $ for ')
                   setIsExpanded(true)
                 }}
-                className="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+                className="px-3 py-1 text-xs font-medium rounded-full transition-colors"
+                style={{ backgroundColor: STARBUCKS.lightGreen, color: STARBUCKS.darkGreen }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.primaryGreen + '30'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.lightGreen}
               >
                 Set COGS
               </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+                className="px-3 py-1 text-xs font-medium rounded-full transition-colors"
+                style={{ backgroundColor: STARBUCKS.lightGreen, color: STARBUCKS.darkGreen }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.primaryGreen + '30'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.lightGreen}
               >
                 Upload Excel
               </button>
@@ -357,7 +411,10 @@ export default function AIChatBar({ onCommand }: AIChatBarProps) {
                   handleSend()
                   setIsExpanded(true)
                 }}
-                className="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+                className="px-3 py-1 text-xs font-medium rounded-full transition-colors"
+                style={{ backgroundColor: STARBUCKS.lightGreen, color: STARBUCKS.darkGreen }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.primaryGreen + '30'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.lightGreen}
               >
                 Help
               </button>

@@ -11,8 +11,6 @@ import {
   syncShippedOrderFees,
   estimatePendingOrderFees,
   refreshAllProductFeeAverages,
-  syncAllHistoricalFees,
-  fetchMCFFees,
 } from "@/lib/amazon-sp-api";
 
 // Initialize Supabase
@@ -198,37 +196,6 @@ export const syncAmazonFees = inngest.createFunction(
 );
 
 /**
- * Single Order Fee Sync
- *
- * Sync fees for a single order (used when order ships)
- */
-export const syncSingleOrderFees = inngest.createFunction(
-  {
-    id: "sync-single-order-fees",
-    retries: 3,
-  },
-  { event: "amazon/sync.order-fees" },
-  async ({ event, step }) => {
-    const { userId, refreshToken, amazonOrderId } = event.data;
-
-    console.log(`📦 [Inngest] Syncing fees for order ${amazonOrderId}`);
-
-    const result = await step.run("sync-order", async () => {
-      return await syncShippedOrderFees(userId, amazonOrderId, refreshToken);
-    });
-
-    // Update product averages after syncing
-    if (result.success) {
-      await step.run("update-averages", async () => {
-        return await refreshAllProductFeeAverages(userId);
-      });
-    }
-
-    return result;
-  }
-);
-
-/**
  * Scheduled Fee Sync (Cron Job)
  *
  * Runs every 15 minutes to sync new shipped orders
@@ -289,341 +256,6 @@ export const scheduledFeeSync = inngest.createFunction(
       usersProcessed: results.length,
       completedAt: new Date().toISOString(),
     };
-  }
-);
-
-/**
- * Historical Data Sync Function
- *
- * Syncs up to 2 years of historical order data from Amazon SP-API
- * This is a long-running task that uses Inngest steps for reliability
- *
- * Process:
- * 1. Fetch orders in monthly chunks (to avoid rate limits)
- * 2. For each batch of orders, fetch order items
- * 3. Save to database
- * 4. Track progress
- */
-export const syncHistoricalData = inngest.createFunction(
-  {
-    id: "sync-historical-data",
-    retries: 3,
-    // Only 1 historical sync per user at a time
-    concurrency: {
-      limit: 1,
-      key: "event.data.userId",
-    },
-  },
-  { event: "amazon/sync.historical" },
-  async ({ event, step }) => {
-    const { userId, refreshToken, marketplaceIds, yearsBack = 2 } = event.data;
-
-    console.log(`🚀 [Inngest] Starting historical sync for user ${userId}, years: ${yearsBack}`);
-
-    const results: Record<string, unknown> = {
-      startedAt: new Date().toISOString(),
-      yearsBack,
-      marketplaceIds,
-    };
-
-    // Calculate date range - 2 years back from now
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setFullYear(startDate.getFullYear() - yearsBack);
-
-    console.log(`📅 Syncing orders from ${startDate.toISOString()} to ${endDate.toISOString()}`);
-
-    // Split into 2-week chunks to avoid timeout on busy months
-    // Monthly chunks were timing out at chunk 16 (busy month with many orders)
-    const CHUNK_DAYS = 14; // 2 weeks instead of 1 month
-    const orderChunks: { start: Date; end: Date }[] = [];
-    let chunkStart = new Date(startDate);
-
-    while (chunkStart < endDate) {
-      const chunkEnd = new Date(chunkStart);
-      chunkEnd.setDate(chunkEnd.getDate() + CHUNK_DAYS);
-      if (chunkEnd > endDate) {
-        chunkEnd.setTime(endDate.getTime());
-      }
-
-      orderChunks.push({ start: new Date(chunkStart), end: new Date(chunkEnd) });
-      chunkStart = new Date(chunkEnd);
-    }
-
-    console.log(`📊 Split into ${orderChunks.length} bi-weekly chunks (${CHUNK_DAYS} days each)`);
-
-    let totalOrders = 0;
-    let totalOrderItems = 0;
-    let processedChunks = 0;
-
-    // Process each bi-weekly chunk
-    for (let i = 0; i < orderChunks.length; i++) {
-      const chunk = orderChunks[i];
-      const chunkLabel = `${chunk.start.toISOString().split("T")[0]} to ${chunk.end.toISOString().split("T")[0]}`;
-
-      const chunkResult = await step.run(`sync-chunk-${i}`, async () => {
-        console.log(`📦 Processing chunk ${i + 1}/${orderChunks.length}: ${chunkLabel}`);
-
-        // Dynamic import to avoid circular dependencies
-        const { getOrders, getOrderItems } = await import("@/lib/amazon-sp-api/orders");
-
-        let chunkOrders = 0;
-        let chunkItems = 0;
-        let nextToken: string | undefined;
-        let pageCount = 0;
-
-        // Paginate through all orders in this chunk
-        do {
-          // Build query params
-          const queryParams: Record<string, any> = {
-            MarketplaceIds: marketplaceIds,
-            CreatedAfter: chunk.start.toISOString(),
-            CreatedBefore: new Date(chunk.end.getTime() - 3 * 60 * 1000).toISOString(), // 3 min buffer
-            MaxResultsPerPage: 100,
-          };
-
-          if (nextToken) {
-            queryParams.NextToken = nextToken;
-          }
-
-          // Fetch orders page
-          const ordersResult = await getOrders(
-            refreshToken,
-            marketplaceIds,
-            chunk.start,
-            chunk.end
-          );
-
-          if (!ordersResult.success || !ordersResult.orders) {
-            console.error(`❌ Failed to fetch orders for chunk ${i}:`, ordersResult.error);
-            break;
-          }
-
-          const orders = ordersResult.orders;
-          nextToken = ordersResult.nextToken;
-          pageCount++;
-
-          console.log(`  Page ${pageCount}: ${orders.length} orders`);
-
-          // Save orders to database
-          for (const order of orders) {
-            // Skip canceled orders
-            if (order.orderStatus === "Canceled") {
-              continue;
-            }
-
-            // Upsert order
-            const { error: orderError } = await supabase
-              .from("orders")
-              .upsert(
-                {
-                  user_id: userId,
-                  amazon_order_id: order.amazonOrderId,
-                  purchase_date: order.purchaseDate,
-                  last_update_date: order.lastUpdateDate,
-                  order_status: order.orderStatus,
-                  fulfillment_channel: order.fulfillmentChannel,
-                  sales_channel: order.salesChannel,
-                  order_total: order.orderTotal?.amount
-                    ? parseFloat(order.orderTotal.amount)
-                    : null,
-                  currency_code: order.orderTotal?.currencyCode || "USD",
-                  marketplace_id: order.marketplaceId || marketplaceIds[0],
-                  number_of_items_shipped: order.numberOfItemsShipped || 0,
-                  number_of_items_unshipped: order.numberOfItemsUnshipped || 0,
-                  is_prime: order.isPrime || false,
-                  is_business: order.isBusinessOrder || false,
-                },
-                { onConflict: "amazon_order_id" }
-              );
-
-            if (orderError) {
-              console.error(`  Error saving order ${order.amazonOrderId}:`, orderError.message);
-              continue;
-            }
-
-            chunkOrders++;
-
-            // Fetch order items
-            const itemsResult = await getOrderItems(refreshToken, order.amazonOrderId);
-
-            if (itemsResult.success && itemsResult.orderItems) {
-              for (const item of itemsResult.orderItems) {
-                // Upsert order item
-                const { error: itemError } = await supabase
-                  .from("order_items")
-                  .upsert(
-                    {
-                      user_id: userId,
-                      amazon_order_id: order.amazonOrderId,
-                      order_item_id: item.orderItemId,
-                      asin: item.asin,
-                      seller_sku: item.sellerSKU,
-                      title: item.title,
-                      quantity_ordered: item.quantityOrdered,
-                      quantity_shipped: item.quantityShipped,
-                      item_price: item.itemPrice?.amount
-                        ? parseFloat(item.itemPrice.amount)
-                        : null,
-                      item_tax: item.itemTax?.amount
-                        ? parseFloat(item.itemTax.amount)
-                        : null,
-                      shipping_price: item.shippingPrice?.amount
-                        ? parseFloat(item.shippingPrice.amount)
-                        : null,
-                      promotion_discount: item.promotionDiscount?.amount
-                        ? parseFloat(item.promotionDiscount.amount)
-                        : null,
-                    },
-                    { onConflict: "order_item_id" }
-                  );
-
-                if (!itemError) {
-                  chunkItems++;
-                }
-              }
-            }
-
-            // Rate limit: 200ms between orders to avoid throttling
-            await new Promise((resolve) => setTimeout(resolve, 200));
-          }
-
-          // Rate limit between pages
-          if (nextToken) {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
-        } while (nextToken);
-
-        return { orders: chunkOrders, items: chunkItems, pages: pageCount };
-      });
-
-      totalOrders += chunkResult.orders;
-      totalOrderItems += chunkResult.items;
-      processedChunks++;
-
-      console.log(
-        `✅ Chunk ${i + 1}/${orderChunks.length} complete: ${chunkResult.orders} orders, ${chunkResult.items} items`
-      );
-
-      // Small delay between chunks
-      if (i < orderChunks.length - 1) {
-        await step.sleep(`chunk-delay-${i}`, "2s");
-      }
-    }
-
-    // =============================================
-    // Sync historical fees from Finances API
-    // Split into 2-week chunks to avoid timeout
-    // =============================================
-    const { bulkSyncFeesForDateRange } = await import("@/lib/amazon-sp-api/fee-service");
-
-    // Create 2-week chunks for fee sync (same as order chunks)
-    const feeChunks: { start: Date; end: Date }[] = [];
-    let feeChunkStart = new Date(startDate);
-
-    while (feeChunkStart < endDate) {
-      const feeChunkEnd = new Date(feeChunkStart);
-      feeChunkEnd.setDate(feeChunkEnd.getDate() + CHUNK_DAYS); // 2 weeks
-      if (feeChunkEnd > endDate) {
-        feeChunkEnd.setTime(endDate.getTime());
-      }
-      feeChunks.push({ start: new Date(feeChunkStart), end: new Date(feeChunkEnd) });
-      feeChunkStart = new Date(feeChunkEnd);
-    }
-
-    console.log(`💰 [Inngest] Syncing fees for ${feeChunks.length} bi-weekly chunks`);
-
-    let totalFeesOrders = 0;
-    let totalFeesItems = 0;
-    let totalFeesAmount = 0;
-
-    // Process fee sync in chunks (each chunk is a separate step)
-    for (let f = 0; f < feeChunks.length; f++) {
-      const feeChunk = feeChunks[f];
-      const feeChunkLabel = `${feeChunk.start.toISOString().split("T")[0]} to ${feeChunk.end.toISOString().split("T")[0]}`;
-
-      const feeChunkResult = await step.run(`fee-chunk-${f}`, async () => {
-        console.log(`💰 Processing fee chunk ${f + 1}/${feeChunks.length}: ${feeChunkLabel}`);
-
-        try {
-          const result = await bulkSyncFeesForDateRange(
-            userId,
-            refreshToken,
-            feeChunk.start,
-            feeChunk.end
-          );
-
-          console.log(`✅ Fee chunk ${f + 1}: ${result.ordersUpdated} orders, $${result.totalFeesApplied.toFixed(2)}`);
-          return result;
-        } catch (error) {
-          console.error(`❌ Fee chunk ${f + 1} error:`, error);
-          return { success: false, ordersUpdated: 0, itemsUpdated: 0, totalFeesApplied: 0, errors: [String(error)] };
-        }
-      });
-
-      totalFeesOrders += feeChunkResult.ordersUpdated || 0;
-      totalFeesItems += feeChunkResult.itemsUpdated || 0;
-      totalFeesAmount += feeChunkResult.totalFeesApplied || 0;
-
-      // Small delay between fee chunks
-      if (f < feeChunks.length - 1) {
-        await step.sleep(`fee-delay-${f}`, "1s");
-      }
-    }
-
-    const feeResult = {
-      totalOrders: totalFeesOrders,
-      totalItems: totalFeesItems,
-      totalFees: totalFeesAmount
-    };
-
-    console.log(`✅ [Inngest] Fee sync complete: ${feeResult.totalOrders} orders, $${feeResult.totalFees.toFixed(2)} fees`);
-
-    // Final step: Update product fee averages (will now use REAL fee data)
-    await step.run("refresh-product-averages", async () => {
-      try {
-        const result = await refreshAllProductFeeAverages(userId);
-        return result;
-      } catch (error) {
-        return { error: String(error) };
-      }
-    });
-
-    // ========================================
-    // TRIGGER SETTLEMENT FEE SYNC
-    // Finances API often returns 0 for fees, Settlement Reports have REAL fees
-    // This runs AFTER orders are synced so it can match fees to existing order_items
-    // ========================================
-    await step.run("trigger-settlement-fee-sync", async () => {
-      try {
-        console.log('📊 [Inngest] Triggering Settlement Report fee sync...');
-        await inngest.send({
-          name: 'amazon/sync.settlement-fees',
-          data: {
-            userId,
-            refreshToken,
-            marketplaceIds: marketplaceIds || ['ATVPDKIKX0DER'],
-            monthsBack: 6 // 6 months of settlement reports
-          }
-        });
-        console.log('✅ [Inngest] Settlement fee sync triggered!');
-        return { triggered: true };
-      } catch (error) {
-        console.error('⚠️ [Inngest] Failed to trigger settlement sync:', error);
-        return { triggered: false, error: String(error) };
-      }
-    });
-
-    results.totalOrders = totalOrders;
-    results.totalOrderItems = totalOrderItems;
-    results.processedChunks = processedChunks;
-    results.feeSync = feeResult;
-    results.settlementSyncTriggered = true;
-    results.completedAt = new Date().toISOString();
-
-    console.log(`🎉 [Inngest] Historical sync completed for user ${userId}:`, results);
-
-    return results;
   }
 );
 
@@ -934,151 +566,150 @@ export const syncHistoricalDataReports = inngest.createFunction(
         let ordersSaved = 0;
         let itemsSaved = 0;
 
-        for (const order of chunk) {
-          // Skip canceled orders
-          if (order.orderStatus === "Canceled" || order.orderStatus === "Cancelled") {
-            continue;
+        // Filter out canceled orders
+        const validOrders = chunk.filter(
+          order => order.orderStatus !== "Canceled" && order.orderStatus !== "Cancelled"
+        );
+
+        if (validOrders.length === 0) {
+          return { ordersSaved: 0, itemsSaved: 0 };
+        }
+
+        // OPTIMIZATION 1: Bulk upsert orders (1 query instead of N)
+        const ordersToUpsert = validOrders.map(order => ({
+          user_id: userId,
+          amazon_order_id: order.amazonOrderId,
+          purchase_date: order.purchaseDate,
+          last_update_date: order.lastUpdatedDate,
+          order_status: order.orderStatus,
+          fulfillment_channel: order.fulfillmentChannel,
+          sales_channel: order.salesChannel,
+          order_total: order.itemPrice ? parseFloat(String(order.itemPrice)) : null,
+          currency_code: order.currency || "USD",
+          marketplace_id: marketplaceIds?.[0] || "ATVPDKIKX0DER",
+          number_of_items_shipped: order.quantity || 0,
+          number_of_items_unshipped: 0,
+        }));
+
+        const { error: bulkOrderError } = await supabase
+          .from("orders")
+          .upsert(ordersToUpsert, { onConflict: "amazon_order_id" });
+
+        if (!bulkOrderError) {
+          ordersSaved = ordersToUpsert.length;
+        }
+
+        // OPTIMIZATION 2: Batch select all existing order_items (1 query instead of N*3)
+        const orderIds = validOrders.map(o => o.amazonOrderId);
+        const { data: existingItems } = await supabase
+          .from("order_items")
+          .select("order_item_id, amazon_order_id, seller_sku, asin")
+          .in("amazon_order_id", orderIds);
+
+        // Build lookup map: order_id -> items[]
+        const itemsByOrderId = new Map<string, { order_item_id: string; seller_sku: string | null; asin: string | null }[]>();
+        existingItems?.forEach(item => {
+          if (!itemsByOrderId.has(item.amazon_order_id)) {
+            itemsByOrderId.set(item.amazon_order_id, []);
           }
+          itemsByOrderId.get(item.amazon_order_id)!.push(item);
+        });
 
-          // Upsert order
-          const { error: orderError } = await supabase
-            .from("orders")
-            .upsert(
-              {
-                user_id: userId,
-                amazon_order_id: order.amazonOrderId,
-                purchase_date: order.purchaseDate,
-                last_update_date: order.lastUpdatedDate,
-                order_status: order.orderStatus,
-                fulfillment_channel: order.fulfillmentChannel,
-                sales_channel: order.salesChannel,
-                order_total: order.itemPrice ? parseFloat(String(order.itemPrice)) : null,
-                currency_code: order.currency || "USD",
-                marketplace_id: marketplaceIds?.[0] || "ATVPDKIKX0DER",
-                number_of_items_shipped: order.quantity || 0,
-                number_of_items_unshipped: 0, // Reports API doesn't have separate shipped/unshipped counts
-              },
-              { onConflict: "amazon_order_id" }
-            );
+        // Prepare bulk updates and inserts
+        const itemsToUpdate: { order_item_id: string; updateData: Record<string, unknown> }[] = [];
+        const itemsToInsert: Record<string, unknown>[] = [];
 
-          if (!orderError) {
-            ordersSaved++;
-          }
-
-          // Get fees for this order item (from Settlement Report)
-          // Try item-level key first (orderId|sku), then fall back to order-level key
+        for (const order of validOrders) {
+          // Get fees for this order item
           const sku = order.sku || '';
           const itemFeeKey = sku ? `${order.amazonOrderId}|${sku}` : order.amazonOrderId;
           const fees = orderFees.get(itemFeeKey) || orderFees.get(order.amazonOrderId);
 
-          // Try to find existing order_item by amazon_order_id + seller_sku
-          // (Order items may already exist from Finances API sync with real order_item_id)
-          let existingItems: { order_item_id: string }[] | null = null;
+          // Find existing item from lookup map (no queries!)
+          const existingForOrder = itemsByOrderId.get(order.amazonOrderId) || [];
+          let matchedItem: { order_item_id: string } | null = null;
 
-          // First try matching by SKU if available
+          // Try matching by SKU first
           if (order.sku) {
-            const { data } = await supabase
-              .from("order_items")
-              .select("order_item_id")
-              .eq("amazon_order_id", order.amazonOrderId)
-              .eq("seller_sku", order.sku)
-              .limit(1);
-            existingItems = data;
+            matchedItem = existingForOrder.find(i => i.seller_sku === order.sku) || null;
+          }
+          // Try matching by ASIN
+          if (!matchedItem && order.asin) {
+            matchedItem = existingForOrder.find(i => i.asin === order.asin) || null;
+          }
+          // Fall back to first item for this order
+          if (!matchedItem && existingForOrder.length > 0) {
+            matchedItem = existingForOrder[0];
           }
 
-          // If no match by SKU, try by ASIN
-          if ((!existingItems || existingItems.length === 0) && order.asin) {
-            const { data } = await supabase
-              .from("order_items")
-              .select("order_item_id")
-              .eq("amazon_order_id", order.amazonOrderId)
-              .eq("asin", order.asin)
-              .limit(1);
-            existingItems = data;
-          }
-
-          // If still no match, try just by order_id (will get first item)
-          if (!existingItems || existingItems.length === 0) {
-            const { data } = await supabase
-              .from("order_items")
-              .select("order_item_id")
-              .eq("amazon_order_id", order.amazonOrderId)
-              .limit(1);
-            existingItems = data;
-          }
-
-          if (existingItems && existingItems.length > 0) {
-            // Update existing item with Settlement Report fees
-            if (fees) {
-              // Write to BOTH detail AND rollup columns
-              // NOTE: promotionDiscount stored separately, NOT in total_amazon_fees
-              const { error: updateError } = await supabase
-                .from("order_items")
-                .update({
-                  // Detail columns
-                  fee_fba_per_unit: fees.fbaFee || null,
-                  fee_referral: fees.referralFee || null,
-                  fee_storage: fees.storageFee || null,
-                  fee_promotion: fees.promotionDiscount || null,
-                  fee_other: fees.otherFees || null,
-                  // Rollup columns (what dashboard reads!)
-                  total_fba_fulfillment_fees: fees.fbaFee || null,
-                  total_referral_fees: fees.referralFee || null,
-                  total_storage_fees: fees.storageFee || null,
-                  total_promotion_fees: fees.promotionDiscount || null,
-                  total_other_fees: fees.otherFees || null,
-                  // total_amazon_fees = FBA + Referral + Storage + Other (NOT promo!)
-                  total_amazon_fees: fees.totalFees || null,
-                  fee_source: "settlement_report",
-                })
-                .eq("order_item_id", existingItems[0].order_item_id);
-
-              if (!updateError) {
-                itemsSaved++;
+          if (matchedItem && fees) {
+            // Queue update for existing item
+            itemsToUpdate.push({
+              order_item_id: matchedItem.order_item_id,
+              updateData: {
+                fee_fba_per_unit: fees.fbaFee || null,
+                fee_referral: fees.referralFee || null,
+                fee_storage: fees.storageFee || null,
+                fee_promotion: fees.promotionDiscount || null,
+                fee_other: fees.otherFees || null,
+                total_fba_fulfillment_fees: fees.fbaFee || null,
+                total_referral_fees: fees.referralFee || null,
+                total_storage_fees: fees.storageFee || null,
+                total_promotion_fees: fees.promotionDiscount || null,
+                total_other_fees: fees.otherFees || null,
+                total_amazon_fees: fees.totalFees || null,
+                fee_source: "settlement_report",
               }
-            }
-          } else {
-            // Insert new order item (no existing record)
+            });
+          } else if (!matchedItem) {
+            // Queue insert for new item
             const generatedOrderItemId = `${order.amazonOrderId}-${order.sku || order.asin || '1'}`;
+            itemsToInsert.push({
+              user_id: userId,
+              amazon_order_id: order.amazonOrderId,
+              order_item_id: generatedOrderItemId,
+              asin: order.asin,
+              seller_sku: order.sku,
+              title: order.productName,
+              quantity_ordered: order.quantity || 1,
+              quantity_shipped: order.quantity || 0,
+              item_price: order.itemPrice ? parseFloat(String(order.itemPrice)) : null,
+              item_tax: order.itemTax ? parseFloat(String(order.itemTax)) : null,
+              shipping_price: order.shippingPrice ? parseFloat(String(order.shippingPrice)) : null,
+              promotion_discount: order.itemPromotionDiscount ? parseFloat(String(order.itemPromotionDiscount)) : null,
+              fee_fba_per_unit: fees?.fbaFee || null,
+              fee_referral: fees?.referralFee || null,
+              fee_storage: fees?.storageFee || null,
+              fee_promotion: fees?.promotionDiscount || null,
+              fee_other: fees?.otherFees || null,
+              total_fba_fulfillment_fees: fees?.fbaFee || null,
+              total_referral_fees: fees?.referralFee || null,
+              total_storage_fees: fees?.storageFee || null,
+              total_promotion_fees: fees?.promotionDiscount || null,
+              total_other_fees: fees?.otherFees || null,
+              total_amazon_fees: fees?.totalFees || null,
+              fee_source: fees ? "settlement_report" : null,
+            });
+          }
+        }
 
-            const { error: itemError } = await supabase
-              .from("order_items")
-              .upsert(
-                {
-                  user_id: userId,
-                  amazon_order_id: order.amazonOrderId,
-                  order_item_id: generatedOrderItemId,
-                  asin: order.asin,
-                  seller_sku: order.sku,
-                  title: order.productName,
-                  quantity_ordered: order.quantity || 1,
-                  quantity_shipped: order.quantity || 0,
-                  item_price: order.itemPrice ? parseFloat(String(order.itemPrice)) : null,
-                  item_tax: order.itemTax ? parseFloat(String(order.itemTax)) : null,
-                  shipping_price: order.shippingPrice ? parseFloat(String(order.shippingPrice)) : null,
-                  promotion_discount: order.itemPromotionDiscount ? parseFloat(String(order.itemPromotionDiscount)) : null,
-                  // Detail columns
-                  fee_fba_per_unit: fees?.fbaFee || null,
-                  fee_referral: fees?.referralFee || null,
-                  fee_storage: fees?.storageFee || null,
-                  fee_promotion: fees?.promotionDiscount || null,
-                  fee_other: fees?.otherFees || null,
-                  // Rollup columns (what dashboard reads!)
-                  total_fba_fulfillment_fees: fees?.fbaFee || null,
-                  total_referral_fees: fees?.referralFee || null,
-                  total_storage_fees: fees?.storageFee || null,
-                  total_promotion_fees: fees?.promotionDiscount || null,
-                  total_other_fees: fees?.otherFees || null,
-                  // total_amazon_fees = FBA + Referral + Storage + Other (NOT promo!)
-                  total_amazon_fees: fees?.totalFees || null,
-                  fee_source: fees ? "settlement_report" : null,
-                },
-                { onConflict: "order_item_id" }
-              );
+        // OPTIMIZATION 3: Batch updates (individual updates still needed due to different values)
+        // But we reduced N*3 SELECT queries to just 1 SELECT + N individual updates
+        for (const { order_item_id, updateData } of itemsToUpdate) {
+          const { error } = await supabase
+            .from("order_items")
+            .update(updateData)
+            .eq("order_item_id", order_item_id);
+          if (!error) itemsSaved++;
+        }
 
-            if (!itemError) {
-              itemsSaved++;
-            }
+        // OPTIMIZATION 4: Bulk insert new items (1 query instead of N)
+        if (itemsToInsert.length > 0) {
+          const { error: bulkInsertError } = await supabase
+            .from("order_items")
+            .upsert(itemsToInsert, { onConflict: "order_item_id" });
+          if (!bulkInsertError) {
+            itemsSaved += itemsToInsert.length;
           }
         }
 
@@ -1147,6 +778,20 @@ export const syncHistoricalDataReports = inngest.createFunction(
     results.completedAt = new Date().toISOString();
 
     console.log(`🎉 [Inngest] Reports API sync completed for user ${userId}:`, results);
+
+    // Step 5: Trigger settlement fee sync AFTER historical sync completes
+    // This ensures order_items exist before settlement fees try to UPDATE them
+    await step.sendEvent("trigger-settlement-sync", {
+      name: "amazon/sync.settlement-fees",
+      data: {
+        userId,
+        refreshToken,
+        marketplaceIds,
+        monthsBack: 24  // 2 years of settlement data
+      }
+    });
+
+    console.log(`📋 [Inngest] Settlement fee sync triggered for user ${userId}`);
 
     return results;
   }
@@ -1355,6 +1000,30 @@ export const syncSettlementFees = inngest.createFunction(
               console.error(`❌ Update error for ${item.order_item_id}:`, updateError.message);
             } else {
               updated++;
+
+              // --- REFUND SYNC: Populate refunds table ---
+              if ((f.refundAmount && f.refundAmount > 0) || (f.refundCommission && f.refundCommission > 0)) {
+                const refundDate = new Date().toISOString(); // Default to now if not in 'f' object
+
+                // Calculate net refund cost
+                // Cost = Refunded Amount - Credits (Referral, FBA, etc.) + Fees (Commission, etc.)
+                const credits = (f.refundedReferralFee || 0) + (f.reimbursements || 0);
+                const costs = (f.refundAmount || 0) + (f.refundCommission || 0);
+                const netCost = costs - credits;
+
+                await supabase.from("refunds").upsert({
+                  user_id: userId,
+                  amazon_order_id: item.amazon_order_id,
+                  order_item_id: item.order_item_id,
+                  refund_date: refundDate, // In real imp, this should come from settlement posted_date
+                  refunded_amount: f.refundAmount || 0,
+                  refund_commission: f.refundCommission || 0,
+                  refunded_referral_fee: f.refundedReferralFee || 0,
+                  net_refund_cost: netCost,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id,amazon_order_id,order_item_id' });
+              }
+              // -------------------------------------------
             }
           }
         }
@@ -1739,109 +1408,13 @@ export const scheduledStorageSync = inngest.createFunction(
   }
 );
 
-/**
- * MCF (Multi-Channel Fulfillment) Fee Sync
- *
- * Fetches MCF fees from Finances API and saves to service_fees table.
- * MCF fees are NOT in Settlement Reports - they're only in Finances API!
- *
- * Event: amazon/sync.mcf-fees
- */
-export const syncMCFFees = inngest.createFunction(
-  {
-    id: "sync-mcf-fees",
-    retries: 2,
-    concurrency: {
-      limit: 1,
-      key: "event.data.userId",
-    },
-  },
-  { event: "amazon/sync.mcf-fees" },
-  async ({ event, step }) => {
-    const { userId, refreshToken, monthsBack = 24 } = event.data;
-
-    console.log(`🚀 [Inngest] Starting MCF fee sync for user ${userId}, ${monthsBack} months back`);
-
-    // Step 1: Fetch MCF fees from Finances API
-    const mcfResult = await step.run("fetch-mcf-fees", async () => {
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - monthsBack);
-
-      const result = await fetchMCFFees(refreshToken, startDate, endDate);
-
-      if (!result.success || !result.data) {
-        throw new Error(result.error || "Failed to fetch MCF fees");
-      }
-
-      return result.data;
-    });
-
-    console.log(`📊 Found ${mcfResult.events.length} MCF events with total: $${mcfResult.totalFulfillmentFee.toFixed(2)}`);
-
-    // Step 2: Save MCF fees to service_fees table
-    const saveResult = await step.run("save-mcf-fees", async () => {
-      if (mcfResult.events.length === 0) {
-        return { saved: 0, skipped: 0 };
-      }
-
-      let saved = 0;
-      let skipped = 0;
-
-      for (const event of mcfResult.events) {
-        // Create unique ID for upsert
-        const uniqueId = `mcf_${event.shipmentId}_${event.sellerSku || 'unknown'}_${event.postedDate}`;
-
-        const { error } = await supabase
-          .from('service_fees')
-          .upsert({
-            user_id: userId,
-            fee_type: 'mcf',
-            amount: -Math.abs(event.fulfillmentFee), // Negative because it's a cost
-            description: `MCF Fulfillment Fee - ${event.sellerSku || 'SKU Unknown'}`,
-            source: 'finances_api',
-            posted_date: event.postedDate,
-            unique_id: uniqueId,
-          }, {
-            onConflict: 'unique_id'
-          });
-
-        if (error) {
-          console.error(`❌ Failed to save MCF fee ${uniqueId}:`, error.message);
-          skipped++;
-        } else {
-          saved++;
-        }
-      }
-
-      return { saved, skipped };
-    });
-
-    console.log(`✅ MCF fee sync completed: ${saveResult.saved} saved, ${saveResult.skipped} skipped`);
-
-    return {
-      userId,
-      monthsBack,
-      totalMCFFee: mcfResult.totalFulfillmentFee,
-      totalUnits: mcfResult.totalUnits,
-      eventsFound: mcfResult.events.length,
-      saved: saveResult.saved,
-      skipped: saveResult.skipped,
-      completedAt: new Date().toISOString(),
-    };
-  }
-);
-
-// Export all functions
+// Export all functions (7 total - cleaned up unused functions on 2026-01-28)
 export const functions = [
-  syncAmazonFees,
-  syncSingleOrderFees,
-  scheduledFeeSync,
-  scheduledSettlementSync, // NEW: Daily Settlement Report sync
-  scheduledStorageSync,    // NEW: Daily Storage Fee sync
-  syncHistoricalData,
-  syncHistoricalDataKiosk,
-  syncHistoricalDataReports,
-  syncSettlementFees,
-  syncMCFFees, // NEW: MCF fee sync from Finances API
+  syncAmazonFees,           // Event: amazon/sync.fees - Main fee sync
+  scheduledFeeSync,         // Cron: */15 * * * * - Every 15 min fee sync for shipped orders
+  scheduledSettlementSync,  // Cron: 0 6 * * * - Daily Settlement Report sync (24 months)
+  scheduledStorageSync,     // Cron: 0 7 * * * - Daily Storage Fee sync
+  syncHistoricalDataKiosk,  // Event: amazon/sync.historical-kiosk - Data Kiosk bulk sync
+  syncHistoricalDataReports,// Event: amazon/sync.historical-reports - Reports API sync (Sellerboard method)
+  syncSettlementFees,       // Event: amazon/sync.settlement-fees - Settlement Report fee sync
 ];

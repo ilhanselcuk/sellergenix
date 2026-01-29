@@ -265,6 +265,24 @@ async function getRealFeesForPeriod(
     }
 
     // Step 2: Get order IDs in the date range
+    // But FIRST, let's get real refunds from the refunds table (most accurate source)
+    const { data: refundsData } = await supabase
+      .from('refunds')
+      .select('net_refund_cost, refunded_amount')
+      .eq('user_id', userId)
+      .gte('refund_date', startDate.toISOString())
+      .lte('refund_date', endDate.toISOString())
+
+    let totalRefundsFromTable = 0
+    if (refundsData && refundsData.length > 0) {
+      for (const r of refundsData) {
+        // Use net_refund_cost (Sellerboard logic) or refunded_amount
+        totalRefundsFromTable += (r.net_refund_cost || r.refunded_amount || 0)
+      }
+      console.log(`💸 Real refunds from refunds table: $${totalRefundsFromTable.toFixed(2)}`)
+    }
+
+    // Step 2: Get order IDs in the date range
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
       .select('amazon_order_id, order_status')
@@ -640,7 +658,12 @@ async function getRealFeesForPeriod(
     console.log(`   Promo: $${totalPromo.toFixed(2)} (separate from Amazon fees)`)
     console.log(`   Include service fees: ${shouldIncludeServiceFees ? 'YES (period >= 7 days)' : 'NO (daily period)'}`)
     console.log(`   TOTAL FEES: $${totalFeesWithService.toFixed(2)}`)
-    console.log(`   Refunds: $${realRefundsFromFinanceAPI.toFixed(2)}`)
+    // Refund logic: Priority -> Refunds Table > Order Items Aggregation > Daily Metrics
+    const finalRefunds = totalRefundsFromTable > 0
+      ? totalRefundsFromTable
+      : (totalRefundAmount > 0 ? totalRefundAmount : realRefundsFromFinanceAPI)
+
+    console.log(`   Refunds: $${finalRefunds.toFixed(2)} (Table: $${totalRefundsFromTable.toFixed(2)}, Items: $${totalRefundAmount.toFixed(2)}, Daily: $${realRefundsFromFinanceAPI.toFixed(2)})`)
     console.log(`   COGS: $${totalCogs.toFixed(2)}`)
 
     return {
@@ -651,7 +674,7 @@ async function getRealFeesForPeriod(
       feeBreakdown,
       // Zero out serviceFees for daily periods (< 7 days) - subscription doesn't apply to individual days
       serviceFees: shouldIncludeServiceFees ? accountServiceFees : { subscription: 0, storage: 0, other: 0, total: 0 },
-      refunds: realRefundsFromFinanceAPI
+      refunds: finalRefunds
     }
   } catch (error) {
     console.error('Error fetching real fees:', error)
@@ -734,16 +757,18 @@ function formatMetrics(
     amazonFees = 0
     feeSource = 'estimated'
     console.log(`💰 Sales = $0, setting fees to $0 (Finance API fees would be misattributed)`)
-  } else if (realFeeData && realFeeData.totalFees > 0) {
-    // Use real fees from Finances API (stored in database)
+  } else if (realFeeData && realFeeData.orderCount > 0) {
+    // We have orders in this period - use computed fees even if $0
+    // This correctly handles New Seller Incentive users who have $0 real fees
     amazonFees = realFeeData.totalFees
     feeSource = realFeeData.feeSource
-    console.log(`💰 Using REAL Amazon fees: $${amazonFees.toFixed(2)} (source: ${feeSource})`)
+    console.log(`💰 Using database fees: $${amazonFees.toFixed(2)} (source: ${feeSource}, orders: ${realFeeData.orderCount})`)
   } else {
-    // Fallback: Estimate fees at 15% of sales
+    // No orders found in database - estimate at 15% of sales
+    // This happens when Sales API has data but our database hasn't synced yet
     amazonFees = sales * 0.15
     feeSource = 'estimated'
-    console.log(`💰 Using ESTIMATED Amazon fees: $${amazonFees.toFixed(2)} (15% of sales)`)
+    console.log(`💰 Using ESTIMATED Amazon fees: $${amazonFees.toFixed(2)} (15% of sales - no orders in DB)`)
   }
 
   // Use REAL COGS if available, otherwise estimate at 30%
@@ -753,7 +778,7 @@ function formatMetrics(
 
   // Ad spend: Use passed estimate or default to 8% of sales
   // TODO: Get real ad spend from Advertising API
-  const adSpend = adSpendEstimate > 0 ? adSpendEstimate : sales * 0.08
+  const adSpend = 0 // Disabled until Ads API is connected (was: sales * 0.08)
 
   // Calculate profits
   const grossProfit = sales - estimatedCogs - amazonFees
@@ -1056,12 +1081,36 @@ export async function POST(request: Request) {
 
       const feeData = await getRealFeesForPeriod(userId, pstStart, pstEnd)
 
+      // Debug logging for fee breakdown
+      console.log(`💰 "${period.label}" fee data:`)
+      console.log(`   - Total fees: $${feeData.totalFees.toFixed(2)} (${feeData.feeSource})`)
+      console.log(`   - Orders: ${feeData.orderCount}`)
+      console.log(`   - Fee breakdown:`)
+      console.log(`     FBA: $${feeData.feeBreakdown.fbaFulfillment.toFixed(2)}`)
+      console.log(`     Referral: $${feeData.feeBreakdown.referral.toFixed(2)}`)
+      console.log(`     Storage: $${feeData.feeBreakdown.storage.toFixed(2)}`)
+      console.log(`     Long-term Storage: $${feeData.feeBreakdown.longTermStorage.toFixed(2)}`)
+      console.log(`     Refund Commission: $${feeData.feeBreakdown.refundCommission.toFixed(2)}`)
+      console.log(`   - Refunds: $${feeData.refunds.toFixed(2)}`)
+
       return {
         label: period.label,
         startDate: period.startDate,
         endDate: period.endDate,
         metrics: result.success ? formatMetrics(result.metrics, feeData) : null,
-        error: result.error || null
+        error: result.error || null,
+        // Include debug info in response for troubleshooting
+        _debug: {
+          pstStartUTC: pstStart.toISOString(),
+          pstEndUTC: pstEnd.toISOString(),
+          feeData: {
+            totalFees: feeData.totalFees,
+            orderCount: feeData.orderCount,
+            feeSource: feeData.feeSource,
+            feeBreakdown: feeData.feeBreakdown,
+            refunds: feeData.refunds
+          }
+        }
       }
     })
 
@@ -1069,6 +1118,7 @@ export async function POST(request: Request) {
 
     // Build response object with period labels as keys
     const metricsMap: { [key: string]: any } = {}
+    const debugMap: { [key: string]: any } = {}
     for (const result of results) {
       metricsMap[result.label] = result.metrics || {
         sales: 0,
@@ -1085,6 +1135,10 @@ export async function POST(request: Request) {
         refunds: 0,
         error: result.error
       }
+      // Collect debug info
+      if ((result as any)._debug) {
+        debugMap[result.label] = (result as any)._debug
+      }
     }
 
     console.log('✅ All period metrics fetched successfully')
@@ -1095,7 +1149,9 @@ export async function POST(request: Request) {
       metrics: metricsMap,
       periodCount: periods.length,
       source: 'amazon_sales_api',
-      fetchedAt: new Date().toISOString()
+      fetchedAt: new Date().toISOString(),
+      // Include debug info in response (can be removed in production)
+      _debug: debugMap
     })
 
   } catch (error: any) {

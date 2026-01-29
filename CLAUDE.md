@@ -96,7 +96,467 @@ fetch('/api/debug/cleanup-service-fees').then(r => r.json()).then(d => console.l
 
 // 🗑️ Service Fees Cleanup (gerçek silme)
 fetch('/api/debug/cleanup-service-fees', { method: 'POST' }).then(r => r.json()).then(d => console.log('🗑️ Cleaned:', d))
+
+// 🚀 Inngest Settlement Sync (24 ay - background)
+fetch('/api/inngest', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    name: 'amazon/sync.settlement-fees',
+    data: { monthsBack: 24 }
+  })
+}).then(r => r.json()).then(d => console.log('🚀 Inngest Started:', d))
 ```
+
+---
+
+## 🔍 SELLERBOARD ONBOARDING ANALİZİ (28 Ocak 2026)
+
+**Kaynak:** 8 screenshot - Yeni müşteri kayıt akışı
+**Amaç:** Rakip analizi ve SellerGenix onboarding iyileştirmesi
+
+---
+
+### 📋 SCREENSHOT ANALİZİ
+
+#### **1. Marketplace Seçimi (Screenshot 1-2)**
+- **URL:** `app.sellerboard.com/en/setup/completeRegistration`
+- **3 Bölge, 24 Marketplace:**
+  - **Americas (4):** USA, Canada, Brasil, Mexico
+  - **Europe (12):** Germany, UK, Spain, France, Italy, Poland, Turkey, Netherlands, Belgium, Sweden, Ireland
+  - **Asia Pacific & Africa (8):** Australia, UAE, India, Saudi Arabia, Japan, Singapore, Egypt, South Africa
+- **UI Elementleri:**
+  - Bayrak ikonları (her ülke için)
+  - Terms & conditions checkbox
+  - Newsletter opt-in checkbox
+  - "How did you learn about sellerboard?" feedback field
+- **Trust Badges:**
+  - "Amazon Selling Partner Appstore Software Partner"
+  - "Amazon Ads Verified Partner"
+  - "Security of your data is our top priority!"
+- **Social Proof:** "10K+ Amazon sellers are using sellerboard"
+
+---
+
+#### **2. SP-API OAuth Consent (Screenshot 3) - KRİTİK!**
+- **URL:** `sellercentral.amazon.com/apps/authorize/consent?application_id=...`
+- **Sellerboard'ın İstediği 11 Permission:**
+
+| # | Permission | Bizde Var mı? | Notlar |
+|---|------------|---------------|--------|
+| 1 | Notifications in Seller Central | ❌ | Seller Central bildirimleri |
+| 2 | Amazon Fulfillment | ✅ | FBA stok, shipment |
+| 3 | Selling Partner Insights | ✅ | Hesap performansı |
+| 4 | Finance and Accounting | ✅ | Fee'ler, payout'lar |
+| 5 | Pricing | ❌ | Fiyat değişiklikleri |
+| 6 | Inventory and Order Tracking | ✅ | Siparişler, envanter |
+| 7 | Product Listing | ✅ | Ürün detayları |
+| 8 | Buyer Communication | ❌ | Alıcı mesajları |
+| 9 | Buyer Solicitation | ❌ | Review talepleri |
+| 10 | Amazon Warehousing and Distribution | ❌ | AWD entegrasyonu |
+| 11 | Brand Analytics | ✅ | Arama, market share |
+
+**⚠️ Bizde Eksik 5 Rol:** Notifications, Pricing, Buyer Communication, Buyer Solicitation, Amazon Warehousing
+
+---
+
+#### **3. Post-Connection Welcome (Screenshot 4)**
+- **URL:** `app.sellerboard.com/en/setup/firststeps`
+- **Success Modal:** "Seller Central account connected"
+- **Loading Message:**
+  - "5-10 minutes for first numbers"
+  - "Initial import can last a couple of hours"
+- **3-Adımlı Onboarding Rehberi:**
+  1. 📺 "Watch our dashboard intro video here"
+  2. 💰 "Enter your Cost of Goods (COGs) on the 'Products' page"
+  3. 📋 "Enter your non-amazon expenses on the 'Expenses' page (Optional)"
+- **Toast Notification:** "Loading your data for today. Numbers might be incomplete while loading..."
+
+---
+
+#### **4. Dashboard - SP-API Only (Screenshot 5)**
+- **URL:** `app.sellerboard.com/en/dashboard?compare=none`
+- **Ads API Uyarı Banner'ı:** "The access to the advertising data is not set up. PPC expenses are being displayed with a delay and without assignment to individual products." [Connect] butonu
+- **5 Görünüm Sekmesi:** Tiles, Chart, P&L, Map, Trends
+- **5 Zaman Kartı:**
+  | Kart | Tarih | Renk |
+  |------|-------|------|
+  | Today | 28 January 2026 | Mavi |
+  | Yesterday | 27 January 2026 | Mavi |
+  | Month to date | 1-28 January 2026 | Teal/Cyan |
+  | This month (forecast) | 1-31 January 2026 | Teal |
+  | Last month | 1-31 December 2025 | Yeşil |
+- **Kart Metrikleri:** Sales, Orders/Units, Refunds, Adv. cost, Est. payout, Net profit
+- **Product Tablo Kolonları:** Product, Units sold, Refunds, Sales, Ads, Sellable returns, Gross profit, Net profit, Margin, ROI, BSR, Info
+
+---
+
+#### **5. Amazon Ads API OAuth - AYRI FLOW! (Screenshot 6-7)**
+- **URL:** `advertising.amazon.com/am/gaa/workflow?accessToken=...`
+- **Account Seçimi (Screenshot 6):**
+  - ● "All current and future accounts" (recommended)
+  - ○ "Only selected accounts"
+- **Consent Page (Screenshot 7):**
+  - **URL:** `amazon.com/ap/oa?trans_arb=...`
+  - **App:** "sellerboard would like access to: Advertising"
+  - **İzinler:**
+    - "Advertise your product, book, app, or website with Amazon"
+    - "The ability to modify your advertising campaigns"
+    - "Access to performance data related to advertising on Amazon"
+  - **Butonlar:** Cancel | Allow (sarı)
+
+---
+
+#### **6. Dashboard - Ads API Bağlandıktan Sonra (Screenshot 8)**
+- **Success Modal:** "Advertising API access - Access to the Amazon Advertising API for PPC data is configured. Your PPC data will be updated in the next hours."
+- **Uyarı banner'ı KALKTI** (Ads API artık bağlı)
+- **Toast:** "Loading your data for January 2026..."
+
+---
+
+### 🎯 SELLERGENİX İÇİN ÇIKARIMLAR
+
+#### **1. Onboarding UX İyileştirmeleri (TODO):**
+- [ ] Marketplace seçiminde bayrak ikonları ekle
+- [ ] "5-10 dakika içinde ilk veriler" loading mesajı göster
+- [ ] 3-adımlı onboarding rehberi ekle (video, COGS, expenses)
+- [ ] Ads API bağlı değilse dashboard'da banner göster
+- [ ] "This month (forecast)" kartı ekle
+
+#### **2. Eksik SP-API Rolleri (Başvuru Yapılacak):**
+- [ ] Notifications in Seller Central
+- [ ] Pricing
+- [ ] Buyer Communication
+- [ ] Buyer Solicitation
+- [ ] Amazon Warehousing and Distribution
+
+#### **3. Amazon Ads API Entegrasyonu (Faz 2):**
+- SP-API'den **TAMAMEN AYRI** OAuth flow
+- URL: `advertising.amazon.com` (SP-API: `sellercentral.amazon.com`)
+- "All current and future accounts" seçeneği önemli
+- PPC data "next hours" içinde güncelleniyor (anlık değil)
+
+#### **4. Dashboard Karşılaştırması:**
+
+| Özellik | Sellerboard | SellerGenix | Aksiyon |
+|---------|-------------|-------------|---------|
+| 5 time cards | ✅ | ✅ | - |
+| "This month forecast" | ✅ | ❌ | Ekle |
+| Ads API banner | ✅ | ❌ | Ekle |
+| BSR column | ✅ | ❌ | Oxylabs ile ekle |
+| Trust badges | ✅ | ❌ | Ekle |
+| 3-step onboarding | ✅ | ❌ | Ekle |
+| Loading toast | ✅ | ❌ | Ekle |
+
+---
+
+## 🎯 AMAZON ADS API BAŞVURU REHBERİ (28 Ocak 2026)
+
+**Kaynak:** Amazon resmi dokümantasyonu ve araştırma
+**Durum:** Faz 2 için hazırlanacak
+
+---
+
+### 📋 AMAZON ADS API vs SP-API FARKI
+
+| Özellik | SP-API (Selling Partner) | Ads API (Advertising) |
+|---------|--------------------------|----------------------|
+| **Portal** | developer.amazonservices.com | advertising.amazon.com |
+| **OAuth URL** | sellercentral.amazon.com | amazon.com/ap/oa |
+| **Amaç** | Satış, stok, finans, ürünler | PPC kampanyaları, reklam |
+| **Onay Süreci** | Solution Provider Portal | Partner Network / Direct |
+| **Onay Süresi** | 10 iş günü | 72 saat |
+
+**⚠️ KRİTİK:** Bu iki API **TAMAMEN AYRI** sistemler! İkisi için de ayrı ayrı başvuru ve onay gerekiyor.
+
+---
+
+### 🚀 AMAZON ADS API BAŞVURU ADIMLARI
+
+#### **Adım 1: Başvuru Yolu Seç**
+
+**Yol A - Partner Network (Önerilen):**
+- URL: https://advertising.amazon.com/partners/network
+- Üçüncü taraf yazılım sağlayıcılar için
+- Birden fazla müşteri yönetebilirsin
+- Partner directory'de listelenme imkanı
+
+**Yol B - Direct Advertiser:**
+- URL: https://advertising.amazon.com/about-api
+- Kendi reklam hesabını yönetmek için
+- Daha basit başvuru süreci
+
+**SellerGenix için:** Partner Network (Yol A) tercih edilmeli
+
+---
+
+#### **Adım 2: Login with Amazon (LwA) Application Oluştur**
+
+**URL:** https://developer.amazon.com/loginwithamazon/console/site/lwa/overview.html
+
+**Gerekli Bilgiler:**
+- Application Name: "SellerGenix Advertising"
+- Privacy Notice URL: https://sellergenix.io/privacy
+- Allowed Return URLs:
+  - `http://localhost:3001/api/auth/amazon-ads/callback` (development)
+  - `https://sellergenix.io/api/auth/amazon-ads/callback` (production)
+
+**Sonuç:** Client ID ve Client Secret alınır
+
+---
+
+#### **Adım 3: API Erişimi Başvurusu**
+
+**URL:** https://advertising.amazon.com/API/docs/en-us/guides/onboarding/apply-for-access
+
+**Gerekli Bilgiler:**
+- Company name
+- Company website
+- Company type (Solution Provider / Agency / Advertiser)
+- Use case description
+- Expected API call volume
+
+**Onay Süresi:** 72 saat (3 gün)
+
+---
+
+#### **Adım 4: API Erişimini LwA App'e Ata**
+
+**Onay emaili geldikten sonra:**
+1. Email'deki linke tıkla
+2. Oluşturduğun LwA Security Profile'ı seç
+3. Submit et
+
+**Alınan Scope'lar:**
+- `advertising::campaign_management` - Kampanya yönetimi (zorunlu)
+- `advertising::test:create_account` - Test hesabı oluşturma
+- `advertising::audiences` - Audience yönetimi (opsiyonel)
+
+---
+
+### 🔐 OAUTH AKIŞI (Sellerboard Örneği)
+
+```
+1. Kullanıcı "Connect Ads API" butonuna tıklar
+   ↓
+2. advertising.amazon.com/am/gaa/workflow adresine yönlendirilir
+   ↓
+3. "Choose account access" ekranı:
+   ● All current and future accounts (önerilen)
+   ○ Only selected accounts
+   ↓
+4. amazon.com/ap/oa consent ekranı:
+   - "sellerboard would like access to: Advertising"
+   - İzinler: Modify campaigns, Access performance data
+   ↓
+5. "Allow" → Callback URL'e authorization code ile döner
+   ↓
+6. Code → Token exchange → refresh_token kaydedilir
+   ↓
+7. Dashboard'da "Advertising API access configured" modal gösterilir
+   ↓
+8. "Your PPC data will be updated in the next hours" mesajı
+```
+
+---
+
+### 📊 API SCOPE'LARI VE KULLANIM ALANLARI
+
+| Scope | Amaç | Zorunlu mu? |
+|-------|------|-------------|
+| `advertising::campaign_management` | Kampanya oluştur/düzenle/sil | ✅ Evet |
+| `advertising::audiences` | Audience segmentleri yönet | ❌ Hayır |
+| `advertising::test:create_account` | Test hesabı oluştur | ❌ Hayır |
+
+**⚠️ DİKKAT:** Scope yazımı `advertising::campaign_management` (çift iki nokta). Tek iki nokta (`advertising:campaign_management`) hata verir!
+
+---
+
+### 🛠️ TEKNİK ENTEGRASYON
+
+**Authorization URL Formatı:**
+```
+https://www.amazon.com/ap/oa?
+  client_id=YOUR_LWA_CLIENT_ID
+  &scope=advertising::campaign_management
+  &response_type=code
+  &redirect_uri=YOUR_CALLBACK_URL
+  &state=RANDOM_STATE_STRING
+```
+
+**Token Exchange:**
+```javascript
+POST https://api.amazon.com/auth/o2/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code
+&code=AUTHORIZATION_CODE
+&client_id=YOUR_CLIENT_ID
+&client_secret=YOUR_CLIENT_SECRET
+&redirect_uri=YOUR_CALLBACK_URL
+```
+
+**API Base URL:**
+- Production: `https://advertising-api.amazon.com`
+- Sandbox: `https://advertising-api-test.amazon.com`
+
+---
+
+### 📁 PROJE DOSYA YAPISI (Faz 2)
+
+```
+src/
+├── lib/
+│   └── amazon-ads-api/
+│       ├── client.ts         # Ads API client
+│       ├── auth.ts           # OAuth flow
+│       ├── campaigns.ts      # Kampanya yönetimi
+│       ├── reports.ts        # Reklam raporları
+│       └── types.ts          # TypeScript types
+├── app/
+│   └── api/
+│       └── auth/
+│           └── amazon-ads/
+│               ├── route.ts      # OAuth başlat
+│               └── callback/
+│                   └── route.ts  # OAuth callback
+└── components/
+    └── dashboard/
+        └── AdsApiBanner.tsx  # "Connect Ads API" banner
+```
+
+---
+
+### 📊 ÇEKİLECEK VERİLER (Faz 2)
+
+| Veri | API Endpoint | Kullanım |
+|------|--------------|----------|
+| Kampanya listesi | GET /v2/sp/campaigns | Dashboard |
+| Ad spend | GET /v2/sp/reports | Fee breakdown |
+| ACOS/ROAS | GET /v2/sp/reports | Metrikler |
+| Keyword performance | GET /v2/sp/keywords | Optimizasyon |
+| Search terms | GET /v2/sp/targets/report | Analiz |
+
+---
+
+### ⏰ ZAMAN ÇİZELGESİ
+
+| Adım | Süre | Notlar |
+|------|------|--------|
+| LwA App oluştur | 10 dk | Hemen yapılabilir |
+| API erişimi başvurusu | 1-3 gün | Amazon onayı gerekli |
+| API erişimi atama | 5 dk | Onay sonrası |
+| OAuth entegrasyonu | 2-3 saat | Kod yazma |
+| Kampanya API entegrasyonu | 4-6 saat | Kod yazma |
+| Reports API entegrasyonu | 4-6 saat | Kod yazma |
+| **TOPLAM** | **~3-4 gün** | Başvuru + geliştirme |
+
+---
+
+### 🔗 KAYNAKLAR
+
+- [Amazon Ads API About](https://advertising.amazon.com/about-api)
+- [Apply for Access](https://advertising.amazon.com/API/docs/en-us/guides/onboarding/apply-for-access)
+- [Create LwA App](https://advertising.amazon.com/API/docs/en-us/guides/onboarding/create-lwa-app)
+- [Partner Network Registration](https://advertising.amazon.com/partners/network)
+- [API Documentation](https://advertising.amazon.com/API/docs/en-us/guides/get-started/overview)
+- [GitHub Discussions](https://github.com/amzn/ads-advanced-tools-docs/discussions)
+
+---
+
+## 📋 SONRA ÜZERİNE DÜŞÜLECEKLER (Backlog)
+
+**Son Güncelleme:** 28 Ocak 2026
+
+### 🔴 Yüksek Öncelik
+
+#### 1. MCF (Multi-Channel Fulfillment) Fee - $15.26 Gap
+**Durum:** ❌ Çözülemedi
+**Sorun:** Sellerboard $15.26 MCF gösteriyor ama:
+- Finances API'de `FBAOutboundShipmentEventList` yok (35 event type içinde)
+- Settlement Reports'ta MCF fee'si bulunamadı
+- Amazon MCF API ayrı bir API (Fulfillment Outbound API)
+
+**Araştırılacak:**
+- [ ] Sellerboard'da MCF'ye tıklayıp hangi transaction'ları gösterdiğine bak
+- [ ] Gerçekten MCF kullanılıyor mu kontrol et (Amazon dışı kanal satışı var mı?)
+- [ ] Fulfillment Outbound API entegrasyonu gerekebilir
+- [ ] Belki Sellerboard farklı bir fee'yi "MCF" olarak kategorize ediyor
+
+**İlgili Dosyalar:**
+- `/src/lib/amazon-sp-api/finances.ts` - MCF fonksiyonları eklendi ama veri gelmiyor
+- `/src/app/api/debug/mcf-fees/route.ts` - Debug endpoint
+
+---
+
+#### 2. Promo Gap - $89.17 Fark
+**Durum:** ❌ Çözülemedi
+**Sorun:** Sellerboard $456.20, Biz $367.03 gösteriyoruz
+
+**Araştırılacak:**
+- [ ] Settlement'ta promotion/discount satırlarını detaylı incele
+- [ ] Tarih aralığı farkı olabilir mi?
+- [ ] Promo tip farklılıkları (coupon, lightning deal, etc.)
+
+---
+
+#### 3. Amazon Ads API Entegrasyonu
+**Durum:** 🟡 Başvuru Yapıldı - Onay Bekleniyor (72 saat)
+**Başvuru Tarihi:** 28 Ocak 2026
+**Beklenen Onay:** 29-31 Ocak 2026
+**LwA App:** SellerGenix Advertising (amzn1.application-oa2-client.637bf87667264f4d90def8e4a905bd4f)
+
+**Yapılacaklar:**
+- [ ] Amazon Ads API başvurusu yap
+- [ ] Sponsored Products/Brands/Display kampanya verileri çek
+- [ ] ACOS, ROAS, ad spend breakdown
+- [ ] PPC Dashboard entegrasyonu
+
+**Döküman:** `/docs/AMAZON_ADS_API.md`
+
+---
+
+### 🟡 Orta Öncelik
+
+#### 4. Inbound Placement Fee
+**Durum:** ⏳ Kontrol edilmedi
+**Not:** Settlement'ta var mı kontrol et
+
+#### 5. FBA Liquidation Fees
+**Durum:** ⏳ Kontrol edilmedi
+**Not:** Finances API'de `FBALiquidationEventList: 0` - veri yok
+
+#### 6. Removal Shipment Fees
+**Durum:** ⏳ Kontrol edilmedi
+**Not:** Finances API'de `RemovalShipmentEventList: 0` - veri yok
+
+---
+
+### 🟢 Düşük Öncelik
+
+#### 7. WhatsApp Bildirimleri
+**Durum:** ⏳ Beklemede
+**Gerekli:** Twilio hesabı aktif
+
+#### 8. Oxylabs Scraping
+**Durum:** ⏳ Beklemede
+**Kullanım:** BSR tracking, competitor prices, reviews
+
+---
+
+### ✅ Tamamlanan Fee Eşleşmeleri (26 Ocak 2026)
+
+| Fee Tipi | Sellerboard | SellerGenix | Durum |
+|----------|-------------|-------------|-------|
+| FBA Per Unit | $1,938.23 | $2,025.13 | ✅ (~%4 fark kabul edilebilir) |
+| Storage | $76.37 | $76.37 | ✅ Eşleşti |
+| Long-term Storage | $2.95 | $2.94 | ✅ Eşleşti |
+| Subscription | $119.97 | $119.97 | ✅ Eşleşti |
+| Disposal | $1.53 | $1.53 | ✅ Eşleşti |
+| MCF | $15.26 | $0.00 | ❌ Çözülmedi |
+| Promo | $456.20 | $367.03 | ❌ $89.17 gap |
+
+---
 
 ---
 
@@ -974,12 +1434,303 @@ Her yeni Claude instance şu adımları takip etsin:
 - [ ] Amazon rol onayı bekleniyor (Product Listing, Amazon Fulfillment)
 - [ ] Dashboard'u gerçek fee'lerle güncelle (şu an %15 estimate)
 
+### ✅ YENİ TAMAMLANAN (26 Ocak 2026)
+- [x] **AI Chat implementasyonu** (Haiku + Opus routing) - Claude API entegrasyonu tamamlandı!
+
 ### 📋 SIRADA
 - [ ] Order Items API'den pending sipariş fiyatı çek
-- [ ] AI Chat implementasyonu (Haiku + Opus routing)
 - [ ] WhatsApp bildirimleri (Twilio entegrasyonu)
 - [ ] Oxylabs scraping (BSR, reviews, competitor prices)
 - [ ] Amazon Advertising API (rol onayı gerekebilir)
+
+---
+
+## 🤖 AI CHAT IMPLEMENTATION (26 Ocak 2026)
+
+### ✅ STATUS: TAMAMLANDI VE ÇALIŞIYOR
+
+**API Key:** Anthropic API key `.env.local`'e eklendi
+**Modeller:** Claude Haiku (hızlı) + Claude Sonnet (derin analiz)
+
+---
+
+### 📁 DOSYA YAPISI
+
+```
+src/lib/ai/
+├── classifier.ts     # Query classification (Haiku vs Opus)
+├── prompts.ts        # System prompts for both models
+├── context.ts        # User data context builder (from database)
+├── chat.ts           # Main chat service (Anthropic API)
+└── index.ts          # Module exports
+
+src/app/api/ai/
+└── chat/route.ts     # POST /api/ai/chat endpoint
+
+src/components/ai/
+└── ChatBot.tsx       # Floating chat UI component
+
+supabase/migrations/
+└── 008_ai_chat_tables.sql  # Database tables for chat history
+```
+
+---
+
+### 🔀 QUERY ROUTING (Haiku vs Opus)
+
+**Haiku (~90%)** - Hızlı, basit sorular ($0.002/query):
+- "Bugünkü satışım ne kadar?"
+- "Dünkü kârım nedir?"
+- "Bu ayki siparişler kaç?"
+- Data lookups, basit hesaplamalar
+
+**Opus/Sonnet (~10%)** - Derin analiz ($0.10/query):
+- "ACOS'umu nasıl düşürürüm?"
+- "Hangi ürünleri kaldırmalıyım?"
+- "Strateji öner"
+- Complex analysis, recommendations
+
+**Classification Triggers:**
+```typescript
+// Opus keywords (triggers deep analysis)
+const OPUS_TRIGGERS = [
+  'strategy', 'optimize', 'strateji', 'optimizasyon',
+  'nasıl artırırım', 'nasıl düşürürüm',
+  'analiz', 'karşılaştır', 'öneri', 'tavsiye',
+  'neden', 'sebep', 'sorun', 'problem', 'çöz'
+]
+
+// Haiku patterns (simple queries)
+const HAIKU_PATTERNS = [
+  /^(bugün|dün|bu hafta|bu ay)/i,
+  /^(kaç|ne kadar|toplam|göster)/i,
+  /(satış|sipariş|kâr|marj)/i
+]
+```
+
+---
+
+### 📊 USER CONTEXT (Database'den Çekilen Veriler)
+
+AI her soruda kullanıcının gerçek verilerini alıyor:
+
+```typescript
+interface UserContext {
+  seller: {
+    storeName: string
+    marketplace: string
+  }
+  periods: {
+    today: PeriodMetrics      // Bugün
+    yesterday: PeriodMetrics  // Dün
+    thisMonth: PeriodMetrics  // Bu Ay
+    lastMonth: PeriodMetrics  // Geçen Ay
+  }
+  topProducts: ProductSummary[]  // Top 5 ürün (son 30 gün)
+  trends: {
+    salesTrend: 'up' | 'down' | 'stable'
+    profitTrend: 'up' | 'down' | 'stable'
+    salesChangePercent: number
+    profitChangePercent: number
+  }
+  alerts: Alert[]  // Aktif uyarılar
+}
+
+interface PeriodMetrics {
+  sales: number
+  orders: number
+  units: number
+  amazonFees: number
+  grossProfit: number
+  netProfit: number
+  margin: number
+  adSpend: number
+  acos: number
+}
+```
+
+---
+
+### 🌐 API ENDPOINT
+
+**POST /api/ai/chat**
+
+**Request:**
+```typescript
+{
+  userId: string           // Required
+  message: string          // User's question
+  conversationHistory?: [  // Last 10 messages for context
+    { role: 'user' | 'assistant', content: string }
+  ]
+  conversationId?: string  // Optional: for grouping messages
+}
+```
+
+**Response:**
+```typescript
+{
+  success: true
+  response: string         // AI's response
+  model: 'haiku' | 'opus'  // Which model was used
+  usage: {
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    cost: number           // In USD (e.g., 0.002)
+  }
+  classification: {
+    confidence: number     // 0-1
+    reason: string         // Why this model was chosen
+  }
+}
+```
+
+---
+
+### 💬 DİL DESTEĞİ
+
+AI her iki dilde de akıcı cevap verebilir:
+
+**Türkçe Sorular:**
+- "Bugünkü satışım ne kadar?"
+- "Bu ayki kârım nedir?"
+- "Geçen ayla karşılaştır"
+- "En çok satan ürünlerim hangisi?"
+
+**English Questions:**
+- "What are my sales today?"
+- "Show me this month's profit"
+- "Compare to last month"
+- "Which products are performing best?"
+
+**Önemli:** AI, kullanıcının sorduğu dilde cevap verir (Türkçe soru → Türkçe cevap)
+
+---
+
+### 🎨 UI COMPONENT (ChatBot.tsx)
+
+**Features:**
+- 💬 Floating chat button (sağ alt köşe)
+- 📱 Expandable chat window (400x600px)
+- ✨ Premium UI (gradient header, animations)
+- 📝 Message history with timestamps
+- 🔄 Loading indicator
+- 🌐 Bilingual suggestions (TR + EN)
+- 🏷️ Model indicator (Haiku = Quick, Opus = Deep Analysis)
+
+**Props:**
+```typescript
+interface ChatBotProps {
+  userId: string  // Required for fetching user data
+}
+```
+
+---
+
+### 🗄️ DATABASE TABLES
+
+**ai_usage** - Kullanım takibi:
+```sql
+CREATE TABLE ai_usage (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id),
+  month TEXT,              -- '2026-01'
+  queries_count INTEGER,
+  haiku_tokens INTEGER,
+  opus_tokens INTEGER,
+  total_cost DECIMAL(10,4),
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
+)
+```
+
+**ai_chat_history** - Sohbet geçmişi:
+```sql
+CREATE TABLE ai_chat_history (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id),
+  conversation_id UUID,
+  role TEXT,               -- 'user' | 'assistant'
+  content TEXT,
+  model TEXT,              -- 'haiku' | 'opus'
+  tokens_input INTEGER,
+  tokens_output INTEGER,
+  cost DECIMAL(10,6),
+  created_at TIMESTAMPTZ
+)
+```
+
+---
+
+### ⚙️ ENVIRONMENT VARIABLES
+
+```env
+# Anthropic API Key (Claude)
+ANTHROPIC_API_KEY="sk-ant-api03-..."
+```
+
+---
+
+### 📝 ÖRNEK KULLANIM
+
+**1. Basit Soru (Haiku):**
+```
+User: "Bugünkü satışım ne kadar?"
+
+AI: 📊 Bugünkü Performansınız (26 Ocak 2026)
+
+💰 Satış: $1,234.56
+📦 Siparişler: 23
+📈 Birimler: 34
+💵 Net Kâr: $456.78
+📊 Marj: 37.0%
+
+vs Dün: +12.5% ↑
+```
+
+**2. Karmaşık Soru (Opus):**
+```
+User: "Kârımı nasıl artırabilirim?"
+
+AI: # 📈 Kâr Artırma Stratejisi
+
+## Mevcut Durum
+- Şu anki marjınız: 28.5%
+- Hedef marj: 35%+
+
+## Öneriler
+
+### 1. ACOS Optimizasyonu
+Mevcut ACOS'unuz %32. Bu çok yüksek...
+
+### 2. COGS Azaltma
+Ürün maliyetlerinizi %10 düşürebilirseniz...
+
+### 3. Amazon Fees
+Storage fee'leriniz yüksek görünüyor...
+
+## Beklenen Sonuç
+Bu adımlarla aylık kârınızı ~$500 artırabilirsiniz.
+```
+
+---
+
+### ⚠️ ÖNEMLİ NOTLAR
+
+1. **API Key Güvenliği:** Key sadece server-side'da kullanılıyor (.env.local)
+2. **Rate Limiting:** Anthropic API kendi rate limit'ini uygular
+3. **Cost Control:** Haiku öncelikli routing ile maliyet minimize
+4. **Data Privacy:** Kullanıcı verileri sadece context olarak gönderiliyor, saklanmıyor
+
+---
+
+### 🔗 İLGİLİ DOSYALAR
+
+- `/docs/AI_CHAT.md` - Detaylı dokümantasyon
+- `/src/lib/ai/` - AI service kodları
+- `/src/components/ai/ChatBot.tsx` - UI component
+- `/supabase/migrations/008_ai_chat_tables.sql` - Database migration
 
 ---
 
@@ -1132,6 +1883,146 @@ const selectedMarketplace = userSelection || 'US'
 const marketplaceId = MARKETPLACES[selectedMarketplace]
 const result = await getAllPeriodSalesMetrics(refreshToken, [marketplaceId])
 ```
+
+---
+
+## 🤖 AI CHAT - KAPSAMLI VERİ ERİŞİMİ (27 Ocak 2026)
+
+### ✅ TAMAMLANDI: AI Artık TÜM Verilere Erişebiliyor
+
+**Tarih:** 27 Ocak 2026
+**Durum:** ✅ **PRODUCTION'DA ÇALIŞIYOR**
+
+---
+
+### 🎯 AI Chat Veri Kaynakları
+
+AI Chat artık aşağıdaki tüm veri kaynaklarına erişebiliyor:
+
+#### 1. **Dönemsel Metrikler (Amazon Sales API - Real-time)**
+
+| Dönem | Veri Kaynağı | Açıklama |
+|-------|--------------|----------|
+| Today | Sales API | Bugünkü satışlar |
+| Yesterday | Sales API | Dünkü satışlar |
+| Last 7 Days | Sales API | Son 7 günlük toplam |
+| Last 30 Days | Sales API | Son 30 günlük toplam |
+| This Month | Sales API | Bu ay başından bugüne |
+| Last Month | Sales API | Geçen ay tamamı |
+| Custom Range | Sales API | Herhangi özel tarih aralığı |
+
+**Her dönem için metrikler:**
+- Sales, Orders, Units
+- Amazon Fees (FBA, Referral, Storage, Subscription, Other)
+- Gross Profit, Net Profit, Margin
+- Ad Spend, ACOS
+
+#### 2. **Fee Breakdown (Database - Settlement Reports)**
+
+```
+Bu Ay / Geçen Ay:
+├── FBA Fulfillment Fees
+├── Referral Fees
+├── Storage Fees
+├── Subscription Fees
+├── Refund Commission
+└── Other Fees
+```
+
+#### 3. **Top 10 Ürünler (Son 30 Gün)**
+
+```
+Her ürün için:
+├── Name, ASIN, SKU
+├── Revenue
+├── Profit
+├── Units
+└── Margin %
+```
+
+#### 4. **Trendler**
+
+- Sales Trend (up/down/stable + % change vs last month)
+- Profit Trend (up/down/stable + % change vs last month)
+
+#### 5. **Uyarılar (Auto-generated)**
+
+- Low margin alert (<15%)
+- High ACOS alert (>30%)
+- Sales decline alert (>10% drop)
+
+#### 6. **Refund Verileri**
+
+- This Month: count + amount
+- Last Month: count + amount
+
+#### 7. **Historical Data (Monthly Breakdown)**
+
+Tüm geçmiş verilerin aylık kırılımı:
+```
+2025-10: $609.39 | 58 orders
+2025-11: $732.27 | 66 orders
+2025-12: $1,373.63 | 109 orders
+2026-01: $1,438.31 | 141 orders
+```
+
+---
+
+### 📁 İlgili Dosyalar
+
+| Dosya | Açıklama |
+|-------|----------|
+| `/src/lib/ai/context.ts` | Veri toplama ve context oluşturma |
+| `/src/lib/ai/chat.ts` | Claude API entegrasyonu |
+| `/src/lib/ai/classifier.ts` | Haiku/Opus yönlendirme |
+| `/src/lib/ai/prompts.ts` | System prompt'lar |
+| `/src/components/ai/ChatBot.tsx` | UI bileşeni |
+| `/src/app/api/ai/chat/route.ts` | API endpoint |
+
+---
+
+### 🔑 Önemli Fonksiyonlar
+
+**`getUserContext(userId)`:**
+- Amazon Sales API kullanarak tüm dönem metriklerini çeker
+- Fee breakdown'ı database'den çeker
+- Top 10 ürünleri hesaplar
+- Trendleri ve uyarıları oluşturur
+
+**`getMetricsForPeriod(userId, startDate, endDate, label, refreshToken)`:**
+- Amazon Sales API'den satış/sipariş/ünite verilerini çeker
+- Database'den fee verilerini alır
+- Profit hesaplamalarını yapar
+
+**`getCustomRangeMetrics(userId, startDateStr, endDateStr)`:**
+- Herhangi özel tarih aralığı için metrik çeker
+- AI "25 Ekim - 25 Ocak arası" gibi sorulara cevap verebilir
+
+**`getFullHistoricalContext(userId)`:**
+- Tüm geçmiş verilerin aylık kırılımını döner
+- AI uzun dönem trend analizi yapabilir
+
+---
+
+### 🚀 Kullanım Örnekleri
+
+**Sorular AI cevaplayabilir:**
+- "Bu ayki satışlarım ne kadar?" ✅
+- "Son 7 gün vs son 30 gün karşılaştır" ✅
+- "25 Ekim - 25 Ocak arası ciro ne?" ✅
+- "Fee breakdown'ımı ver" ✅
+- "En çok satan ürünlerim hangileri?" ✅
+- "Geçen aya göre trend nasıl?" ✅
+- "Kar marjım neden düşük?" ✅
+
+---
+
+### ⚠️ Bilinen Limitasyonlar
+
+1. **Refund verisi:** Şu an 0 dönüyor - Settlement Report parsing gerekli
+2. **Ad Spend:** Tahmini (%8) - Advertising API entegrasyonu gerekli
+3. **COGS:** Tahmini (%30) - User input gerekli
+4. **Real-time PPC:** Henüz yok - Amazon Advertising API gerekli
 
 ---
 

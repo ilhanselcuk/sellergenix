@@ -1,7 +1,17 @@
 'use client'
 
 import React, { useState } from 'react'
-import { ChevronDown, ChevronRight, Download, Search, Settings, MoreHorizontal, Package, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, Search, Settings, MoreHorizontal, Package } from 'lucide-react'
+
+// Starbucks Color Palette
+const STARBUCKS = {
+  primaryGreen: '#00704A',
+  darkGreen: '#1E3932',
+  lightGreen: '#D4E9E2',
+  gold: '#CBA258',
+  cream: '#F2F0EB',
+  white: '#FFFFFF',
+}
 
 export interface ProductData {
   id: string
@@ -53,37 +63,45 @@ function ProductRow({
   }
 
   const getMarginColor = (margin: number) => {
-    if (margin >= 30) return 'text-emerald-600'
-    if (margin >= 15) return 'text-amber-600'
-    return 'text-red-600'
+    if (margin >= 30) return STARBUCKS.primaryGreen
+    if (margin >= 15) return STARBUCKS.gold
+    return '#DC2626'
   }
 
   const getRoiColor = (roi: number) => {
-    if (roi >= 100) return 'text-emerald-600'
-    if (roi >= 50) return 'text-amber-600'
-    return 'text-red-600'
+    if (roi >= 100) return STARBUCKS.primaryGreen
+    if (roi >= 50) return STARBUCKS.gold
+    return '#DC2626'
   }
 
   return (
-    <tr className={`
-      border-b border-gray-100 hover:bg-gray-50 transition-colors
-      ${isChild ? 'bg-gray-50/50' : ''}
-    `}>
+    <tr
+      className="transition-colors"
+      style={{
+        borderBottom: `1px solid ${STARBUCKS.lightGreen}`,
+        backgroundColor: isChild ? `${STARBUCKS.lightGreen}40` : 'transparent',
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.lightGreen}
+      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = isChild ? `${STARBUCKS.lightGreen}40` : 'transparent'}
+    >
       {/* Expand/Collapse */}
       <td className="py-3 px-2 w-10">
         {product.isParent && product.children && product.children.length > 0 ? (
           <button
             onClick={onToggle}
-            className="p-1 hover:bg-gray-200 rounded transition-colors"
+            className="p-1 rounded transition-colors"
+            style={{ backgroundColor: 'transparent' }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.lightGreen}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
             {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-gray-500" />
+              <ChevronDown className="w-4 h-4" style={{ color: STARBUCKS.primaryGreen }} />
             ) : (
-              <ChevronRight className="w-4 h-4 text-gray-500" />
+              <ChevronRight className="w-4 h-4" style={{ color: STARBUCKS.primaryGreen }} />
             )}
           </button>
         ) : isChild ? (
-          <div className="w-4 h-4 ml-1 border-l-2 border-b-2 border-gray-300 rounded-bl" />
+          <div className="w-4 h-4 ml-1 border-l-2 border-b-2 rounded-bl" style={{ borderColor: STARBUCKS.primaryGreen + '50' }} />
         ) : null}
       </td>
 
@@ -94,18 +112,19 @@ function ProductRow({
             <img
               src={product.imageUrl}
               alt={product.title}
-              className="w-10 h-10 rounded-lg object-cover bg-gray-100"
+              className="w-10 h-10 rounded-lg object-cover"
+              style={{ backgroundColor: STARBUCKS.lightGreen }}
             />
           ) : (
-            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
-              <Package className="w-5 h-5 text-gray-400" />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: STARBUCKS.lightGreen }}>
+              <Package className="w-5 h-5" style={{ color: STARBUCKS.primaryGreen }} />
             </div>
           )}
           <div className="min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate max-w-[200px]">
+            <p className="text-sm font-medium truncate max-w-[200px]" style={{ color: STARBUCKS.darkGreen }}>
               {product.title}
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs" style={{ color: STARBUCKS.primaryGreen }}>
               {product.asin} {product.sku && `• ${product.sku}`}
             </p>
           </div>
@@ -115,73 +134,73 @@ function ProductRow({
       {/* Stock */}
       <td className="py-3 px-4 text-right">
         {product.stock !== null ? (
-          <span className={`text-sm font-medium ${product.stock < 10 ? 'text-red-600' : 'text-gray-900'}`}>
+          <span className="text-sm font-medium" style={{ color: product.stock < 10 ? '#DC2626' : STARBUCKS.darkGreen }}>
             {product.stock.toLocaleString()}
           </span>
         ) : (
-          <span className="text-xs text-gray-400 italic">Coming Soon</span>
+          <span className="text-xs italic" style={{ color: STARBUCKS.primaryGreen + 'AA' }}>Coming Soon</span>
         )}
       </td>
 
       {/* Units */}
       <td className="py-3 px-4 text-right">
-        <span className="text-sm font-medium text-gray-900">
+        <span className="text-sm font-medium" style={{ color: STARBUCKS.darkGreen }}>
           {product.units.toLocaleString()}
         </span>
       </td>
 
       {/* Refunds */}
       <td className="py-3 px-4 text-right">
-        <span className={`text-sm font-medium ${product.refunds > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+        <span className="text-sm font-medium" style={{ color: product.refunds > 0 ? '#DC2626' : STARBUCKS.primaryGreen + 'AA' }}>
           {product.refunds}
         </span>
       </td>
 
       {/* COGS */}
       <td className="py-3 px-4 text-right">
-        <span className="text-sm font-medium text-orange-600">
+        <span className="text-sm font-medium" style={{ color: STARBUCKS.gold }}>
           {formatCurrency(product.cogs)}
         </span>
       </td>
 
       {/* Sales */}
       <td className="py-3 px-4 text-right">
-        <span className="text-sm font-semibold text-gray-900">
+        <span className="text-sm font-semibold" style={{ color: STARBUCKS.darkGreen }}>
           {formatCurrency(product.sales)}
         </span>
       </td>
 
       {/* Ad Spend */}
       <td className="py-3 px-4 text-right">
-        <span className="text-sm font-medium text-red-600">
+        <span className="text-sm font-medium" style={{ color: '#DC2626' }}>
           {formatCurrency(product.adSpend)}
         </span>
       </td>
 
       {/* Gross Profit */}
       <td className="py-3 px-4 text-right">
-        <span className={`text-sm font-medium ${product.grossProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+        <span className="text-sm font-medium" style={{ color: product.grossProfit >= 0 ? STARBUCKS.primaryGreen : '#DC2626' }}>
           {formatCurrency(product.grossProfit)}
         </span>
       </td>
 
       {/* Net Profit */}
       <td className="py-3 px-4 text-right">
-        <span className={`text-sm font-semibold ${product.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+        <span className="text-sm font-semibold" style={{ color: product.netProfit >= 0 ? STARBUCKS.primaryGreen : '#DC2626' }}>
           {formatCurrency(product.netProfit)}
         </span>
       </td>
 
       {/* Margin */}
       <td className="py-3 px-4 text-right">
-        <span className={`text-sm font-medium ${getMarginColor(product.margin)}`}>
+        <span className="text-sm font-medium" style={{ color: getMarginColor(product.margin) }}>
           {product.margin.toFixed(1)}%
         </span>
       </td>
 
       {/* ROI */}
       <td className="py-3 px-4 text-right">
-        <span className={`text-sm font-medium ${getRoiColor(product.roi)}`}>
+        <span className="text-sm font-medium" style={{ color: getRoiColor(product.roi) }}>
           {product.roi.toFixed(0)}%
         </span>
       </td>
@@ -189,11 +208,11 @@ function ProductRow({
       {/* BSR */}
       <td className="py-3 px-4 text-right">
         {product.bsr !== null ? (
-          <span className="text-sm font-medium text-gray-700">
+          <span className="text-sm font-medium" style={{ color: STARBUCKS.darkGreen }}>
             #{product.bsr.toLocaleString()}
           </span>
         ) : (
-          <span className="text-xs text-gray-400">-</span>
+          <span className="text-xs" style={{ color: STARBUCKS.primaryGreen + 'AA' }}>-</span>
         )}
       </td>
 
@@ -201,7 +220,16 @@ function ProductRow({
       <td className="py-3 px-4 text-right">
         <button
           onClick={() => onProductClick?.(product)}
-          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          className="p-1.5 rounded-lg transition-colors"
+          style={{ color: STARBUCKS.primaryGreen }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = STARBUCKS.lightGreen
+            e.currentTarget.style.color = STARBUCKS.darkGreen
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+            e.currentTarget.style.color = STARBUCKS.primaryGreen
+          }}
         >
           <MoreHorizontal className="w-4 h-4" />
         </button>
@@ -313,27 +341,37 @@ export default function ProductTable({ products, onProductClick, onSettingsClick
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+    <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: STARBUCKS.cream, border: `1px solid ${STARBUCKS.lightGreen}` }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-        <h3 className="text-lg font-semibold text-gray-900">Products</h3>
+      <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: `1px solid ${STARBUCKS.lightGreen}` }}>
+        <h3 className="text-lg font-semibold" style={{ color: STARBUCKS.darkGreen }}>Products</h3>
         <div className="flex items-center gap-3">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: STARBUCKS.primaryGreen }} />
             <input
               type="text"
               placeholder="Search ASIN, SKU, Title..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
+              className="pl-9 pr-4 py-2 text-sm rounded-lg focus:outline-none focus:ring-2 w-64"
+              style={{
+                backgroundColor: STARBUCKS.white,
+                border: `1px solid ${STARBUCKS.lightGreen}`,
+                color: STARBUCKS.darkGreen,
+              }}
+              onFocus={(e) => e.currentTarget.style.borderColor = STARBUCKS.primaryGreen}
+              onBlur={(e) => e.currentTarget.style.borderColor = STARBUCKS.lightGreen}
             />
           </div>
 
           {/* Product Settings */}
           <button
             onClick={onSettingsClick}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+            style={{ backgroundColor: STARBUCKS.lightGreen, color: STARBUCKS.darkGreen }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.primaryGreen + '30'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = STARBUCKS.lightGreen}
           >
             <Settings className="w-4 h-4" />
             Product Settings
@@ -342,7 +380,8 @@ export default function ProductTable({ products, onProductClick, onSettingsClick
           {/* Export */}
           <button
             onClick={exportCSV}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all hover:shadow-lg"
+            style={{ background: `linear-gradient(135deg, ${STARBUCKS.darkGreen} 0%, ${STARBUCKS.primaryGreen} 100%)`, color: STARBUCKS.white }}
           >
             <Download className="w-4 h-4" />
             Export CSV
@@ -351,48 +390,48 @@ export default function ProductTable({ products, onProductClick, onSettingsClick
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" style={{ backgroundColor: STARBUCKS.white }}>
         <table className="w-full">
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-100">
+            <tr style={{ backgroundColor: STARBUCKS.lightGreen, borderBottom: `1px solid ${STARBUCKS.primaryGreen}20` }}>
               <th className="py-3 px-2 w-10"></th>
-              <th className="py-3 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 Product
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 Stock
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 Units
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 Refunds
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 COGS
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 Sales
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 Ad Spend
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 Gross
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 Net
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 Margin
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 ROI
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 BSR
               </th>
-              <th className="py-3 px-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider" style={{ color: STARBUCKS.darkGreen }}>
                 More
               </th>
             </tr>
@@ -421,38 +460,38 @@ export default function ProductTable({ products, onProductClick, onSettingsClick
             ))}
 
             {/* Totals Row */}
-            <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold">
+            <tr className="font-semibold" style={{ backgroundColor: STARBUCKS.lightGreen, borderTop: `2px solid ${STARBUCKS.primaryGreen}` }}>
               <td className="py-4 px-2"></td>
-              <td className="py-4 px-4 text-sm text-gray-900">
+              <td className="py-4 px-4 text-sm" style={{ color: STARBUCKS.darkGreen }}>
                 Total ({filteredProducts.length} products)
               </td>
-              <td className="py-4 px-4 text-right text-sm text-gray-500">-</td>
-              <td className="py-4 px-4 text-right text-sm text-gray-900">
+              <td className="py-4 px-4 text-right text-sm" style={{ color: STARBUCKS.primaryGreen + 'AA' }}>-</td>
+              <td className="py-4 px-4 text-right text-sm" style={{ color: STARBUCKS.darkGreen }}>
                 {totals.units.toLocaleString()}
               </td>
-              <td className="py-4 px-4 text-right text-sm text-red-600">
+              <td className="py-4 px-4 text-right text-sm" style={{ color: '#DC2626' }}>
                 {totals.refunds}
               </td>
-              <td className="py-4 px-4 text-right text-sm text-orange-600">
+              <td className="py-4 px-4 text-right text-sm" style={{ color: STARBUCKS.gold }}>
                 ${totals.cogs.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </td>
-              <td className="py-4 px-4 text-right text-sm text-gray-900">
+              <td className="py-4 px-4 text-right text-sm" style={{ color: STARBUCKS.darkGreen }}>
                 ${totals.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </td>
-              <td className="py-4 px-4 text-right text-sm text-red-600">
+              <td className="py-4 px-4 text-right text-sm" style={{ color: '#DC2626' }}>
                 ${totals.adSpend.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </td>
-              <td className="py-4 px-4 text-right text-sm text-emerald-600">
+              <td className="py-4 px-4 text-right text-sm" style={{ color: STARBUCKS.primaryGreen }}>
                 ${totals.grossProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </td>
-              <td className="py-4 px-4 text-right text-sm text-emerald-600">
+              <td className="py-4 px-4 text-right text-sm" style={{ color: STARBUCKS.primaryGreen }}>
                 ${totals.netProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </td>
-              <td className="py-4 px-4 text-right text-sm text-gray-900">
+              <td className="py-4 px-4 text-right text-sm" style={{ color: STARBUCKS.darkGreen }}>
                 {totalMargin.toFixed(1)}%
               </td>
-              <td className="py-4 px-4 text-right text-sm text-gray-500">-</td>
-              <td className="py-4 px-4 text-right text-sm text-gray-500">-</td>
+              <td className="py-4 px-4 text-right text-sm" style={{ color: STARBUCKS.primaryGreen + 'AA' }}>-</td>
+              <td className="py-4 px-4 text-right text-sm" style={{ color: STARBUCKS.primaryGreen + 'AA' }}>-</td>
               <td className="py-4 px-4"></td>
             </tr>
           </tbody>
@@ -461,13 +500,16 @@ export default function ProductTable({ products, onProductClick, onSettingsClick
 
       {/* Empty State */}
       {filteredProducts.length === 0 && (
-        <div className="py-12 text-center">
-          <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500">No products found</p>
+        <div className="py-12 text-center" style={{ backgroundColor: STARBUCKS.white }}>
+          <Package className="w-12 h-12 mx-auto mb-3" style={{ color: STARBUCKS.lightGreen }} />
+          <p style={{ color: STARBUCKS.primaryGreen }}>No products found</p>
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="mt-2 text-sm text-blue-600 hover:text-blue-700"
+              className="mt-2 text-sm font-medium transition-colors"
+              style={{ color: STARBUCKS.primaryGreen }}
+              onMouseEnter={(e) => e.currentTarget.style.color = STARBUCKS.darkGreen}
+              onMouseLeave={(e) => e.currentTarget.style.color = STARBUCKS.primaryGreen}
             >
               Clear search
             </button>

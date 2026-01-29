@@ -27,32 +27,6 @@ export type SyncFeesEvent = {
   };
 };
 
-export type SyncOrderFeesEvent = {
-  name: "amazon/sync.order-fees";
-  data: {
-    userId: string;
-    refreshToken: string;
-    amazonOrderId: string;
-  };
-};
-
-export type RefreshProductAveragesEvent = {
-  name: "amazon/refresh.product-averages";
-  data: {
-    userId: string;
-  };
-};
-
-export type SyncHistoricalDataEvent = {
-  name: "amazon/sync.historical";
-  data: {
-    userId: string;
-    refreshToken: string;
-    marketplaceIds: string[];
-    yearsBack?: number; // Default 2 years
-  };
-};
-
 export type SyncHistoricalDataKioskEvent = {
   name: "amazon/sync.historical-kiosk";
   data: {
@@ -91,27 +65,9 @@ export type SyncSettlementFeesEvent = {
   };
 };
 
-/**
- * MCF (Multi-Channel Fulfillment) Fee Sync
- * Fetches MCF fees from Finances API and saves to service_fees table
- * MCF fees are NOT in Settlement Reports - they're only in Finances API!
- */
-export type SyncMCFFeesEvent = {
-  name: "amazon/sync.mcf-fees";
-  data: {
-    userId: string;
-    refreshToken: string;
-    monthsBack?: number; // Default 24 months
-  };
-};
-
-// Union type for all events
+// Union type for all events (cleaned up unused types on 2026-01-28)
 export type InngestEvents =
   | SyncFeesEvent
-  | SyncOrderFeesEvent
-  | RefreshProductAveragesEvent
-  | SyncHistoricalDataEvent
   | SyncHistoricalDataKioskEvent
   | SyncHistoricalDataReportsEvent
-  | SyncSettlementFeesEvent
-  | SyncMCFFeesEvent;
+  | SyncSettlementFeesEvent;

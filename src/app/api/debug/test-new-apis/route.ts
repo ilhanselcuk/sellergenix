@@ -53,37 +53,99 @@ export async function GET(request: NextRequest) {
     }
 
     // ============================================
-    // TEST 1: FBA Inventory API
+    // TEST 1: FBA Inventory API - Try multiple formats
     // GET /fba/inventory/v1/summaries
     // ============================================
+
+    // Format 1: Array marketplaceIds (what we were using)
     try {
-      // Note: marketplaceIds must be an array according to API spec
       const inventoryResponse = await client.callAPI({
         operation: 'getInventorySummaries',
         endpoint: 'fbaInventory',
         query: {
           granularityType: 'Marketplace',
           granularityId: marketplaceId,
-          marketplaceIds: [marketplaceId], // Array format
-          details: 'true', // String 'true' not boolean
+          marketplaceIds: [marketplaceId],
+          details: true,
         },
       })
 
-      results.tests.fbaInventory = {
+      results.tests.fbaInventory_arrayFormat = {
         success: true,
         status: 'API WORKING! 🎉',
+        format: 'Array marketplaceIds',
         totalItems: inventoryResponse.payload?.inventorySummaries?.length || 0,
         pagination: inventoryResponse.payload?.pagination || null,
         sampleData: inventoryResponse.payload?.inventorySummaries?.slice(0, 3) || [],
         granularity: inventoryResponse.payload?.granularity || null
       }
     } catch (error: any) {
-      results.tests.fbaInventory = {
+      results.tests.fbaInventory_arrayFormat = {
         success: false,
-        status: error.response?.status === 403 ? 'Still 403 - Need re-authorization' : 'Error',
+        format: 'Array marketplaceIds',
+        status: error.response?.status === 403 ? '403 Forbidden' : 'Error',
         error: error.message,
         statusCode: error.response?.status,
         details: error.response?.data || null
+      }
+    }
+
+    // Format 2: String marketplaceIds (some examples use this)
+    try {
+      const inventoryResponse2 = await client.callAPI({
+        operation: 'getInventorySummaries',
+        endpoint: 'fbaInventory',
+        query: {
+          granularityType: 'Marketplace',
+          granularityId: marketplaceId,
+          marketplaceIds: marketplaceId, // String instead of array
+          details: true,
+        },
+      })
+
+      results.tests.fbaInventory_stringFormat = {
+        success: true,
+        status: 'API WORKING! 🎉',
+        format: 'String marketplaceIds',
+        totalItems: inventoryResponse2.payload?.inventorySummaries?.length || 0,
+        sampleData: inventoryResponse2.payload?.inventorySummaries?.slice(0, 3) || [],
+      }
+    } catch (error: any) {
+      results.tests.fbaInventory_stringFormat = {
+        success: false,
+        format: 'String marketplaceIds',
+        status: error.response?.status === 403 ? '403 Forbidden' : 'Error',
+        error: error.message,
+        statusCode: error.response?.status,
+      }
+    }
+
+    // Format 3: Without endpoint parameter (let library auto-detect)
+    try {
+      const inventoryResponse3 = await client.callAPI({
+        operation: 'getInventorySummaries',
+        query: {
+          granularityType: 'Marketplace',
+          granularityId: marketplaceId,
+          marketplaceIds: marketplaceId,
+          details: true,
+        },
+      })
+
+      results.tests.fbaInventory_noEndpoint = {
+        success: true,
+        status: 'API WORKING! 🎉',
+        format: 'No endpoint param',
+        totalItems: inventoryResponse3.payload?.inventorySummaries?.length || 0,
+        sampleData: inventoryResponse3.payload?.inventorySummaries?.slice(0, 3) || [],
+      }
+    } catch (error: any) {
+      results.tests.fbaInventory_noEndpoint = {
+        success: false,
+        format: 'No endpoint param',
+        status: error.response?.status === 403 ? '403 Forbidden' : 'Error',
+        error: error.message,
+        statusCode: error.response?.status,
       }
     }
 

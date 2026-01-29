@@ -4,6 +4,16 @@ import React, { useState } from 'react'
 import { X, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react'
 import { PeriodData } from './PeriodCard'
 
+// Starbucks Color Palette
+const STARBUCKS = {
+  primaryGreen: '#00704A',
+  darkGreen: '#1E3932',
+  lightGreen: '#D4E9E2',
+  gold: '#CBA258',
+  cream: '#F2F0EB',
+  white: '#FFFFFF',
+}
+
 interface DetailedBreakdownModalProps {
   isOpen: boolean
   onClose: () => void
@@ -31,11 +41,11 @@ function shouldShowSubscriptionFee(label: string): boolean {
   return true
 }
 
-// Collapsible section component - Sellerboard style
+// Collapsible section component - Sellerboard style with Starbucks theme
 function CollapsibleRow({
   label,
   value,
-  valueColor = 'text-gray-900',
+  valueColor = STARBUCKS.darkGreen,
   children,
   defaultOpen = false,
   hasWarning = false,
@@ -50,28 +60,45 @@ function CollapsibleRow({
   isBold?: boolean
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
+  const [isHovered, setIsHovered] = useState(false)
   const hasChildren = React.Children.count(children) > 0
 
   return (
-    <div className="border-b border-gray-100 last:border-0">
+    <div style={{ borderBottom: `1px solid ${STARBUCKS.lightGreen}` }} className="last:border-0">
       <button
         onClick={() => hasChildren && setIsOpen(!isOpen)}
-        className={`w-full flex items-center justify-between py-2.5 px-4 ${hasChildren ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'} transition-colors`}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        className={`w-full flex items-center justify-between py-2.5 px-4 transition-colors`}
+        style={{
+          backgroundColor: isHovered && hasChildren ? STARBUCKS.lightGreen + '40' : 'transparent',
+          cursor: hasChildren ? 'pointer' : 'default'
+        }}
       >
         <div className="flex items-center gap-2">
           {hasChildren ? (
             isOpen ? (
-              <ChevronDown className="w-4 h-4 text-gray-400" />
+              <ChevronDown className="w-4 h-4" style={{ color: STARBUCKS.primaryGreen }} />
             ) : (
-              <ChevronRight className="w-4 h-4 text-gray-400" />
+              <ChevronRight className="w-4 h-4" style={{ color: STARBUCKS.primaryGreen }} />
             )
           ) : (
             <span className="w-4" />
           )}
-          <span className={`${isBold ? 'font-semibold' : 'font-medium'} text-gray-900`}>{label}</span>
-          {hasWarning && <AlertCircle className="w-4 h-4 text-amber-500" />}
+          <span
+            className={`${isBold ? 'font-semibold' : 'font-medium'}`}
+            style={{ color: STARBUCKS.darkGreen }}
+          >
+            {label}
+          </span>
+          {hasWarning && <AlertCircle className="w-4 h-4" style={{ color: STARBUCKS.gold }} />}
         </div>
-        <span className={`${isBold ? 'font-bold' : 'font-semibold'} ${valueColor}`}>{value}</span>
+        <span
+          className={`${isBold ? 'font-bold' : 'font-semibold'}`}
+          style={{ color: valueColor }}
+        >
+          {value}
+        </span>
       </button>
       {isOpen && hasChildren && (
         <div className="pb-2">
@@ -86,7 +113,7 @@ function CollapsibleRow({
 function SubRow({
   label,
   value,
-  valueColor = 'text-gray-700',
+  valueColor = STARBUCKS.darkGreen + 'CC',
 }: {
   label: string
   value: string
@@ -94,18 +121,21 @@ function SubRow({
 }) {
   return (
     <div className="flex items-center justify-between py-1.5 px-4 pl-10">
-      <span className="text-sm text-gray-600">{label}</span>
-      <span className={`text-sm font-medium ${valueColor}`}>{value}</span>
+      <span className="text-sm" style={{ color: STARBUCKS.darkGreen + 'AA' }}>{label}</span>
+      <span className="text-sm font-medium" style={{ color: valueColor }}>{value}</span>
     </div>
   )
 }
 
 // Divider
 function Divider() {
-  return <div className="h-px bg-gray-200 my-2" />
+  return <div className="h-px my-2" style={{ backgroundColor: STARBUCKS.lightGreen }} />
 }
 
 export default function DetailedBreakdownModal({ isOpen, onClose, data }: DetailedBreakdownModalProps) {
+  const [closeHovered, setCloseHovered] = useState(false)
+  const [buttonHovered, setButtonHovered] = useState(false)
+
   if (!isOpen || !data) return null
 
   const formatCurrency = (value: number) => {
@@ -177,24 +207,40 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 backdrop-blur-sm"
+        style={{ backgroundColor: STARBUCKS.darkGreen + '80' }}
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+      <div
+        className="relative rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col"
+        style={{ backgroundColor: STARBUCKS.white }}
+      >
         {/* Left accent border */}
-        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-blue-500 via-blue-400 to-blue-500 rounded-l-2xl" />
+        <div
+          className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl"
+          style={{ background: `linear-gradient(to bottom, ${STARBUCKS.primaryGreen}, ${STARBUCKS.darkGreen})` }}
+        />
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div
+          className="flex items-center justify-between px-6 py-4"
+          style={{ borderBottom: `1px solid ${STARBUCKS.lightGreen}` }}
+        >
           <div>
-            <h2 className="text-lg font-bold text-gray-900">{data.label}</h2>
-            <p className="text-sm text-gray-500">{formatDateRange()}</p>
+            <h2 className="text-lg font-bold" style={{ color: STARBUCKS.darkGreen }}>{data.label}</h2>
+            <p className="text-sm" style={{ color: STARBUCKS.primaryGreen }}>{formatDateRange()}</p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            onMouseEnter={() => setCloseHovered(true)}
+            onMouseLeave={() => setCloseHovered(false)}
+            className="p-2 rounded-lg transition-colors"
+            style={{
+              color: closeHovered ? STARBUCKS.darkGreen : STARBUCKS.primaryGreen,
+              backgroundColor: closeHovered ? STARBUCKS.lightGreen : 'transparent'
+            }}
           >
             <X className="w-5 h-5" />
           </button>
@@ -206,12 +252,12 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           <CollapsibleRow
             label="Sales"
             value={formatCurrency(data.sales)}
-            valueColor="text-gray-900"
+            valueColor={STARBUCKS.darkGreen}
             defaultOpen={false}
           >
             <SubRow label="Organic" value={formatCurrency(data.sales)} />
-            <SubRow label="Sponsored Products (same day)" value="$0.00" valueColor="text-gray-400" />
-            <SubRow label="Sponsored Display (same day)" value="$0.00" valueColor="text-gray-400" />
+            <SubRow label="Sponsored Products (same day)" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
+            <SubRow label="Sponsored Display (same day)" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
           </CollapsibleRow>
 
           {/* Units - Expandable */}
@@ -221,62 +267,47 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
             defaultOpen={false}
           >
             <SubRow label="Organic" value={data.units.toLocaleString()} />
-            <SubRow label="Sponsored Products (same day)" value="0" valueColor="text-gray-400" />
-            <SubRow label="Sponsored Display (same day)" value="0" valueColor="text-gray-400" />
+            <SubRow label="Sponsored Products (same day)" value="0" valueColor={STARBUCKS.darkGreen + '60'} />
+            <SubRow label="Sponsored Display (same day)" value="0" valueColor={STARBUCKS.darkGreen + '60'} />
           </CollapsibleRow>
 
           {/* Promo */}
           <CollapsibleRow
             label="Promo"
             value={formatCurrency(-safePromo)}
-            valueColor={safePromo > 0 ? "text-red-600" : "text-gray-500"}
+            valueColor={safePromo > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'}
           />
 
           {/* Advertising cost - Expandable */}
           <CollapsibleRow
             label="Advertising cost"
             value={formatCurrency(-safeAdSpend)}
-            valueColor={safeAdSpend > 0 ? "text-red-600" : "text-gray-500"}
+            valueColor={safeAdSpend > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'}
             defaultOpen={false}
           >
-            <SubRow label="Sponsored Products" value={formatCurrency(-safeAdSpend)} valueColor="text-red-600" />
-            <SubRow label="Sponsored Brands Video" value="$0.00" valueColor="text-gray-400" />
-            <SubRow label="Sponsored Display" value="$0.00" valueColor="text-gray-400" />
-            <SubRow label="Sponsored Brands" value="$0.00" valueColor="text-gray-400" />
+            <SubRow label="Sponsored Products" value={formatCurrency(-safeAdSpend)} valueColor="#DC2626" />
+            <SubRow label="Sponsored Brands Video" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
+            <SubRow label="Sponsored Display" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
+            <SubRow label="Sponsored Brands" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
           </CollapsibleRow>
 
           {/* Refund cost - Expandable (Sellerboard Parity) */}
           <CollapsibleRow
             label="Refund cost"
             value={formatCurrency(-(safeRefunds + (fees?.refundCommission || 0) - (fees?.refundedReferral || 0)))}
-            valueColor={(safeRefunds + (fees?.refundCommission || 0)) > 0 ? "text-red-600" : "text-gray-500"}
+            valueColor={(safeRefunds + (fees?.refundCommission || 0)) > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'}
             defaultOpen={false}
           >
-            <SubRow label="Refunded amount" value={formatCurrency(-safeRefunds)} valueColor={safeRefunds > 0 ? "text-red-600" : "text-gray-400"} />
-            <SubRow label="Refund commission" value={formatCurrency(-(fees?.refundCommission || 0))} valueColor={(fees?.refundCommission || 0) > 0 ? "text-red-600" : "text-gray-400"} />
-            <SubRow label="Refunded referral fee" value={formatCurrency(fees?.refundedReferral || 0)} valueColor={(fees?.refundedReferral || 0) > 0 ? "text-green-600" : "text-gray-400"} />
+            <SubRow label="Refunded amount" value={formatCurrency(-safeRefunds)} valueColor={safeRefunds > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'} />
+            <SubRow label="Refund commission" value={formatCurrency(-(fees?.refundCommission || 0))} valueColor={(fees?.refundCommission || 0) > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'} />
+            <SubRow label="Refunded referral fee" value={formatCurrency(fees?.refundedReferral || 0)} valueColor={(fees?.refundedReferral || 0) > 0 ? STARBUCKS.primaryGreen : STARBUCKS.darkGreen + '60'} />
           </CollapsibleRow>
 
           {/* Amazon fees - Expandable (DETAILED) - SELLERBOARD PARITY */}
-          {/* Shows ALL fee types that Sellerboard shows:
-              - FBA per unit fulfilment fee
-              - MCF (Multi-Channel Fulfillment) - SEPARATE from FBA
-              - Referral fee
-              - FBA storage fee
-              - Long term storage fee (6+ months)
-              - FBA disposal fee
-              - Inbound transportation / convenience fee
-              - Subscription
-              - Digital services fee
-              - Warehouse damage (reimbursement - positive)
-              - Warehouse lost (reimbursement - positive)
-              - Reversal reimbursement (positive)
-              - Other fees
-          */}
           <CollapsibleRow
             label="Amazon fees"
             value={formatCurrency(-data.amazonFees)}
-            valueColor="text-red-600"
+            valueColor="#DC2626"
             defaultOpen={true}
           >
             {hasRealFees && fees ? (
@@ -287,7 +318,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                 <SubRow
                   label="FBA per unit fulfilment fee"
                   value={formatCurrency(-fees.fbaFulfillment)}
-                  valueColor={fees.fbaFulfillment > 0 ? "text-red-600" : "text-gray-400"}
+                  valueColor={fees.fbaFulfillment > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'}
                 />
 
                 {/* MCF - Multi-Channel Fulfillment (SEPARATE from FBA!) */}
@@ -295,7 +326,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="FBA fee (MCF)"
                     value={formatCurrency(-fees.mcf)}
-                    valueColor="text-red-600"
+                    valueColor="#DC2626"
                   />
                 )}
 
@@ -303,7 +334,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                 <SubRow
                   label="Referral fee"
                   value={formatCurrency(-fees.referral)}
-                  valueColor={fees.referral > 0 ? "text-red-600" : "text-gray-400"}
+                  valueColor={fees.referral > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'}
                 />
 
                 {/* === STORAGE FEES === */}
@@ -313,7 +344,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="FBA storage fee"
                     value={formatCurrency(-fees.storage)}
-                    valueColor="text-red-600"
+                    valueColor="#DC2626"
                   />
                 )}
 
@@ -322,7 +353,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="Long term storage fee"
                     value={formatCurrency(-fees.longTermStorage)}
-                    valueColor="text-red-600"
+                    valueColor="#DC2626"
                   />
                 )}
 
@@ -333,7 +364,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="Inbound transportation"
                     value={formatCurrency(-fees.inbound)}
-                    valueColor="text-red-600"
+                    valueColor="#DC2626"
                   />
                 )}
 
@@ -342,7 +373,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="FBA disposal fee"
                     value={formatCurrency(-fees.removal)}
-                    valueColor="text-red-600"
+                    valueColor="#DC2626"
                   />
                 )}
 
@@ -351,7 +382,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="FBA customer return per unit fee"
                     value={formatCurrency(-fees.returns)}
-                    valueColor="text-red-600"
+                    valueColor="#DC2626"
                   />
                 )}
 
@@ -362,7 +393,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="Subscription"
                     value={formatCurrency(-data.serviceFees.subscription)}
-                    valueColor="text-red-600"
+                    valueColor="#DC2626"
                   />
                 )}
 
@@ -371,7 +402,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="Digital services fee"
                     value={formatCurrency(-fees.digitalServices)}
-                    valueColor="text-red-600"
+                    valueColor="#DC2626"
                   />
                 )}
 
@@ -382,7 +413,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="Warehouse damage"
                     value={formatCurrency(fees.warehouseDamage)}
-                    valueColor="text-green-600"
+                    valueColor={STARBUCKS.primaryGreen}
                   />
                 )}
 
@@ -391,7 +422,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="Warehouse lost"
                     value={formatCurrency(fees.warehouseLost)}
-                    valueColor="text-green-600"
+                    valueColor={STARBUCKS.primaryGreen}
                   />
                 )}
 
@@ -400,7 +431,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="Reversal reimbursement"
                     value={formatCurrency(fees.reversalReimbursement || fees.reimbursements)}
-                    valueColor="text-green-600"
+                    valueColor={STARBUCKS.primaryGreen}
                   />
                 )}
 
@@ -411,7 +442,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="Other fees"
                     value={formatCurrency(-fees.other)}
-                    valueColor="text-red-600"
+                    valueColor="#DC2626"
                   />
                 )}
 
@@ -420,7 +451,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="Chargebacks"
                     value={formatCurrency(-fees.chargebacks)}
-                    valueColor="text-red-600"
+                    valueColor="#DC2626"
                   />
                 )}
 
@@ -429,22 +460,22 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
                   <SubRow
                     label="Other service fees"
                     value={formatCurrency(-data.serviceFees.other)}
-                    valueColor="text-red-600"
+                    valueColor="#DC2626"
                   />
                 )}
               </>
             ) : (
               <>
                 {/* Estimated breakdown when no real data */}
-                <SubRow label="FBA per unit fulfilment fee" value={formatCurrency(-data.amazonFees * 0.55)} valueColor="text-red-600" />
-                <SubRow label="Referral fee" value={formatCurrency(-data.amazonFees * 0.40)} valueColor="text-red-600" />
-                <SubRow label="FBA storage fee" value={formatCurrency(-data.amazonFees * 0.05)} valueColor="text-red-600" />
+                <SubRow label="FBA per unit fulfilment fee" value={formatCurrency(-data.amazonFees * 0.55)} valueColor="#DC2626" />
+                <SubRow label="Referral fee" value={formatCurrency(-data.amazonFees * 0.40)} valueColor="#DC2626" />
+                <SubRow label="FBA storage fee" value={formatCurrency(-data.amazonFees * 0.05)} valueColor="#DC2626" />
                 {shouldShowSubscriptionFee(data.label) && (
                   <>
-                    <SubRow label="Subscription" value="$0.00" valueColor="text-gray-400" />
+                    <SubRow label="Subscription" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
                   </>
                 )}
-                <div className="px-10 py-2 text-xs text-amber-500 italic">
+                <div className="px-10 py-2 text-xs italic" style={{ color: STARBUCKS.gold }}>
                   Estimated breakdown • Real fees syncing...
                 </div>
               </>
@@ -457,7 +488,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           <CollapsibleRow
             label="Cost of goods"
             value={formatCurrency(-safeCogs)}
-            valueColor={safeCogs > 0 ? "text-red-600" : "text-gray-500"}
+            valueColor={safeCogs > 0 ? STARBUCKS.gold : STARBUCKS.darkGreen + '60'}
             hasWarning={safeCogs === 0}
           />
 
@@ -465,7 +496,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           <CollapsibleRow
             label="Gross profit"
             value={formatCurrency(grossProfit)}
-            valueColor={grossProfit >= 0 ? "text-gray-900" : "text-red-600"}
+            valueColor={grossProfit >= 0 ? STARBUCKS.darkGreen : "#DC2626"}
             hasWarning={grossProfit < 0}
           />
 
@@ -473,14 +504,14 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           <CollapsibleRow
             label="Indirect expenses"
             value="$0.00"
-            valueColor="text-gray-500"
+            valueColor={STARBUCKS.darkGreen + '60'}
           />
 
           {/* Net profit - BOLD */}
           <CollapsibleRow
             label="Net profit"
             value={formatCurrency(netProfit)}
-            valueColor={netProfit >= 0 ? "text-green-600" : "text-red-600"}
+            valueColor={netProfit >= 0 ? STARBUCKS.primaryGreen : "#DC2626"}
             isBold
             hasWarning={netProfit < 0}
           />
@@ -489,7 +520,7 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           <CollapsibleRow
             label="Estimated payout"
             value={formatCurrency(estPayout)}
-            valueColor="text-gray-900"
+            valueColor={STARBUCKS.darkGreen}
           />
 
           <Divider />
@@ -498,31 +529,31 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           <CollapsibleRow
             label="Real ACOS"
             value={formatPercent(realAcos)}
-            valueColor="text-gray-900"
+            valueColor={STARBUCKS.darkGreen}
           />
 
           <CollapsibleRow
             label="% Refunds"
             value={formatPercent(refundRate)}
-            valueColor={refundRate > 10 ? "text-red-600" : "text-gray-900"}
+            valueColor={refundRate > 10 ? "#DC2626" : STARBUCKS.darkGreen}
           />
 
           <CollapsibleRow
             label="Sellable returns"
             value="0.00%"
-            valueColor="text-gray-500"
+            valueColor={STARBUCKS.darkGreen + '60'}
           />
 
           <CollapsibleRow
             label="Margin"
             value={formatPercent(margin)}
-            valueColor={margin >= 0 ? "text-gray-900" : "text-red-600"}
+            valueColor={margin >= 0 ? STARBUCKS.darkGreen : "#DC2626"}
           />
 
           <CollapsibleRow
             label="ROI"
             value={formatPercent(roi)}
-            valueColor="text-gray-900"
+            valueColor={STARBUCKS.darkGreen}
           />
 
           <Divider />
@@ -531,23 +562,23 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
           <CollapsibleRow
             label="Active subscriptions (SnS)"
             value="0"
-            valueColor="text-gray-500"
+            valueColor={STARBUCKS.darkGreen + '60'}
           />
 
           <CollapsibleRow
             label="Sessions"
             value="-"
-            valueColor="text-gray-400"
+            valueColor={STARBUCKS.darkGreen + '60'}
             defaultOpen={false}
           >
-            <SubRow label="Browser sessions" value="-" valueColor="text-gray-400" />
-            <SubRow label="Mobile app sessions" value="-" valueColor="text-gray-400" />
+            <SubRow label="Browser sessions" value="-" valueColor={STARBUCKS.darkGreen + '60'} />
+            <SubRow label="Mobile app sessions" value="-" valueColor={STARBUCKS.darkGreen + '60'} />
           </CollapsibleRow>
 
           <CollapsibleRow
             label="Unit session percentage"
             value="-"
-            valueColor="text-gray-400"
+            valueColor={STARBUCKS.darkGreen + '60'}
           />
 
           {/* Bottom padding */}
@@ -555,10 +586,22 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
+        <div
+          className="px-6 py-4"
+          style={{ borderTop: `1px solid ${STARBUCKS.lightGreen}`, backgroundColor: STARBUCKS.cream }}
+        >
           <button
             onClick={onClose}
-            className="w-full py-3 bg-gray-900 text-white font-semibold rounded-xl hover:bg-gray-800 transition-colors"
+            onMouseEnter={() => setButtonHovered(true)}
+            onMouseLeave={() => setButtonHovered(false)}
+            className="w-full py-3 font-semibold rounded-xl transition-all"
+            style={{
+              background: buttonHovered
+                ? `linear-gradient(135deg, ${STARBUCKS.primaryGreen} 0%, ${STARBUCKS.darkGreen} 100%)`
+                : `linear-gradient(135deg, ${STARBUCKS.darkGreen} 0%, ${STARBUCKS.primaryGreen} 100%)`,
+              color: STARBUCKS.white,
+              boxShadow: buttonHovered ? `0 8px 24px ${STARBUCKS.darkGreen}40` : 'none'
+            }}
           >
             Close
           </button>

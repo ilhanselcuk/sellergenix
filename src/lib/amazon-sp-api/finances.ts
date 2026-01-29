@@ -202,6 +202,81 @@ export async function getFinancialEventsByGroup(
 }
 
 /**
+ * List ALL Financial Events (Auto-Pagination)
+ *
+ * Recursively fetches all pages of financial events for a date range
+ */
+export async function listAllFinancialEventsByDateRange(
+  refreshToken: string,
+  startDate: Date,
+  endDate?: Date
+) {
+  const allEvents = {
+    shipmentEvents: [] as any[],
+    refundEvents: [] as any[],
+    serviceFeeEvents: [] as any[],
+    adjustmentEvents: [] as any[],
+    chargebackEvents: [] as any[],
+    fbaOutboundShipmentEvents: [] as any[],
+    removalShipmentEvents: [] as any[],
+  }
+
+  let nextToken: string | undefined
+  let pageCount = 0
+
+  do {
+    const client = createAmazonSPAPIClient(refreshToken)
+    // Manually call API to handle NextToken which might not be supported in base listFinancialEvents wrapper
+    const safeEndDate = endDate ? new Date(endDate.getTime() - 3 * 60 * 1000) : undefined
+
+    const params: Record<string, string | number> = {
+      MaxResultsPerPage: 100,
+      PostedAfter: startDate.toISOString(),
+    }
+
+    if (safeEndDate) params.PostedBefore = safeEndDate.toISOString()
+    if (nextToken) params.NextToken = nextToken
+
+    try {
+      const response = await client.callAPI({
+        operation: 'listFinancialEvents',
+        endpoint: 'finances',
+        query: params,
+      })
+
+      const payload = response.FinancialEvents || response.payload?.FinancialEvents || {}
+
+      allEvents.shipmentEvents.push(...(payload.ShipmentEventList || []))
+      allEvents.refundEvents.push(...(payload.RefundEventList || []))
+      allEvents.serviceFeeEvents.push(...(payload.ServiceFeeEventList || []))
+      allEvents.adjustmentEvents.push(...(payload.AdjustmentEventList || []))
+      allEvents.chargebackEvents.push(...(payload.ChargebackEventList || []))
+      allEvents.fbaOutboundShipmentEvents.push(...(payload.FBAOutboundShipmentEventList || []))
+      allEvents.removalShipmentEvents.push(...(payload.RemovalShipmentEventList || []))
+
+      nextToken = response.NextToken || response.payload?.NextToken
+      pageCount++
+
+      // Safety break
+      if (pageCount > 50) break
+
+      // Rate limit delay
+      if (nextToken) await new Promise(r => setTimeout(r, 1000))
+
+    } catch (error) {
+      console.error('Failed to list financial events page:', error)
+      return { success: false, error: String(error) }
+    }
+  } while (nextToken)
+
+  return {
+    success: true,
+    data: allEvents,
+    pageCount
+  }
+}
+
+/**
  * Calculate Profit Metrics from Financial Events
  *
  * Processes financial events to calculate:
@@ -1037,16 +1112,16 @@ export function extractRefundFees(
 
   // Get the shipment item list (refunds use same structure as shipments)
   const refundItems = (refundEvent.ShipmentItemAdjustmentList || refundEvent.shipmentItemAdjustmentList ||
-                       refundEvent.ShipmentItemList || refundEvent.shipmentItemList || []) as Record<string, unknown>[]
+    refundEvent.ShipmentItemList || refundEvent.shipmentItemList || []) as Record<string, unknown>[]
 
   for (const item of refundItems) {
     const orderItemId = String(item.OrderAdjustmentItemId || item.orderAdjustmentItemId ||
-                                item.OrderItemId || item.orderItemId || '')
+      item.OrderItemId || item.orderItemId || '')
     const sellerSku = String(item.SellerSKU || item.sellerSKU || '')
     // Try to get ASIN from: 1) Event data, 2) SKU->ASIN map
     const asin = item.ASIN || item.asin || (skuToAsinMap?.get(sellerSku)) || undefined
     const quantityRefunded = Math.abs(Number(item.QuantityShipped || item.quantityShipped ||
-                                             item.Quantity || item.quantity || 0))
+      item.Quantity || item.quantity || 0))
 
     // Initialize fee components
     let refundedAmount = 0
@@ -1062,7 +1137,7 @@ export function extractRefundFees(
 
     // Parse ItemChargeAdjustmentList or ItemChargeList (refund amounts)
     const chargeList = (item.ItemChargeAdjustmentList || item.itemChargeAdjustmentList ||
-                        item.ItemChargeList || item.itemChargeList || []) as Array<Record<string, unknown>>
+      item.ItemChargeList || item.itemChargeList || []) as Array<Record<string, unknown>>
     for (const charge of chargeList) {
       const chargeType = String(charge.ChargeType || charge.chargeType || '')
       const chargeAmountObj = (charge.ChargeAmount || charge.chargeAmount) as Record<string, number> | undefined
@@ -1090,7 +1165,7 @@ export function extractRefundFees(
 
     // Parse ItemFeeAdjustmentList or ItemFeeList (fee credits/charges)
     const feeList = (item.ItemFeeAdjustmentList || item.itemFeeAdjustmentList ||
-                     item.ItemFeeList || item.itemFeeList || []) as Array<Record<string, unknown>>
+      item.ItemFeeList || item.itemFeeList || []) as Array<Record<string, unknown>>
     for (const fee of feeList) {
       const feeType = String(fee.FeeType || fee.feeType || '')
       const feeAmountObj = (fee.FeeAmount || fee.feeAmount) as Record<string, number> | undefined
@@ -1757,7 +1832,7 @@ export function extractAdjustmentFees(
 
   // Net adjustment (positive = net credit to seller)
   const netAdjustment = reimbursements + chargebackAdjustments + guaranteeAdjustments +
-                        corrections + goodwillCredits + otherAdjustments
+    corrections + goodwillCredits + otherAdjustments
 
   return {
     startDate,
@@ -2393,9 +2468,9 @@ export function extractMCFFees(
 
         // MCF fees can have various types
         if (feeType.toLowerCase().includes('fulfillment') ||
-            feeType.toLowerCase().includes('fba') ||
-            feeType.toLowerCase().includes('mcf') ||
-            feeType.toLowerCase().includes('outbound')) {
+          feeType.toLowerCase().includes('fba') ||
+          feeType.toLowerCase().includes('mcf') ||
+          feeType.toLowerCase().includes('outbound')) {
           itemFulfillmentFee += amount
         }
       }

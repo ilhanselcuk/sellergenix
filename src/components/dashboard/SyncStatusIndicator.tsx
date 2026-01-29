@@ -3,6 +3,16 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 
+// Starbucks Color Palette
+const STARBUCKS = {
+  primaryGreen: '#00704A',
+  darkGreen: '#1E3932',
+  lightGreen: '#D4E9E2',
+  gold: '#CBA258',
+  cream: '#F2F0EB',
+  white: '#FFFFFF',
+}
+
 interface SyncJob {
   id: string
   status: 'running' | 'completed' | 'failed'
@@ -128,12 +138,12 @@ export default function SyncStatusIndicator({ onSyncComplete }: SyncStatusIndica
   }
 
   const getStatusColor = () => {
-    if (!syncJob) return 'bg-gray-500'
+    if (!syncJob) return STARBUCKS.primaryGreen
     switch (syncJob.status) {
-      case 'running': return 'bg-blue-500'
-      case 'completed': return 'bg-green-500'
-      case 'failed': return 'bg-red-500'
-      default: return 'bg-gray-500'
+      case 'running': return STARBUCKS.gold
+      case 'completed': return STARBUCKS.primaryGreen
+      case 'failed': return '#DC2626'
+      default: return STARBUCKS.primaryGreen
     }
   }
 
@@ -159,13 +169,18 @@ export default function SyncStatusIndicator({ onSyncComplete }: SyncStatusIndica
 
   return (
     <div className="fixed bottom-4 right-4 z-40 animate-in slide-in-from-bottom-4 duration-300">
-      <div className={`
-        bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden
-        ${isVisible ? 'opacity-100' : 'opacity-0'}
-        transition-opacity duration-300
-      `}>
+      <div
+        className={`rounded-xl shadow-lg overflow-hidden transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
+        style={{
+          backgroundColor: STARBUCKS.white,
+          border: `1px solid ${STARBUCKS.lightGreen}`
+        }}
+      >
         {/* Header */}
-        <div className={`${getStatusColor()} px-4 py-2 flex items-center gap-2 text-white`}>
+        <div
+          className="px-4 py-2 flex items-center gap-2 text-white"
+          style={{ backgroundColor: getStatusColor() }}
+        >
           {getStatusIcon()}
           <span className="text-sm font-semibold">{getStatusText()}</span>
           {syncJob?.status === 'running' && (
@@ -183,16 +198,19 @@ export default function SyncStatusIndicator({ onSyncComplete }: SyncStatusIndica
           {syncJob?.status === 'running' && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Records synced</span>
-                <span className="font-semibold">{syncJob.recordsSynced}</span>
+                <span style={{ color: STARBUCKS.primaryGreen }}>Records synced</span>
+                <span className="font-semibold" style={{ color: STARBUCKS.darkGreen }}>{syncJob.recordsSynced}</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-1.5">
+              <div className="w-full rounded-full h-1.5" style={{ backgroundColor: STARBUCKS.lightGreen }}>
                 <div
-                  className="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, (syncJob.recordsSynced / 500) * 100)}%` }}
+                  className="h-1.5 rounded-full transition-all duration-500"
+                  style={{
+                    backgroundColor: STARBUCKS.gold,
+                    width: `${Math.min(100, (syncJob.recordsSynced / 500) * 100)}%`
+                  }}
                 />
               </div>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs" style={{ color: STARBUCKS.primaryGreen }}>
                 This may take a few minutes...
               </p>
             </div>
@@ -201,13 +219,13 @@ export default function SyncStatusIndicator({ onSyncComplete }: SyncStatusIndica
           {syncJob?.status === 'completed' && (
             <div className="space-y-1">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Records synced</span>
-                <span className="font-semibold text-green-600">{syncJob.recordsSynced}</span>
+                <span style={{ color: STARBUCKS.primaryGreen }}>Records synced</span>
+                <span className="font-semibold" style={{ color: STARBUCKS.primaryGreen }}>{syncJob.recordsSynced}</span>
               </div>
               {syncJob.durationMs && (
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">Duration</span>
-                  <span className="font-medium">{formatDuration(syncJob.durationMs)}</span>
+                  <span style={{ color: STARBUCKS.primaryGreen }}>Duration</span>
+                  <span className="font-medium" style={{ color: STARBUCKS.darkGreen }}>{formatDuration(syncJob.durationMs)}</span>
                 </div>
               )}
             </div>
@@ -218,7 +236,8 @@ export default function SyncStatusIndicator({ onSyncComplete }: SyncStatusIndica
               <p className="text-sm text-red-600">{syncJob.errorMessage || 'Unknown error'}</p>
               <button
                 onClick={startSync}
-                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                className="text-sm font-medium hover:opacity-80"
+                style={{ color: STARBUCKS.primaryGreen }}
               >
                 Try again
               </button>

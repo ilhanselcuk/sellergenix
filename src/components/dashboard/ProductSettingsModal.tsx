@@ -4,6 +4,16 @@ import React, { useState } from 'react'
 import { X, Search, Package, DollarSign, Truck, Warehouse, FileText, Save, ChevronDown, ChevronRight, Copy, AlertCircle, CheckCircle, Info } from 'lucide-react'
 import { ProductData } from './ProductTable'
 
+// Starbucks Color Palette
+const STARBUCKS = {
+  primaryGreen: '#00704A',
+  darkGreen: '#1E3932',
+  lightGreen: '#D4E9E2',
+  gold: '#CBA258',
+  cream: '#F2F0EB',
+  white: '#FFFFFF',
+}
+
 interface ProductSettingsModalProps {
   isOpen: boolean
   onClose: () => void
@@ -67,6 +77,9 @@ export default function ProductSettingsModal({
 
   // Child selection state for bulk COGS application
   const [selectedChildren, setSelectedChildren] = useState<Set<string>>(new Set())
+
+  // Hover states
+  const [closeHovered, setCloseHovered] = useState(false)
 
   if (!isOpen) return null
 
@@ -219,30 +232,48 @@ export default function ProductSettingsModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 backdrop-blur-sm"
+        style={{ backgroundColor: STARBUCKS.darkGreen + '80' }}
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex">
+      <div
+        className="relative rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex"
+        style={{ backgroundColor: STARBUCKS.white }}
+      >
         {/* Left Panel - Product List */}
-        <div className="w-1/3 border-r border-gray-200 flex flex-col">
+        <div
+          className="w-1/3 flex flex-col"
+          style={{ borderRight: `1px solid ${STARBUCKS.lightGreen}` }}
+        >
           {/* Header */}
-          <div className="px-4 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-bold text-gray-900">Product Settings</h2>
-            <p className="text-sm text-gray-500 mt-1">Select a product to configure costs</p>
+          <div
+            className="px-4 py-4"
+            style={{ borderBottom: `1px solid ${STARBUCKS.lightGreen}` }}
+          >
+            <h2 className="text-lg font-bold" style={{ color: STARBUCKS.darkGreen }}>Product Settings</h2>
+            <p className="text-sm mt-1" style={{ color: STARBUCKS.primaryGreen }}>Select a product to configure costs</p>
           </div>
 
           {/* Search */}
-          <div className="px-4 py-3 border-b border-gray-100">
+          <div
+            className="px-4 py-3"
+            style={{ borderBottom: `1px solid ${STARBUCKS.lightGreen}40` }}
+          >
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: STARBUCKS.primaryGreen }} />
               <input
                 type="text"
                 placeholder="Search products..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-9 pr-4 py-2 text-sm rounded-lg focus:outline-none focus:ring-2 transition-all"
+                style={{
+                  border: `1px solid ${STARBUCKS.lightGreen}`,
+                  backgroundColor: STARBUCKS.cream,
+                  color: STARBUCKS.darkGreen
+                }}
               />
             </div>
           </div>
@@ -254,11 +285,12 @@ export default function ProductSettingsModal({
                 {/* Parent Product */}
                 <div
                   onClick={() => selectProduct(product)}
-                  className={`
-                    flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-gray-50
-                    hover:bg-gray-50 transition-colors
-                    ${selectedProduct?.id === product.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''}
-                  `}
+                  className="flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors"
+                  style={{
+                    borderBottom: `1px solid ${STARBUCKS.lightGreen}30`,
+                    backgroundColor: selectedProduct?.id === product.id ? STARBUCKS.lightGreen : 'transparent',
+                    borderLeft: selectedProduct?.id === product.id ? `4px solid ${STARBUCKS.primaryGreen}` : '4px solid transparent'
+                  }}
                 >
                   {product.isParent && product.children && product.children.length > 0 ? (
                     <button
@@ -266,12 +298,13 @@ export default function ProductSettingsModal({
                         e.stopPropagation()
                         toggleParent(product.id)
                       }}
-                      className="p-1 hover:bg-gray-200 rounded"
+                      className="p-1 rounded transition-colors"
+                      style={{ backgroundColor: 'transparent' }}
                     >
                       {expandedParents.has(product.id) ? (
-                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                        <ChevronDown className="w-4 h-4" style={{ color: STARBUCKS.primaryGreen }} />
                       ) : (
-                        <ChevronRight className="w-4 h-4 text-gray-500" />
+                        <ChevronRight className="w-4 h-4" style={{ color: STARBUCKS.primaryGreen }} />
                       )}
                     </button>
                   ) : (
@@ -285,18 +318,24 @@ export default function ProductSettingsModal({
                       className="w-10 h-10 rounded-lg object-cover"
                     />
                   ) : (
-                    <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
-                      <Package className="w-5 h-5 text-gray-400" />
+                    <div
+                      className="w-10 h-10 rounded-lg flex items-center justify-center"
+                      style={{ backgroundColor: STARBUCKS.cream }}
+                    >
+                      <Package className="w-5 h-5" style={{ color: STARBUCKS.primaryGreen }} />
                     </div>
                   )}
 
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900 truncate">{product.title}</p>
-                    <p className="text-xs text-gray-500">{product.asin}</p>
+                    <p className="text-sm font-medium truncate" style={{ color: STARBUCKS.darkGreen }}>{product.title}</p>
+                    <p className="text-xs" style={{ color: STARBUCKS.primaryGreen }}>{product.asin}</p>
                   </div>
 
                   {product.isParent && (
-                    <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">
+                    <span
+                      className="text-xs px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: STARBUCKS.gold + '30', color: STARBUCKS.gold }}
+                    >
                       Parent
                     </span>
                   )}
@@ -308,13 +347,17 @@ export default function ProductSettingsModal({
                     <div
                       key={child.id}
                       onClick={() => selectProduct(child)}
-                      className={`
-                        flex items-center gap-3 px-4 py-3 pl-12 cursor-pointer border-b border-gray-50
-                        bg-gray-50/50 hover:bg-gray-100 transition-colors
-                        ${selectedProduct?.id === child.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''}
-                      `}
+                      className="flex items-center gap-3 px-4 py-3 pl-12 cursor-pointer transition-colors"
+                      style={{
+                        borderBottom: `1px solid ${STARBUCKS.lightGreen}20`,
+                        backgroundColor: selectedProduct?.id === child.id ? STARBUCKS.lightGreen : STARBUCKS.cream + '50',
+                        borderLeft: selectedProduct?.id === child.id ? `4px solid ${STARBUCKS.primaryGreen}` : '4px solid transparent'
+                      }}
                     >
-                      <div className="w-4 h-4 border-l-2 border-b-2 border-gray-300 rounded-bl" />
+                      <div
+                        className="w-4 h-4 border-l-2 border-b-2 rounded-bl"
+                        style={{ borderColor: STARBUCKS.lightGreen }}
+                      />
 
                       {child.imageUrl ? (
                         <img
@@ -323,14 +366,17 @@ export default function ProductSettingsModal({
                           className="w-8 h-8 rounded-lg object-cover"
                         />
                       ) : (
-                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
-                          <Package className="w-4 h-4 text-gray-400" />
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center"
+                          style={{ backgroundColor: STARBUCKS.cream }}
+                        >
+                          <Package className="w-4 h-4" style={{ color: STARBUCKS.primaryGreen }} />
                         </div>
                       )}
 
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-700 truncate">{child.title}</p>
-                        <p className="text-xs text-gray-500">{child.asin}</p>
+                        <p className="text-sm font-medium truncate" style={{ color: STARBUCKS.darkGreen + 'CC' }}>{child.title}</p>
+                        <p className="text-xs" style={{ color: STARBUCKS.primaryGreen }}>{child.asin}</p>
                       </div>
                     </div>
                   ))
@@ -339,19 +385,25 @@ export default function ProductSettingsModal({
             ))}
 
             {filteredProducts.length === 0 && (
-              <div className="py-8 text-center text-gray-500">
-                <Package className="w-10 h-10 mx-auto text-gray-300 mb-2" />
-                <p>No products found</p>
+              <div className="py-8 text-center">
+                <Package className="w-10 h-10 mx-auto mb-2" style={{ color: STARBUCKS.lightGreen }} />
+                <p style={{ color: STARBUCKS.primaryGreen }}>No products found</p>
               </div>
             )}
           </div>
 
           {/* AI Chat Hint */}
-          <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-purple-50 border-t border-gray-200">
+          <div
+            className="px-4 py-3"
+            style={{
+              background: `linear-gradient(135deg, ${STARBUCKS.lightGreen}40 0%, ${STARBUCKS.cream} 100%)`,
+              borderTop: `1px solid ${STARBUCKS.lightGreen}`
+            }}
+          >
             <div className="flex items-start gap-2">
-              <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div className="text-xs text-gray-600">
-                <p className="font-medium text-blue-700">Use AI Chat for bulk operations:</p>
+              <Info className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: STARBUCKS.primaryGreen }} />
+              <div className="text-xs" style={{ color: STARBUCKS.darkGreen }}>
+                <p className="font-medium" style={{ color: STARBUCKS.primaryGreen }}>Use AI Chat for bulk operations:</p>
                 <p className="mt-1">"Set COGS $5.50 for B08XYZ123"</p>
                 <p>"Upload Excel for bulk COGS"</p>
               </div>
@@ -362,23 +414,32 @@ export default function ProductSettingsModal({
         {/* Right Panel - Cost Form */}
         <div className="flex-1 flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div
+            className="flex items-center justify-between px-6 py-4"
+            style={{ borderBottom: `1px solid ${STARBUCKS.lightGreen}` }}
+          >
             <div>
               {selectedProduct ? (
                 <>
-                  <h3 className="text-lg font-bold text-gray-900">{selectedProduct.title}</h3>
-                  <p className="text-sm text-gray-500">{selectedProduct.asin} {selectedProduct.sku && `• ${selectedProduct.sku}`}</p>
+                  <h3 className="text-lg font-bold" style={{ color: STARBUCKS.darkGreen }}>{selectedProduct.title}</h3>
+                  <p className="text-sm" style={{ color: STARBUCKS.primaryGreen }}>{selectedProduct.asin} {selectedProduct.sku && `• ${selectedProduct.sku}`}</p>
                 </>
               ) : (
                 <>
-                  <h3 className="text-lg font-bold text-gray-400">Select a Product</h3>
-                  <p className="text-sm text-gray-400">Choose a product from the list to configure costs</p>
+                  <h3 className="text-lg font-bold" style={{ color: STARBUCKS.darkGreen + '60' }}>Select a Product</h3>
+                  <p className="text-sm" style={{ color: STARBUCKS.primaryGreen + '60' }}>Choose a product from the list to configure costs</p>
                 </>
               )}
             </div>
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              onMouseEnter={() => setCloseHovered(true)}
+              onMouseLeave={() => setCloseHovered(false)}
+              className="p-2 rounded-lg transition-colors"
+              style={{
+                color: closeHovered ? STARBUCKS.darkGreen : STARBUCKS.primaryGreen,
+                backgroundColor: closeHovered ? STARBUCKS.lightGreen : 'transparent'
+              }}
             >
               <X className="w-5 h-5" />
             </button>
@@ -389,7 +450,10 @@ export default function ProductSettingsModal({
               {/* Form Content */}
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
                 {/* Product Info Card */}
-                <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
+                <div
+                  className="flex items-center gap-4 p-4 rounded-xl"
+                  style={{ backgroundColor: STARBUCKS.cream }}
+                >
                   {selectedProduct.imageUrl ? (
                     <img
                       src={selectedProduct.imageUrl}
@@ -397,30 +461,33 @@ export default function ProductSettingsModal({
                       className="w-16 h-16 rounded-lg object-cover"
                     />
                   ) : (
-                    <div className="w-16 h-16 rounded-lg bg-gray-200 flex items-center justify-center">
-                      <Package className="w-8 h-8 text-gray-400" />
+                    <div
+                      className="w-16 h-16 rounded-lg flex items-center justify-center"
+                      style={{ backgroundColor: STARBUCKS.lightGreen }}
+                    >
+                      <Package className="w-8 h-8" style={{ color: STARBUCKS.primaryGreen }} />
                     </div>
                   )}
                   <div>
-                    <p className="text-sm text-gray-500">Current Price</p>
-                    <p className="text-xl font-bold text-gray-900">${selectedProduct.sales / selectedProduct.units > 0 ? (selectedProduct.sales / selectedProduct.units).toFixed(2) : '0.00'}</p>
+                    <p className="text-sm" style={{ color: STARBUCKS.primaryGreen }}>Current Price</p>
+                    <p className="text-xl font-bold" style={{ color: STARBUCKS.darkGreen }}>${selectedProduct.sales / selectedProduct.units > 0 ? (selectedProduct.sales / selectedProduct.units).toFixed(2) : '0.00'}</p>
                   </div>
                   <div className="ml-auto text-right">
-                    <p className="text-sm text-gray-500">FBA Stock</p>
-                    <p className="text-xl font-bold text-gray-900">
-                      {selectedProduct.stock !== null ? selectedProduct.stock : <span className="text-sm text-gray-400">Coming Soon</span>}
+                    <p className="text-sm" style={{ color: STARBUCKS.primaryGreen }}>FBA Stock</p>
+                    <p className="text-xl font-bold" style={{ color: STARBUCKS.darkGreen }}>
+                      {selectedProduct.stock !== null ? selectedProduct.stock : <span className="text-sm" style={{ color: STARBUCKS.primaryGreen + '80' }}>Coming Soon</span>}
                     </p>
                   </div>
                 </div>
 
                 {/* COGS */}
                 <div>
-                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                    <DollarSign className="w-4 h-4 text-gray-400" />
+                  <label className="flex items-center gap-2 text-sm font-medium mb-2" style={{ color: STARBUCKS.darkGreen }}>
+                    <DollarSign className="w-4 h-4" style={{ color: STARBUCKS.gold }} />
                     Cost of Goods Sold (COGS)
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: STARBUCKS.primaryGreen }}>$</span>
                     <input
                       type="number"
                       step="0.01"
@@ -428,20 +495,25 @@ export default function ProductSettingsModal({
                       value={cogs}
                       onChange={(e) => setCogs(e.target.value)}
                       placeholder="0.00"
-                      className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full pl-8 pr-4 py-3 rounded-xl focus:outline-none focus:ring-2 transition-all"
+                      style={{
+                        border: `1px solid ${STARBUCKS.lightGreen}`,
+                        backgroundColor: STARBUCKS.white,
+                        color: STARBUCKS.darkGreen
+                      }}
                     />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">Factory cost per unit</p>
+                  <p className="text-xs mt-1" style={{ color: STARBUCKS.primaryGreen }}>Factory cost per unit</p>
                 </div>
 
                 {/* Custom Tax */}
                 <div>
-                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                    <FileText className="w-4 h-4 text-gray-400" />
+                  <label className="flex items-center gap-2 text-sm font-medium mb-2" style={{ color: STARBUCKS.darkGreen }}>
+                    <FileText className="w-4 h-4" style={{ color: STARBUCKS.gold }} />
                     Custom Tax Cost
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: STARBUCKS.primaryGreen }}>$</span>
                     <input
                       type="number"
                       step="0.01"
@@ -449,20 +521,25 @@ export default function ProductSettingsModal({
                       value={customTax}
                       onChange={(e) => setCustomTax(e.target.value)}
                       placeholder="0.00"
-                      className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full pl-8 pr-4 py-3 rounded-xl focus:outline-none focus:ring-2 transition-all"
+                      style={{
+                        border: `1px solid ${STARBUCKS.lightGreen}`,
+                        backgroundColor: STARBUCKS.white,
+                        color: STARBUCKS.darkGreen
+                      }}
                     />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">Import duties and customs per unit</p>
+                  <p className="text-xs mt-1" style={{ color: STARBUCKS.primaryGreen }}>Import duties and customs per unit</p>
                 </div>
 
                 {/* 3PL Warehouse */}
                 <div>
-                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                    <Warehouse className="w-4 h-4 text-gray-400" />
+                  <label className="flex items-center gap-2 text-sm font-medium mb-2" style={{ color: STARBUCKS.darkGreen }}>
+                    <Warehouse className="w-4 h-4" style={{ color: STARBUCKS.gold }} />
                     3PL Warehouse Cost
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: STARBUCKS.primaryGreen }}>$</span>
                     <input
                       type="number"
                       step="0.01"
@@ -470,37 +547,52 @@ export default function ProductSettingsModal({
                       value={warehouseCost}
                       onChange={(e) => setWarehouseCost(e.target.value)}
                       placeholder="0.00"
-                      className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full pl-8 pr-4 py-3 rounded-xl focus:outline-none focus:ring-2 transition-all"
+                      style={{
+                        border: `1px solid ${STARBUCKS.lightGreen}`,
+                        backgroundColor: STARBUCKS.white,
+                        color: STARBUCKS.darkGreen
+                      }}
                     />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">Prep center and storage cost per unit</p>
+                  <p className="text-xs mt-1" style={{ color: STARBUCKS.primaryGreen }}>Prep center and storage cost per unit</p>
                 </div>
 
                 {/* Logistics */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                      <Truck className="w-4 h-4 text-gray-400" />
+                    <label className="flex items-center gap-2 text-sm font-medium" style={{ color: STARBUCKS.darkGreen }}>
+                      <Truck className="w-4 h-4" style={{ color: STARBUCKS.gold }} />
                       Logistics Costs
                     </label>
                     <button
                       onClick={addLogisticsEntry}
-                      className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                      className="text-sm font-medium transition-colors"
+                      style={{ color: STARBUCKS.primaryGreen }}
                     >
                       + Add Entry
                     </button>
                   </div>
 
                   {logistics.length === 0 ? (
-                    <p className="text-sm text-gray-400 py-3">No logistics entries. Click "Add Entry" to add shipping costs.</p>
+                    <p className="text-sm py-3" style={{ color: STARBUCKS.primaryGreen + '80' }}>No logistics entries. Click "Add Entry" to add shipping costs.</p>
                   ) : (
                     <div className="space-y-3">
                       {logistics.map(entry => (
-                        <div key={entry.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                        <div
+                          key={entry.id}
+                          className="flex items-center gap-3 p-3 rounded-xl"
+                          style={{ backgroundColor: STARBUCKS.cream }}
+                        >
                           <select
                             value={entry.type}
                             onChange={(e) => updateLogisticsEntry(entry.id, { type: e.target.value as LogisticsEntry['type'] })}
-                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 transition-all"
+                            style={{
+                              border: `1px solid ${STARBUCKS.lightGreen}`,
+                              backgroundColor: STARBUCKS.white,
+                              color: STARBUCKS.darkGreen
+                            }}
                           >
                             {LOGISTICS_TYPES.map(type => (
                               <option key={type.id} value={type.id}>
@@ -510,7 +602,7 @@ export default function ProductSettingsModal({
                           </select>
 
                           <div className="relative flex-1">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: STARBUCKS.primaryGreen }}>$</span>
                             <input
                               type="number"
                               step="0.01"
@@ -518,13 +610,19 @@ export default function ProductSettingsModal({
                               value={entry.costPerUnit || ''}
                               onChange={(e) => updateLogisticsEntry(entry.id, { costPerUnit: parseFloat(e.target.value) || 0 })}
                               placeholder="0.00"
-                              className="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full pl-8 pr-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 transition-all"
+                              style={{
+                                border: `1px solid ${STARBUCKS.lightGreen}`,
+                                backgroundColor: STARBUCKS.white,
+                                color: STARBUCKS.darkGreen
+                              }}
                             />
                           </div>
 
                           <button
                             onClick={() => removeLogisticsEntry(entry.id)}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            className="p-2 rounded-lg transition-colors"
+                            style={{ color: '#DC2626' }}
                           >
                             <X className="w-4 h-4" />
                           </button>
@@ -536,46 +634,64 @@ export default function ProductSettingsModal({
 
                 {/* Notes */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Notes</label>
+                  <label className="text-sm font-medium mb-2 block" style={{ color: STARBUCKS.darkGreen }}>Notes</label>
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Add any notes about costs..."
                     rows={3}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    className="w-full px-4 py-3 rounded-xl focus:outline-none focus:ring-2 resize-none transition-all"
+                    style={{
+                      border: `1px solid ${STARBUCKS.lightGreen}`,
+                      backgroundColor: STARBUCKS.white,
+                      color: STARBUCKS.darkGreen
+                    }}
                   />
                 </div>
 
                 {/* Total Cost Summary */}
-                <div className="p-4 bg-gradient-to-r from-emerald-50 to-blue-50 rounded-xl">
+                <div
+                  className="p-4 rounded-xl"
+                  style={{
+                    background: `linear-gradient(135deg, ${STARBUCKS.lightGreen}60 0%, ${STARBUCKS.cream} 100%)`
+                  }}
+                >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">Total Cost per Unit</span>
-                    <span className="text-2xl font-bold text-gray-900">${calculateTotalCost().toFixed(2)}</span>
+                    <span className="text-sm font-medium" style={{ color: STARBUCKS.darkGreen }}>Total Cost per Unit</span>
+                    <span className="text-2xl font-bold" style={{ color: STARBUCKS.primaryGreen }}>${calculateTotalCost().toFixed(2)}</span>
                   </div>
-                  <div className="mt-2 text-xs text-gray-500">
+                  <div className="mt-2 text-xs" style={{ color: STARBUCKS.primaryGreen }}>
                     COGS + Custom Tax + Warehouse + Logistics
                   </div>
                 </div>
 
                 {/* Child Selection for Bulk COGS Application */}
                 {showApplyToChildren && selectedProduct?.children && selectedProduct.children.length > 0 && (
-                  <div className="p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-100">
+                  <div
+                    className="p-4 rounded-xl"
+                    style={{
+                      background: `linear-gradient(135deg, ${STARBUCKS.gold}20 0%, ${STARBUCKS.cream} 100%)`,
+                      border: `1px solid ${STARBUCKS.gold}40`
+                    }}
+                  >
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <h4 className="text-sm font-bold text-gray-900">Apply to Child Variations</h4>
-                        <p className="text-xs text-gray-500 mt-0.5">Select which variations should receive these costs</p>
+                        <h4 className="text-sm font-bold" style={{ color: STARBUCKS.darkGreen }}>Apply to Child Variations</h4>
+                        <p className="text-xs mt-0.5" style={{ color: STARBUCKS.primaryGreen }}>Select which variations should receive these costs</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => toggleAllChildren(true)}
-                          className="text-xs font-medium text-purple-600 hover:text-purple-700"
+                          className="text-xs font-medium transition-colors"
+                          style={{ color: STARBUCKS.gold }}
                         >
                           Select All
                         </button>
-                        <span className="text-gray-300">|</span>
+                        <span style={{ color: STARBUCKS.lightGreen }}>|</span>
                         <button
                           onClick={() => toggleAllChildren(false)}
-                          className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                          className="text-xs font-medium transition-colors"
+                          style={{ color: STARBUCKS.primaryGreen }}
                         >
                           Deselect All
                         </button>
@@ -587,19 +703,18 @@ export default function ProductSettingsModal({
                       {selectedProduct.children.map(child => (
                         <label
                           key={child.id}
-                          className={`
-                            flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors
-                            ${selectedChildren.has(child.id)
-                              ? 'bg-purple-100 border border-purple-200'
-                              : 'bg-white border border-gray-200 hover:border-purple-200'
-                            }
-                          `}
+                          className="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors"
+                          style={{
+                            backgroundColor: selectedChildren.has(child.id) ? STARBUCKS.lightGreen : STARBUCKS.white,
+                            border: `1px solid ${selectedChildren.has(child.id) ? STARBUCKS.primaryGreen : STARBUCKS.lightGreen}`
+                          }}
                         >
                           <input
                             type="checkbox"
                             checked={selectedChildren.has(child.id)}
                             onChange={() => toggleChildSelection(child.id)}
-                            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                            className="w-4 h-4 rounded"
+                            style={{ accentColor: STARBUCKS.primaryGreen }}
                           />
                           {child.imageUrl ? (
                             <img
@@ -608,17 +723,20 @@ export default function ProductSettingsModal({
                               className="w-8 h-8 rounded object-cover"
                             />
                           ) : (
-                            <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center">
-                              <Package className="w-4 h-4 text-gray-400" />
+                            <div
+                              className="w-8 h-8 rounded flex items-center justify-center"
+                              style={{ backgroundColor: STARBUCKS.cream }}
+                            >
+                              <Package className="w-4 h-4" style={{ color: STARBUCKS.primaryGreen }} />
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{child.title}</p>
-                            <p className="text-xs text-gray-500">{child.asin}</p>
+                            <p className="text-sm font-medium truncate" style={{ color: STARBUCKS.darkGreen }}>{child.title}</p>
+                            <p className="text-xs" style={{ color: STARBUCKS.primaryGreen }}>{child.asin}</p>
                           </div>
                           <div className="text-right">
-                            <p className="text-xs text-gray-500">Current COGS</p>
-                            <p className="text-sm font-semibold text-orange-600">
+                            <p className="text-xs" style={{ color: STARBUCKS.primaryGreen }}>Current COGS</p>
+                            <p className="text-sm font-semibold" style={{ color: STARBUCKS.gold }}>
                               ${(child.cogs / child.units).toFixed(2)}/unit
                             </p>
                           </div>
@@ -627,12 +745,15 @@ export default function ProductSettingsModal({
                     </div>
 
                     {/* Selection Summary */}
-                    <div className="mt-3 pt-3 border-t border-purple-100 flex items-center justify-between">
-                      <span className="text-xs text-gray-600">
-                        <span className="font-bold text-purple-600">{selectedChildren.size}</span> of {selectedProduct.children.length} variations selected
+                    <div
+                      className="mt-3 pt-3 flex items-center justify-between"
+                      style={{ borderTop: `1px solid ${STARBUCKS.gold}30` }}
+                    >
+                      <span className="text-xs" style={{ color: STARBUCKS.darkGreen }}>
+                        <span className="font-bold" style={{ color: STARBUCKS.gold }}>{selectedChildren.size}</span> of {selectedProduct.children.length} variations selected
                       </span>
                       {selectedChildren.size > 0 && (
-                        <span className="text-xs text-emerald-600 font-medium">
+                        <span className="text-xs font-medium" style={{ color: STARBUCKS.primaryGreen }}>
                           Total units: {selectedProduct.children
                             .filter(c => selectedChildren.has(c.id))
                             .reduce((sum, c) => sum + c.units, 0)
@@ -645,12 +766,19 @@ export default function ProductSettingsModal({
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <div
+                className="px-6 py-4"
+                style={{ borderTop: `1px solid ${STARBUCKS.lightGreen}`, backgroundColor: STARBUCKS.cream }}
+              >
                 <div className="flex items-center justify-between">
                   {showApplyToChildren && selectedChildren.size > 0 && (
                     <button
                       onClick={applyToSelectedChildren}
-                      className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-xl transition-all shadow-md hover:shadow-lg"
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl transition-all shadow-md hover:shadow-lg"
+                      style={{
+                        background: `linear-gradient(135deg, ${STARBUCKS.gold} 0%, ${STARBUCKS.gold}DD 100%)`,
+                        color: STARBUCKS.darkGreen
+                      }}
                     >
                       <Copy className="w-4 h-4" />
                       Apply to {selectedChildren.size} Selected Variation{selectedChildren.size > 1 ? 's' : ''}
@@ -659,14 +787,18 @@ export default function ProductSettingsModal({
 
                   <div className="flex items-center gap-3 ml-auto">
                     {saveSuccess && (
-                      <div className="flex items-center gap-2 text-emerald-600">
+                      <div className="flex items-center gap-2" style={{ color: STARBUCKS.primaryGreen }}>
                         <CheckCircle className="w-4 h-4" />
                         <span className="text-sm font-medium">Saved!</span>
                       </div>
                     )}
                     <button
                       onClick={handleSave}
-                      className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors"
+                      className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-xl transition-all shadow-md hover:shadow-lg"
+                      style={{
+                        background: `linear-gradient(135deg, ${STARBUCKS.darkGreen} 0%, ${STARBUCKS.primaryGreen} 100%)`,
+                        color: STARBUCKS.white
+                      }}
                     >
                       <Save className="w-4 h-4" />
                       {selectedProduct?.isParent ? 'Save Parent Only' : 'Save Costs'}
@@ -676,7 +808,7 @@ export default function ProductSettingsModal({
 
                 {/* Helper text for parent products */}
                 {showApplyToChildren && (
-                  <p className="text-xs text-gray-500 mt-3">
+                  <p className="text-xs mt-3" style={{ color: STARBUCKS.primaryGreen }}>
                     <span className="font-medium">Tip:</span> Use "Apply to Selected Variations" to bulk update child products, or "Save Parent Only" to save costs for the parent listing only.
                   </p>
                 )}
@@ -686,9 +818,9 @@ export default function ProductSettingsModal({
             /* Empty State */
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <Package className="w-16 h-16 text-gray-200 mx-auto mb-4" />
-                <h4 className="text-lg font-medium text-gray-400 mb-2">No Product Selected</h4>
-                <p className="text-sm text-gray-400">Choose a product from the list to configure its costs</p>
+                <Package className="w-16 h-16 mx-auto mb-4" style={{ color: STARBUCKS.lightGreen }} />
+                <h4 className="text-lg font-medium mb-2" style={{ color: STARBUCKS.darkGreen + '80' }}>No Product Selected</h4>
+                <p className="text-sm" style={{ color: STARBUCKS.primaryGreen + '80' }}>Choose a product from the list to configure its costs</p>
               </div>
             </div>
           )}
