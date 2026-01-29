@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
     "@aws-sdk/client-sts": "^3.908.0",
     "@aws-sdk/credential-providers": "^3.908.0",
     "@hookform/resolvers": "^5.2.2",
