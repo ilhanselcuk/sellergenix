@@ -1,11 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
+
+// Load environment variables from .env.local
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenv.config({ path: resolve(__dirname, '../.env.local') });
 
 const supabase = createClient(
-  'https://vdsjtskfzmydqajltdmm.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZkc2p0c2tmem15ZHFhamx0ZG1tIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDM5Njc0NywiZXhwIjoyMDc1OTcyNzQ3fQ.Wt8tuUc20JrwZE8c7kfPWy3pFfXfkhjCjr0OoDEYc-Y'
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 async function main() {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('❌ SUPABASE_SERVICE_ROLE_KEY not found in .env.local');
+    process.exit(1);
+  }
+
   const { data: profiles } = await supabase.from('profiles').select('id, email');
   console.log('Profiles:', JSON.stringify(profiles, null, 2));
 
