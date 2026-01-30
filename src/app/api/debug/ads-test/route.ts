@@ -12,8 +12,13 @@ const supabase = createClient(
 );
 
 export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const daysBack = parseInt(searchParams.get("days") || "7", 10);
+  const reportIdToCheck = searchParams.get("reportId");
+
   const results: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
+    params: { daysBack, reportIdToCheck },
     steps: [],
   };
 
@@ -62,24 +67,59 @@ export async function GET(request: NextRequest) {
     (results.steps as string[]).push("Client created successfully");
     results.clientBaseUrl = clientResult.client.getBaseUrl();
 
-    // Step 3: Try to create a simple SP report for yesterday
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split("T")[0];
+    // If reportId is provided, just check its status
+    if (reportIdToCheck) {
+      (results.steps as string[]).push(`Checking status of existing report: ${reportIdToCheck}`);
 
-    // Also try 7 days ago for more likely data
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const weekAgoStr = weekAgo.toISOString().split("T")[0];
+      const statusResponse = await clientResult.client.get<{
+        reportId: string;
+        status: string;
+        url?: string;
+        failureReason?: string;
+        configuration?: unknown;
+      }>(`/reporting/reports/${reportIdToCheck}`);
 
-    (results.steps as string[]).push(`Testing date range: ${weekAgoStr} to ${yesterdayStr}`);
+      results.existingReportStatus = statusResponse;
+
+      if (statusResponse.success && statusResponse.data?.url) {
+        // Download and show the data
+        const downloadResponse = await fetch(statusResponse.data.url);
+        const rawText = await downloadResponse.text();
+        results.rawTextLength = rawText.length;
+        results.rawTextPreview = rawText.substring(0, 2000);
+        try {
+          const reportData = JSON.parse(rawText);
+          results.rowCount = Array.isArray(reportData) ? reportData.length : 0;
+          if (Array.isArray(reportData) && reportData.length > 0) {
+            results.firstRowKeys = Object.keys(reportData[0]);
+            results.allRows = reportData.slice(0, 20);
+          }
+        } catch (e) {
+          results.parseError = String(e);
+        }
+      }
+
+      return NextResponse.json(results);
+    }
+
+    // Step 3: Try to create a simple SP report (use daysBack parameter)
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() - 1); // Yesterday
+    const endDateStr = endDate.toISOString().split("T")[0];
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysBack);
+    const startDateStr = startDate.toISOString().split("T")[0];
+
+    (results.steps as string[]).push(`Testing date range: ${startDateStr} to ${endDateStr} (${daysBack} days)`);
 
     // Step 4: Create report request manually to see raw response
     // V3 API - Start with MINIMAL columns to ensure it works
+    const uniqueId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const reportRequestBody = {
-      name: `SellerGenix_Debug_${Date.now()}`,
-      startDate: weekAgoStr,
-      endDate: yesterdayStr,
+      name: `SellerGenix_Debug_${uniqueId}`,
+      startDate: startDateStr,
+      endDate: endDateStr,
       configuration: {
         adProduct: "SPONSORED_PRODUCTS",
         groupBy: ["campaign"],
