@@ -1734,7 +1734,7 @@ export const syncAdsData = inngest.createFunction(
               user_id: userId,
               profile_id: profileId,
               date: chunk.startDate,
-              date_end: chunk.endDate,
+              // Note: This represents a 60-day chunk, not a single day
               total_spend: m.totalSpend,
               sp_spend: m.spSpend,
               sb_spend: m.sbSpend,
