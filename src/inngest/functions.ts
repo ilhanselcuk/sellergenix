@@ -1735,7 +1735,6 @@ export const syncAdsData = inngest.createFunction(
               sp_spend: m.spSpend,
               sb_spend: m.sbSpend,
               sd_spend: m.sdSpend,
-              sbv_spend: 0, // SB Video tracked separately if available
               total_sales: m.totalSales,
               sp_sales: m.spSales,
               sb_sales: m.sbSales,
