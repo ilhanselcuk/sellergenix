@@ -1642,16 +1642,20 @@ export const syncAdsData = inngest.createFunction(
 
     console.log(`🎯 [Ads Sync] Starting for user ${userId}, profile ${profileId}, ${monthsBack} months back`);
 
+    const runId = Date.now().toString(36); // Unique run ID to prevent step caching issues
+    console.log(`🆔 [Ads Sync] Run ID: ${runId}`);
+
     const results: Record<string, unknown> = {
       startedAt: new Date().toISOString(),
       profileId,
       monthsBack,
+      runId,
       chunksProcessed: 0,
       dailyRecordsSaved: 0,
     };
 
     // Step 1: Calculate 60-day chunks (API limit) - newest first
-    const chunks = await step.run("calculate-chunks", async () => {
+    const chunks = await step.run(`calculate-chunks-${runId}`, async () => {
       const CHUNK_DAYS = 60; // Amazon Ads API max per report
       const totalDays = monthsBack * 30;
       const numChunks = Math.ceil(totalDays / CHUNK_DAYS);
@@ -1689,7 +1693,7 @@ export const syncAdsData = inngest.createFunction(
 
     for (const chunk of chunks) {
       // Step 2a: Fetch SP (Sponsored Products) daily data
-      await step.run(`sp-chunk-${chunk.chunkIndex}`, async () => {
+      await step.run(`sp-chunk-${runId}-${chunk.chunkIndex}`, async () => {
         try {
           console.log(`📊 [Ads Sync] Processing chunk ${chunk.chunkIndex}: ${chunk.startDate} to ${chunk.endDate}`);
           console.log(`📊 [Ads Sync] ENV CHECK: AMAZON_ADS_CLIENT_ID=${process.env.AMAZON_ADS_CLIENT_ID ? 'SET (' + process.env.AMAZON_ADS_CLIENT_ID.substring(0, 10) + '...)' : 'MISSING!'}`);
@@ -1767,14 +1771,14 @@ export const syncAdsData = inngest.createFunction(
 
       // Rate limit between chunks
       if (chunk.chunkIndex < chunks.length - 1) {
-        await step.sleep(`chunk-rate-limit-${chunk.chunkIndex}`, "5s");
+        await step.sleep(`chunk-rate-limit-${runId}-${chunk.chunkIndex}`, "5s");
       }
 
       (results.chunksProcessed as number)++;
     }
 
     // Step 3: Sync campaigns (latest snapshot)
-    await step.run("sync-campaigns", async () => {
+    await step.run(`sync-campaigns-${runId}`, async () => {
       try {
         const { createAdsClient, getAllCampaigns } = await import("@/lib/amazon-ads-api");
         const clientResult = await createAdsClient(refreshToken, profileId, countryCode);
