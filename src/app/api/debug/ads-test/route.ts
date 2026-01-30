@@ -70,20 +70,23 @@ export async function GET(request: NextRequest) {
     // First, check if the profile has campaigns (sanity check)
     const listCampaigns = searchParams.get("listCampaigns") === "true";
     if (listCampaigns) {
-      (results.steps as string[]).push("Listing SP campaigns to verify account...");
+      (results.steps as string[]).push("Listing SP campaigns to verify account (v3 API)...");
 
-      // Try to list SP campaigns via campaigns API
-      const campaignsResponse = await clientResult.client.get<unknown[]>(
-        "/v2/sp/campaigns"
+      // Try to list SP campaigns via v3 campaigns API (POST with body)
+      const campaignsResponse = await clientResult.client.post<{campaigns: unknown[]}>(
+        "/sp/campaigns/list",
+        {
+          maxResults: 100,
+          // No filters = get all campaigns
+        }
       );
       results.campaignsResponse = campaignsResponse;
 
       if (campaignsResponse.success && campaignsResponse.data) {
-        results.campaignCount = Array.isArray(campaignsResponse.data)
-          ? campaignsResponse.data.length
-          : 0;
-        if (Array.isArray(campaignsResponse.data) && campaignsResponse.data.length > 0) {
-          results.sampleCampaign = campaignsResponse.data[0];
+        const campaigns = campaignsResponse.data.campaigns || campaignsResponse.data;
+        results.campaignCount = Array.isArray(campaigns) ? campaigns.length : 0;
+        if (Array.isArray(campaigns) && campaigns.length > 0) {
+          results.sampleCampaign = campaigns[0];
         }
       }
 
