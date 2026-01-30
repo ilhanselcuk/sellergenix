@@ -73,11 +73,18 @@ export async function GET(request: NextRequest) {
       (results.steps as string[]).push("Listing SP campaigns to verify account (v3 API)...");
 
       // Try to list SP campaigns via v3 campaigns API (POST with body)
-      const campaignsResponse = await clientResult.client.post<{campaigns: unknown[]}>(
+      // V3 requires specific Accept header: application/vnd.spcampaign.v3+json
+      const campaignsResponse = await clientResult.client.request<{campaigns: unknown[]}>(
         "/sp/campaigns/list",
         {
-          maxResults: 100,
-          // No filters = get all campaigns
+          method: "POST",
+          headers: {
+            "Accept": "application/vnd.spcampaign.v3+json",
+            "Content-Type": "application/vnd.spcampaign.v3+json",
+          },
+          body: JSON.stringify({
+            maxResults: 100,
+          }),
         }
       );
       results.campaignsResponse = campaignsResponse;
