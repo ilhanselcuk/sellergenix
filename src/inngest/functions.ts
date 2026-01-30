@@ -1223,6 +1223,14 @@ export const syncSettlementFees = inngest.createFunction(
  * Runs every day at 06:00 UTC
  * Syncs Settlement Report fees for all active users (24 months)
  */
+/**
+ * Scheduled Daily Settlement Report Sync
+ *
+ * SCALABILITY (31 Jan 2026):
+ * - Uses fan-out pattern: batch send all sync events in parallel
+ * - syncSettlementFees has per-user concurrency limit, so no race conditions
+ * - Can scale to 100K+ users without sequential bottleneck
+ */
 export const scheduledSettlementSync = inngest.createFunction(
   {
     id: "scheduled-settlement-sync",
@@ -1233,7 +1241,7 @@ export const scheduledSettlementSync = inngest.createFunction(
   async ({ step }) => {
     console.log("⏰ [Inngest] Starting daily Settlement Report sync");
 
-    // Get all active Amazon connections
+    // Step 1: Get all active Amazon connections
     const connections = await step.run("get-connections", async () => {
       const { data, error } = await supabase
         .from("amazon_connections")
@@ -1250,31 +1258,48 @@ export const scheduledSettlementSync = inngest.createFunction(
 
     console.log(`📊 Found ${connections.length} active connections for Settlement sync`);
 
-    // Trigger settlement sync for each user
-    const results = [];
-    for (const conn of connections) {
-      await step.run(`trigger-settlement-${conn.user_id}`, async () => {
-        await inngest.send({
-          name: "amazon/sync.settlement-fees",
+    if (connections.length === 0) {
+      return { usersProcessed: 0, message: "No active connections" };
+    }
+
+    // Step 2: Fan-out - Send all sync events in parallel batches
+    const BATCH_SIZE = 100;
+    const batches = [];
+    for (let i = 0; i < connections.length; i += BATCH_SIZE) {
+      batches.push(connections.slice(i, i + BATCH_SIZE));
+    }
+
+    let totalTriggered = 0;
+
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+
+      await step.run(`trigger-batch-${batchIndex}`, async () => {
+        const events = batch.map((conn) => ({
+          name: "amazon/sync.settlement-fees" as const,
           data: {
             userId: conn.user_id,
             refreshToken: conn.refresh_token,
             marketplaceIds: conn.marketplace_ids || ['ATVPDKIKX0DER'],
             monthsBack: 24, // Always 24 months per rule
           },
-        });
+        }));
 
-        return { userId: conn.user_id, triggered: true };
+        await inngest.send(events);
+        return { batchSize: events.length };
       });
 
-      results.push(conn.user_id);
+      totalTriggered += batch.length;
 
-      // Delay between users to spread load
-      await step.sleep(`settlement-delay-${conn.user_id}`, "5s");
+      if (batchIndex < batches.length - 1) {
+        await step.sleep(`batch-delay-${batchIndex}`, "2s");
+      }
     }
 
+    console.log(`✅ [Settlement Sync] Triggered ${totalTriggered} sync jobs`);
     return {
-      usersProcessed: results.length,
+      usersProcessed: totalTriggered,
+      batches: batches.length,
       completedAt: new Date().toISOString(),
     };
   }
@@ -1874,17 +1899,23 @@ export const syncAdsData = inngest.createFunction(
  * - Sponsored Products: 95 days
  * - Sponsored Brands: 60 days
  * - Sponsored Display: 65 days
+ *
+ * SCALABILITY (31 Jan 2026):
+ * - Uses fan-out pattern: trigger all syncs in parallel via batch send
+ * - syncAdsData has per-user concurrency limit (1), so no race conditions
+ * - Inngest handles rate limiting automatically
+ * - Can scale to 100K+ users without sequential bottleneck
  */
 export const scheduledAdsSync = inngest.createFunction(
   {
     id: "scheduled-ads-sync",
     retries: 1,
-    concurrency: { limit: 3 },
   },
   { cron: "0 */3 * * *" }, // Every 3 hours
   async ({ step }) => {
     console.log("⏰ [Scheduled Ads Sync] Starting...");
 
+    // Step 1: Get all active Ads connections
     const connections = await step.run("get-active-connections", async () => {
       const { data } = await supabase
         .from("amazon_ads_connections")
@@ -1895,10 +1926,27 @@ export const scheduledAdsSync = inngest.createFunction(
 
     console.log(`📊 [Scheduled Ads Sync] Found ${connections.length} active connections`);
 
-    for (const conn of connections) {
-      await step.run(`trigger-sync-${conn.profile_id}`, async () => {
-        await inngest.send({
-          name: "amazon/sync.ads",
+    if (connections.length === 0) {
+      return { connectionsProcessed: 0, message: "No active connections" };
+    }
+
+    // Step 2: Fan-out - Send all sync events in parallel batches
+    // Inngest will handle concurrency via syncAdsData's per-user limit
+    const BATCH_SIZE = 100; // Send 100 events per batch to avoid payload limits
+    const batches = [];
+    for (let i = 0; i < connections.length; i += BATCH_SIZE) {
+      batches.push(connections.slice(i, i + BATCH_SIZE));
+    }
+
+    let totalTriggered = 0;
+
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+
+      await step.run(`trigger-batch-${batchIndex}`, async () => {
+        // Create events array for batch send
+        const events = batch.map((conn) => ({
+          name: "amazon/sync.ads" as const,
           data: {
             userId: conn.user_id,
             profileId: conn.profile_id,
@@ -1906,14 +1954,23 @@ export const scheduledAdsSync = inngest.createFunction(
             countryCode: conn.country_code,
             monthsBack: 2, // 60 days - covers 14-day attribution window + buffer
           },
-        });
-        return { triggered: true };
+        }));
+
+        // Batch send - all events sent in single API call
+        await inngest.send(events);
+        return { batchSize: events.length };
       });
 
-      await step.sleep(`user-rate-limit-${conn.profile_id}`, "10s");
+      totalTriggered += batch.length;
+
+      // Small delay between batches to avoid overwhelming Inngest
+      if (batchIndex < batches.length - 1) {
+        await step.sleep(`batch-delay-${batchIndex}`, "2s");
+      }
     }
 
-    return { connectionsProcessed: connections.length };
+    console.log(`✅ [Scheduled Ads Sync] Triggered ${totalTriggered} sync jobs`);
+    return { connectionsProcessed: totalTriggered, batches: batches.length };
   }
 );
 
