@@ -179,6 +179,14 @@ export interface AdsMetrics {
 }
 
 // ============================================
+// DAILY AGGREGATED METRICS (for granular tracking)
+// ============================================
+
+export interface DailyAdsMetrics extends AdsMetrics {
+  date: string  // YYYY-MM-DD
+}
+
+// ============================================
 // DATABASE TYPES
 // ============================================
 

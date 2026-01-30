@@ -41,6 +41,7 @@ export {
 // Reports
 export {
   getAdsMetrics,
+  getDailyAdsMetrics,  // NEW: Daily granularity for historical sync
   getSpCampaignReport,
   getSbCampaignReport,
   getSdCampaignReport,
@@ -62,6 +63,7 @@ export type {
   KeywordMetrics,
   MatchType,
   AdsMetrics,
+  DailyAdsMetrics,  // NEW: Daily metrics type
   AmazonAdsConnection,
   AdsApiResponse,
   SpCampaignReportRow,

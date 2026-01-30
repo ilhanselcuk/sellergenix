@@ -14,7 +14,7 @@
  */
 
 import { AmazonAdsClient } from './client'
-import { AdsApiResponse, AdsMetrics, SpCampaignReportRow } from './types'
+import { AdsApiResponse, AdsMetrics, DailyAdsMetrics, SpCampaignReportRow } from './types'
 
 // ============================================
 // REPORT CONFIGURATION
@@ -257,21 +257,23 @@ async function waitForReport(
 
 /**
  * Get Sponsored Products campaign report
+ * Uses DAILY timeUnit for granular daily data
  */
 export async function getSpCampaignReport(
   client: AmazonAdsClient,
   startDate: string,
-  endDate: string
+  endDate: string,
+  timeUnit: 'SUMMARY' | 'DAILY' = 'DAILY'
 ): Promise<AdsApiResponse<SpCampaignReportRow[]>> {
-  console.log(`[SP Report] Creating report for ${startDate} to ${endDate}`)
+  console.log(`[SP Report] Creating report for ${startDate} to ${endDate} (timeUnit: ${timeUnit})`)
 
   // Create report request
   const createResult = await createReport(client, {
     reportType: 'sp',
-    columns: SP_CAMPAIGN_METRICS,
+    columns: [...SP_CAMPAIGN_METRICS, ...(timeUnit === 'DAILY' ? ['date'] : [])],
     startDate,
     endDate,
-    timeUnit: 'SUMMARY',
+    timeUnit,
   })
 
   console.log(`[SP Report] Create result:`, JSON.stringify(createResult))
@@ -304,18 +306,20 @@ export async function getSpCampaignReport(
 
 /**
  * Get Sponsored Brands campaign report
+ * Uses DAILY timeUnit for granular daily data
  */
 export async function getSbCampaignReport(
   client: AmazonAdsClient,
   startDate: string,
-  endDate: string
+  endDate: string,
+  timeUnit: 'SUMMARY' | 'DAILY' = 'DAILY'
 ): Promise<AdsApiResponse<SpCampaignReportRow[]>> {
   const createResult = await createReport(client, {
     reportType: 'sb',
-    columns: SB_CAMPAIGN_METRICS,
+    columns: [...SB_CAMPAIGN_METRICS, ...(timeUnit === 'DAILY' ? ['date'] : [])],
     startDate,
     endDate,
-    timeUnit: 'SUMMARY',
+    timeUnit,
   })
 
   if (!createResult.success || !createResult.data) {
@@ -333,18 +337,20 @@ export async function getSbCampaignReport(
 
 /**
  * Get Sponsored Display campaign report
+ * Uses DAILY timeUnit for granular daily data
  */
 export async function getSdCampaignReport(
   client: AmazonAdsClient,
   startDate: string,
-  endDate: string
+  endDate: string,
+  timeUnit: 'SUMMARY' | 'DAILY' = 'DAILY'
 ): Promise<AdsApiResponse<SpCampaignReportRow[]>> {
   const createResult = await createReport(client, {
     reportType: 'sd',
-    columns: SD_CAMPAIGN_METRICS,
+    columns: [...SD_CAMPAIGN_METRICS, ...(timeUnit === 'DAILY' ? ['date'] : [])],
     startDate,
     endDate,
-    timeUnit: 'SUMMARY',
+    timeUnit,
   })
 
   if (!createResult.success || !createResult.data) {
@@ -492,6 +498,153 @@ export async function getAdsMetrics(
     return { success: true, data: metrics }
   } catch (error) {
     console.error('[Ads Reports] Get metrics error:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+/**
+ * Get DAILY advertising metrics for a date range
+ * Returns an array of metrics grouped by date (one entry per day)
+ * This is the main function for historical sync with daily granularity
+ */
+export async function getDailyAdsMetrics(
+  client: AmazonAdsClient,
+  startDate: string,
+  endDate: string
+): Promise<AdsApiResponse<DailyAdsMetrics[]>> {
+  try {
+    console.log(`[Ads Reports] Fetching DAILY metrics for ${startDate} to ${endDate}`)
+
+    // Fetch all report types with DAILY granularity
+    const [spResult, sbResult, sdResult] = await Promise.allSettled([
+      getSpCampaignReport(client, startDate, endDate, 'DAILY'),
+      getSbCampaignReport(client, startDate, endDate, 'DAILY'),
+      getSdCampaignReport(client, startDate, endDate, 'DAILY'),
+    ])
+
+    // Debug log
+    console.log(`[Ads Reports DAILY] SP rows: ${spResult.status === 'fulfilled' && spResult.value.data ? spResult.value.data.length : 0}`)
+    console.log(`[Ads Reports DAILY] SB rows: ${sbResult.status === 'fulfilled' && sbResult.value.data ? sbResult.value.data.length : 0}`)
+    console.log(`[Ads Reports DAILY] SD rows: ${sdResult.status === 'fulfilled' && sdResult.value.data ? sdResult.value.data.length : 0}`)
+
+    // Group all data by date
+    const dailyMap = new Map<string, {
+      spSpend: number, spSales: number, spImpressions: number, spClicks: number, spOrders: number, spUnits: number,
+      sbSpend: number, sbSales: number, sbImpressions: number, sbClicks: number, sbOrders: number, sbUnits: number,
+      sdSpend: number, sdSales: number, sdImpressions: number, sdClicks: number, sdOrders: number, sdUnits: number
+    }>()
+
+    // Initialize empty entry for a date
+    const getOrCreateDay = (date: string) => {
+      if (!dailyMap.has(date)) {
+        dailyMap.set(date, {
+          spSpend: 0, spSales: 0, spImpressions: 0, spClicks: 0, spOrders: 0, spUnits: 0,
+          sbSpend: 0, sbSales: 0, sbImpressions: 0, sbClicks: 0, sbOrders: 0, sbUnits: 0,
+          sdSpend: 0, sdSales: 0, sdImpressions: 0, sdClicks: 0, sdOrders: 0, sdUnits: 0,
+        })
+      }
+      return dailyMap.get(date)!
+    }
+
+    // Process SP rows
+    if (spResult.status === 'fulfilled' && spResult.value.success && spResult.value.data) {
+      for (const row of spResult.value.data) {
+        const date = (row as any).date
+        if (!date) continue
+        const day = getOrCreateDay(date)
+        day.spSpend += row.cost || 0
+        day.spSales += (row as any).sales14d || 0
+        day.spImpressions += row.impressions || 0
+        day.spClicks += row.clicks || 0
+        day.spOrders += (row as any).purchases14d || 0
+        day.spUnits += (row as any).purchases14d || 0
+      }
+    }
+
+    // Process SB rows
+    if (sbResult.status === 'fulfilled' && sbResult.value.success && sbResult.value.data) {
+      for (const row of sbResult.value.data) {
+        const date = (row as any).date
+        if (!date) continue
+        const day = getOrCreateDay(date)
+        day.sbSpend += row.cost || 0
+        day.sbSales += (row as any).sales14d || 0
+        day.sbImpressions += row.impressions || 0
+        day.sbClicks += row.clicks || 0
+        day.sbOrders += (row as any).purchases14d || 0
+        day.sbUnits += (row as any).purchases14d || 0
+      }
+    }
+
+    // Process SD rows
+    if (sdResult.status === 'fulfilled' && sdResult.value.success && sdResult.value.data) {
+      for (const row of sdResult.value.data) {
+        const date = (row as any).date
+        if (!date) continue
+        const day = getOrCreateDay(date)
+        day.sdSpend += row.cost || 0
+        day.sdSales += (row as any).sales14d || 0
+        day.sdImpressions += row.impressions || 0
+        day.sdClicks += row.clicks || 0
+        day.sdOrders += (row as any).purchases14d || 0
+        day.sdUnits += (row as any).purchases14d || 0
+      }
+    }
+
+    // Convert map to array of DailyAdsMetrics
+    const dailyMetrics: DailyAdsMetrics[] = []
+    for (const [date, day] of dailyMap) {
+      const totalSpend = day.spSpend + day.sbSpend + day.sdSpend
+      const totalSales = day.spSales + day.sbSales + day.sdSales
+      const impressions = day.spImpressions + day.sbImpressions + day.sdImpressions
+      const clicks = day.spClicks + day.sbClicks + day.sdClicks
+      const orders = day.spOrders + day.sbOrders + day.sdOrders
+      const units = day.spUnits + day.sbUnits + day.sdUnits
+
+      // Calculate derived metrics
+      const acos = totalSales > 0 ? (totalSpend / totalSales) * 100 : 0
+      const roas = totalSpend > 0 ? totalSales / totalSpend : 0
+      const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0
+      const cpc = clicks > 0 ? totalSpend / clicks : 0
+      const cvr = clicks > 0 ? (orders / clicks) * 100 : 0
+
+      dailyMetrics.push({
+        date,
+        totalSpend,
+        spSpend: day.spSpend,
+        sbSpend: day.sbSpend,
+        sdSpend: day.sdSpend,
+        totalSales,
+        spSales: day.spSales,
+        sbSales: day.sbSales,
+        sdSales: day.sdSales,
+        impressions,
+        clicks,
+        orders,
+        units,
+        acos,
+        roas,
+        ctr,
+        cpc,
+        cvr,
+      })
+    }
+
+    // Sort by date descending (newest first)
+    dailyMetrics.sort((a, b) => b.date.localeCompare(a.date))
+
+    console.log(`[Ads Reports DAILY] Processed ${dailyMetrics.length} unique days`)
+    if (dailyMetrics.length > 0) {
+      console.log(`[Ads Reports DAILY] Date range: ${dailyMetrics[dailyMetrics.length - 1].date} to ${dailyMetrics[0].date}`)
+      console.log(`[Ads Reports DAILY] Sample (first day): spend=$${dailyMetrics[0].totalSpend.toFixed(2)}, sales=$${dailyMetrics[0].totalSales.toFixed(2)}`)
+    }
+
+    return { success: true, data: dailyMetrics }
+  } catch (error) {
+    console.error('[Ads Reports] Get daily metrics error:', error)
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

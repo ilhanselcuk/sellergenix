@@ -1688,86 +1688,97 @@ export const syncAdsData = inngest.createFunction(
     console.log(`📊 [Ads Sync] About to process ${chunks.length} chunks`);
 
     for (const chunk of chunks) {
-      // Step 2a: Fetch SP (Sponsored Products) daily data
-      // IMPORTANT: Capture result to track saves outside step.run (Inngest memoization)
+      // Step 2a: Fetch DAILY metrics for this chunk
+      // Uses getDailyAdsMetrics which returns data grouped by date
       const chunkResult = await step.run(`sp-chunk-${runId}-${chunk.chunkIndex}`, async () => {
         try {
           console.log(`📊 [Ads Sync] Processing chunk ${chunk.chunkIndex}: ${chunk.startDate} to ${chunk.endDate}`);
           console.log(`📊 [Ads Sync] ENV CHECK: AMAZON_ADS_CLIENT_ID=${process.env.AMAZON_ADS_CLIENT_ID ? 'SET (' + process.env.AMAZON_ADS_CLIENT_ID.substring(0, 10) + '...)' : 'MISSING!'}`);
           console.log(`📊 [Ads Sync] ENV CHECK: AMAZON_ADS_CLIENT_SECRET=${process.env.AMAZON_ADS_CLIENT_SECRET ? 'SET' : 'MISSING!'}`);
 
-          const { createAdsClient, getAdsMetrics } = await import("@/lib/amazon-ads-api");
+          const { createAdsClient, getDailyAdsMetrics } = await import("@/lib/amazon-ads-api");
           console.log(`📊 [Ads Sync] Imported createAdsClient, calling...`);
           const clientResult = await createAdsClient(refreshToken, profileId, countryCode);
           console.log(`📊 [Ads Sync] createAdsClient returned: success=${clientResult.success}, error=${clientResult.error || 'none'}`);
 
           if (!clientResult.success || !clientResult.client) {
             console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex}: Client creation failed - ${clientResult.error || 'Unknown error'}`);
-            return { success: false, error: clientResult.error || "Client creation failed" };
+            return { success: false, error: clientResult.error || "Client creation failed", daysSaved: 0 };
           }
 
-          console.log(`✅ [Ads Sync] Chunk ${chunk.chunkIndex}: Client created, fetching metrics...`);
+          console.log(`✅ [Ads Sync] Chunk ${chunk.chunkIndex}: Client created, fetching DAILY metrics...`);
 
-          // Get aggregated metrics for this chunk (we'll store by date range)
-          const metricsResult = await getAdsMetrics(clientResult.client, chunk.startDate, chunk.endDate);
+          // Get DAILY metrics (one record per day)
+          const metricsResult = await getDailyAdsMetrics(clientResult.client, chunk.startDate, chunk.endDate);
 
           if (!metricsResult.success) {
             console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex}: Metrics fetch failed - ${metricsResult.error || 'Unknown error'}`);
-            return { success: false, error: metricsResult.error || "Metrics fetch failed" };
+            return { success: false, error: metricsResult.error || "Metrics fetch failed", daysSaved: 0 };
           }
 
-          if (!metricsResult.data) {
-            console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex}: No data returned from metrics`);
-            return { success: false, error: "No data returned" };
+          if (!metricsResult.data || metricsResult.data.length === 0) {
+            console.log(`⚠️ [Ads Sync] Chunk ${chunk.chunkIndex}: No data for this period (no ad activity)`);
+            return { success: true, daysSaved: 0, totalSpend: 0, totalSales: 0 };
           }
 
-          const m = metricsResult.data;
-          console.log(`📈 [Ads Sync] Chunk ${chunk.chunkIndex}: Got metrics - spend=$${m.totalSpend.toFixed(2)}, sales=$${m.totalSales.toFixed(2)}`);
+          const dailyData = metricsResult.data;
+          console.log(`📈 [Ads Sync] Chunk ${chunk.chunkIndex}: Got ${dailyData.length} daily records`);
 
-          // Upsert daily metrics (using startDate as key for this chunk)
-          const { error: upsertError } = await supabase
-            .from("ads_daily_metrics")
-            .upsert({
-              user_id: userId,
-              profile_id: profileId,
-              date: chunk.startDate,
-              // Note: This represents a 60-day chunk, not a single day
-              total_spend: m.totalSpend,
-              sp_spend: m.spSpend,
-              sb_spend: m.sbSpend,
-              sd_spend: m.sdSpend,
-              total_sales: m.totalSales,
-              sp_sales: m.spSales,
-              sb_sales: m.sbSales,
-              sd_sales: m.sdSales,
-              impressions: m.impressions,
-              clicks: m.clicks,
-              orders: m.orders,
-              units: m.units,
-              acos: m.acos,
-              roas: m.roas,
-              ctr: m.ctr,
-              cpc: m.cpc,
-              cvr: m.cvr,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: "user_id,profile_id,date" });
+          // Save each day as a separate record
+          let daysSaved = 0;
+          let totalSpend = 0;
+          let totalSales = 0;
 
-          if (upsertError) {
-            console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex}: DB upsert failed - ${upsertError.message}`);
-            return { success: false, error: upsertError.message };
+          for (const m of dailyData) {
+            // Skip days with zero spend (no ad activity)
+            if (m.totalSpend === 0 && m.impressions === 0) continue;
+
+            const { error: upsertError } = await supabase
+              .from("ads_daily_metrics")
+              .upsert({
+                user_id: userId,
+                profile_id: profileId,
+                date: m.date,  // Now using actual date from API
+                total_spend: m.totalSpend,
+                sp_spend: m.spSpend,
+                sb_spend: m.sbSpend,
+                sd_spend: m.sdSpend,
+                total_sales: m.totalSales,
+                sp_sales: m.spSales,
+                sb_sales: m.sbSales,
+                sd_sales: m.sdSales,
+                impressions: m.impressions,
+                clicks: m.clicks,
+                orders: m.orders,
+                units: m.units,
+                acos: m.acos,
+                roas: m.roas,
+                ctr: m.ctr,
+                cpc: m.cpc,
+                cvr: m.cvr,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: "user_id,profile_id,date" });
+
+            if (upsertError) {
+              console.error(`❌ [Ads Sync] Day ${m.date}: DB upsert failed - ${upsertError.message}`);
+            } else {
+              daysSaved++;
+              totalSpend += m.totalSpend;
+              totalSales += m.totalSales;
+            }
           }
 
-          console.log(`✅ [Ads Sync] Chunk ${chunk.chunkIndex}: Saved to DB - $${m.totalSpend.toFixed(2)} spend, ${m.acos.toFixed(1)}% ACOS`);
-          return { success: true, spend: m.totalSpend, sales: m.totalSales };
+          console.log(`✅ [Ads Sync] Chunk ${chunk.chunkIndex}: Saved ${daysSaved} days - total spend=$${totalSpend.toFixed(2)}, sales=$${totalSales.toFixed(2)}`);
+          return { success: true, daysSaved, totalSpend, totalSales };
         } catch (error: any) {
           console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex} exception:`, error.message);
-          return { success: false, error: error.message };
+          return { success: false, error: error.message, daysSaved: 0 };
         }
       });
 
       // Track saves OUTSIDE step.run to avoid Inngest memoization issues
-      if (chunkResult && chunkResult.success) {
-        (results.dailyRecordsSaved as number)++;
+      if (chunkResult && chunkResult.success && chunkResult.daysSaved) {
+        (results.dailyRecordsSaved as number) += chunkResult.daysSaved;
       }
 
       // Rate limit between chunks
