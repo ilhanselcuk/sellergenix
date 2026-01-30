@@ -52,8 +52,9 @@ export async function POST(request: NextRequest) {
     // Trigger Inngest background job
     console.log(`🚀 [Historical Sync] Triggering Inngest job for user ${user.id}, years: ${yearsBack}`)
 
+    // FIXED: Changed from 'amazon/sync.historical' to 'amazon/sync.historical-reports' (Sellerboard approach)
     const { ids } = await inngest.send({
-      name: 'amazon/sync.historical',
+      name: 'amazon/sync.historical-reports',
       data: {
         userId: user.id,
         refreshToken: connection.refresh_token,

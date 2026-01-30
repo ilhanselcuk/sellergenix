@@ -27,6 +27,15 @@ export default async function DashboardPage() {
   const amazonConnection = await getActiveAmazonConnection(user.id)
   const hasAmazonConnection = !!amazonConnection
 
+  // Check for Ads API connection
+  const { data: adsConnection } = await supabase
+    .from('amazon_ads_connections')
+    .select('id, profile_id, is_active')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .single()
+  const hasAdsApiConnection = !!adsConnection
+
   // Get dashboard data from database
   const dashboardData = await getDashboardData(user.id)
 
@@ -114,6 +123,7 @@ export default async function DashboardPage() {
         profileName={profile?.full_name || 'User'}
         email={user.email || ''}
         hasAmazonConnection={hasAmazonConnection}
+        hasAdsApiConnection={hasAdsApiConnection}
         dashboardData={dashboardData}
         lastSyncAt={amazonConnection?.last_synced_at || (amazonConnection as any)?.last_sync_at || null}
       />

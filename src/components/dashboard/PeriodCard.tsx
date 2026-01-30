@@ -61,6 +61,14 @@ export interface PeriodData {
     other: number
     total: number
   }
+  // Ads breakdown from Amazon Advertising API (SP/SB/SBV/SD)
+  adsBreakdown?: {
+    sponsoredProducts: number      // SP campaigns
+    sponsoredBrands: number        // SB campaigns
+    sponsoredBrandsVideo: number   // SBV campaigns
+    sponsoredDisplay: number       // SD campaigns
+    total: number                  // Total ad spend (should match adSpend)
+  }
 }
 
 interface PeriodCardProps {

@@ -1763,7 +1763,14 @@ export const syncAdsData = inngest.createFunction(
 
         if (campaignsResult.success && campaignsResult.data) {
           let saved = 0;
-          for (const campaign of campaignsResult.data) {
+          // Combine all campaign types into a single array
+          const allCampaigns = [
+            ...campaignsResult.data.sponsoredProducts.map(c => ({ ...c, campaignType: 'sponsoredProducts' })),
+            ...campaignsResult.data.sponsoredBrands.map(c => ({ ...c, campaignType: 'sponsoredBrands' })),
+            ...campaignsResult.data.sponsoredDisplay.map(c => ({ ...c, campaignType: 'sponsoredDisplay' })),
+          ];
+
+          for (const campaign of allCampaigns) {
             const { error } = await supabase
               .from("ads_campaigns")
               .upsert({

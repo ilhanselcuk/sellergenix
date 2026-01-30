@@ -34,6 +34,7 @@
 
 **Faz 2 için OKU:**
 - `/docs/AMAZON_ADS_API.md` - Amazon Advertising API
+- `/docs/AMAZON_ADS_API_REFERENCE.md` - Amazon Ads API Kapsamlı Referans (endpoints, rate limits, attribution windows, metrics)
 
 **Faz 3 için OKU:**
 - `/docs/SHOPIFY_API.md` - Shopify Admin API
@@ -106,7 +107,208 @@ fetch('/api/inngest', {
     data: { monthsBack: 24 }
   })
 }).then(r => r.json()).then(d => console.log('🚀 Inngest Started:', d))
+
+// 🖼️ Ürün Görselleri Sync (tüm ürünler)
+fetch('/api/sync/product-images', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ userId: 'USER_ID_HERE' })
+}).then(r => r.json()).then(d => console.log('🖼️ Product Images:', d))
 ```
+
+---
+
+## 🖼️ ÜRÜN GÖRSELİ ÇÖZÜMÜ (29 Ocak 2026)
+
+### 🐛 SORUN
+
+**Belirti:** Dashboard'da ürün görselleri "ZYRA" placeholder veya generic Unsplash fotoğrafları gösteriyordu.
+
+**Kök Neden:**
+1. Amazon Catalog API bazı yeni ürünleri indekslememiş → "Product not found in catalog" hatası
+2. `products` tablosunda `image_url` boş veya placeholder URL'lerle doluydu
+3. Sellerboard gerçek Amazon CDN görsellerini kullanıyor, biz kullanmıyorduk
+
+### ✅ ÇÖZÜM: Dual-Method Image Sync
+
+**Endpoint:** `/api/sync/product-images`
+**Dosya:** `src/app/api/sync/product-images/route.ts`
+
+**Çalışma Mantığı:**
+```
+1. Amazon Catalog API dene (müşterinin kendi token'ı ile)
+   ├── GET /catalog/2022-04-01/items/{asin}?includedData=images
+   ├── Response'tan MAIN variant image URL al
+   └── Başarılı → DB güncelle, bitir
+
+2. Catalog API başarısız → Amazon sayfası scrape et
+   ├── GET https://www.amazon.com/dp/{asin}
+   ├── HTML'den image ID regex ile çıkar: /images\/I\/([0-9][0-9A-Za-z+_-]+L)\._/
+   ├── Sellerboard formatında URL oluştur
+   └── DB güncelle
+```
+
+**Image URL Formatları:**
+
+| Kaynak | Format | Örnek |
+|--------|--------|-------|
+| Catalog API | `https://m.media-amazon.com/images/I/{imageId}.jpg` | `71NM2k2-gyL.jpg` |
+| Scrape (Sellerboard stili) | `https://images-na.ssl-images-amazon.com/images/I/{imageId}._SS{size}_.jpg` | `41l4XTiJrPL._SS200_.jpg` |
+
+**Size Parametreleri:**
+- `_SS40_` = 40x40 (thumbnail)
+- `_SS75_` = 75x75 (small)
+- `_SS200_` = 200x200 (medium - biz bunu kullanıyoruz)
+- `_SL500_` = 500px (large)
+- `_SL1500_` = 1500px (full size)
+
+### 📁 İLGİLİ DOSYALAR
+
+| Dosya | Amaç |
+|-------|------|
+| `src/app/api/sync/product-images/route.ts` | Image sync endpoint (POST + GET) |
+| `src/lib/amazon-sp-api/catalog.ts` | `getCatalogItem()` - Catalog API client |
+| `src/components/dashboard/NewDashboardClient.tsx` | Products tablosu (image_url kullanımı) |
+
+### 🔧 TEKNİK DETAYLAR
+
+**Catalog API Response Yapısı:**
+```typescript
+interface CatalogItem {
+  asin: string
+  images?: {
+    marketplaceId: string
+    images: {
+      variant: 'MAIN' | 'PT01' | 'PT02' | ...
+      link: string  // ← Bu URL'yi kullanıyoruz
+      height: number
+      width: number
+    }[]
+  }[]
+}
+```
+
+**Scrape Regex Pattern:**
+```javascript
+// HTML'den image ID çıkarma
+const matches = html.match(/images\/I\/([0-9][0-9A-Za-z+_-]+L)\._/g)
+// Örnek match: "images/I/41l4XTiJrPL._" → imageId = "41l4XTiJrPL"
+```
+
+**Database Güncelleme:**
+```typescript
+await supabase
+  .from('products')
+  .update({
+    image_url: imageUrl,
+    updated_at: new Date().toISOString()
+  })
+  .eq('asin', asin)
+  .eq('user_id', userId)
+```
+
+### 🚀 KULLANIM
+
+**Console'dan Manuel Tetikleme:**
+```javascript
+// Tek ASIN için
+fetch('/api/sync/product-images', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ userId: 'xxx', asin: 'B0FP57MKF9' })
+}).then(r => r.json()).then(console.log)
+
+// Tüm ürünler için (placeholder/unsplash olanları günceller)
+fetch('/api/sync/product-images', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ userId: 'xxx' })
+}).then(r => r.json()).then(console.log)
+
+// Durum kontrolü
+fetch('/api/sync/product-images?userId=xxx').then(r => r.json()).then(console.log)
+```
+
+### ⚠️ ÖNEMLİ NOTLAR
+
+1. **Rate Limiting:** Her API call arasında 100ms delay var
+2. **Scrape Riski:** Amazon HTML yapısını değiştirirse scrape kırılabilir
+3. **Token Gereksinimi:** Catalog API müşterinin kendi `refresh_token`'ını kullanır
+4. **Fallback Sırası:** Catalog API → Scrape → Hata döndür
+5. **Yeni Ürünler:** Amazon'da yeni listelenen ürünler Catalog API'de 24-48 saat sonra görünebilir
+
+### 🚀 OTOMATİK SYNC (INNGEST)
+
+**Tarih Eklendi:** 29 Ocak 2026
+
+Product images sync artık Inngest ile otomatik olarak çalışıyor:
+
+**Event:** `amazon/sync.product-images`
+
+**Tetikleme Noktası:**
+- `syncHistoricalDataReports` tamamlandıktan sonra otomatik tetiklenir
+- Historical sync → Settlement fees sync → **Product images sync**
+
+**Flow:**
+```
+Yeni müşteri bağlanır
+    ↓
+OAuth callback tetiklenir
+    ↓
+amazon/sync.historical-reports event gönderilir
+    ↓
+Historical data sync tamamlanır
+    ↓
+amazon/sync.settlement-fees event gönderilir (Step 5)
+    ↓
+amazon/sync.product-images event gönderilir (Step 6) ← YENİ!
+    ↓
+Tüm ürünler için gerçek Amazon görselleri çekilir
+```
+
+**Inngest Function:**
+```typescript
+// src/inngest/functions.ts
+export const syncProductImages = inngest.createFunction(
+  {
+    id: "sync-product-images",
+    retries: 2,
+    concurrency: { limit: 1, key: "event.data.userId" },
+  },
+  { event: "amazon/sync.product-images" },
+  async ({ event, step }) => {
+    // 1. Get products with missing/placeholder images
+    // 2. For each product: Catalog API → Scrape fallback
+    // 3. Update database with real image URLs
+  }
+);
+```
+
+**Dosyalar:**
+- `src/inngest/client.ts` - Event type tanımı
+- `src/inngest/functions.ts` - Function implementasyonu
+- `src/inngest/index.ts` - Export'lar
+
+**Manuel Tetikleme (Inngest Dashboard):**
+```javascript
+// Inngest send event
+{
+  name: "amazon/sync.product-images",
+  data: {
+    userId: "xxx",
+    refreshToken: "Atzr|xxx",
+    marketplaceIds: ["ATVPDKIKX0DER"]
+  }
+}
+```
+
+### ✅ TEST SONUÇLARI (29 Ocak 2026)
+
+| ASIN | Yöntem | Sonuç |
+|------|--------|-------|
+| B0F1CTMVGB | Catalog API | ✅ `71NM2k2-gyL.jpg` |
+| B0F1CTW639 | Catalog API | ✅ `710cO+dRvZL.jpg` |
+| B0FP57MKF9 | Scrape (Catalog'da yok) | ✅ `41l4XTiJrPL._SS200_.jpg` |
 
 ---
 

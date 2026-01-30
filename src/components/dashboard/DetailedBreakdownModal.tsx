@@ -278,17 +278,46 @@ export default function DetailedBreakdownModal({ isOpen, onClose, data }: Detail
             valueColor={safePromo > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'}
           />
 
-          {/* Advertising cost - Expandable */}
+          {/* Advertising cost - Expandable with SP/SB/SBV/SD breakdown */}
           <CollapsibleRow
             label="Advertising cost"
             value={formatCurrency(-safeAdSpend)}
             valueColor={safeAdSpend > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'}
             defaultOpen={false}
           >
-            <SubRow label="Sponsored Products" value={formatCurrency(-safeAdSpend)} valueColor="#DC2626" />
-            <SubRow label="Sponsored Brands Video" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
-            <SubRow label="Sponsored Display" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
-            <SubRow label="Sponsored Brands" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
+            {/* Use real adsBreakdown if available, otherwise show total in SP */}
+            {data.adsBreakdown ? (
+              <>
+                <SubRow
+                  label="Sponsored Products"
+                  value={formatCurrency(-data.adsBreakdown.sponsoredProducts)}
+                  valueColor={data.adsBreakdown.sponsoredProducts > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'}
+                />
+                <SubRow
+                  label="Sponsored Brands Video"
+                  value={formatCurrency(-data.adsBreakdown.sponsoredBrandsVideo)}
+                  valueColor={data.adsBreakdown.sponsoredBrandsVideo > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'}
+                />
+                <SubRow
+                  label="Sponsored Display"
+                  value={formatCurrency(-data.adsBreakdown.sponsoredDisplay)}
+                  valueColor={data.adsBreakdown.sponsoredDisplay > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'}
+                />
+                <SubRow
+                  label="Sponsored Brands"
+                  value={formatCurrency(-data.adsBreakdown.sponsoredBrands)}
+                  valueColor={data.adsBreakdown.sponsoredBrands > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'}
+                />
+              </>
+            ) : (
+              <>
+                {/* Fallback: Show total ad spend as SP until Ads API data arrives */}
+                <SubRow label="Sponsored Products" value={formatCurrency(-safeAdSpend)} valueColor={safeAdSpend > 0 ? "#DC2626" : STARBUCKS.darkGreen + '60'} />
+                <SubRow label="Sponsored Brands Video" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
+                <SubRow label="Sponsored Display" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
+                <SubRow label="Sponsored Brands" value="$0.00" valueColor={STARBUCKS.darkGreen + '60'} />
+              </>
+            )}
           </CollapsibleRow>
 
           {/* Refund cost - Expandable (Sellerboard Parity) */}

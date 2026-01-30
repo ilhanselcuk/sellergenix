@@ -121,8 +121,9 @@ export async function GET(request: NextRequest) {
     // ========================================
     try {
       console.log('🚀 Triggering 2-year historical sync via Inngest...')
+      // FIXED: Changed from 'amazon/sync.historical' to 'amazon/sync.historical-reports' (Sellerboard approach)
       await inngest.send({
-        name: 'amazon/sync.historical',
+        name: 'amazon/sync.historical-reports',
         data: {
           userId: user.id,
           refreshToken: refresh_token,

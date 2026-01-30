@@ -34,12 +34,27 @@ export interface ProductData {
   margin: number
   roi: number
   bsr: number | null
+  // Ads breakdown from Amazon Advertising API (SP/SB/SBV/SD)
+  adsBreakdown?: {
+    sponsoredProducts: number      // SP campaigns
+    sponsoredBrands: number        // SB campaigns
+    sponsoredBrandsVideo: number   // SBV campaigns
+    sponsoredDisplay: number       // SD campaigns
+  }
+}
+
+interface SalesApiTotals {
+  units: number
+  orders: number
+  sales: number
+  refunds?: number
 }
 
 interface ProductTableProps {
   products: ProductData[]
   onProductClick?: (product: ProductData) => void
   onSettingsClick?: () => void
+  salesApiTotals?: SalesApiTotals // From Card (Sales API) - overrides calculated totals
 }
 
 function ProductRow({
@@ -170,11 +185,70 @@ function ProductRow({
         </span>
       </td>
 
-      {/* Ad Spend */}
-      <td className="py-3 px-4 text-right">
-        <span className="text-sm font-medium" style={{ color: '#DC2626' }}>
+      {/* Ad Spend - with adsBreakdown tooltip */}
+      <td className="py-3 px-4 text-right relative group/ads">
+        <span className="text-sm font-medium cursor-help" style={{ color: '#DC2626' }}>
           {formatCurrency(product.adSpend)}
         </span>
+        {/* Tooltip showing SP/SB/SBV/SD breakdown */}
+        {product.adsBreakdown && (product.adsBreakdown.sponsoredProducts > 0 || product.adsBreakdown.sponsoredBrands > 0 || product.adsBreakdown.sponsoredBrandsVideo > 0 || product.adsBreakdown.sponsoredDisplay > 0) && (
+          <div className="absolute right-0 top-full mt-1 z-50 hidden group-hover/ads:block">
+            <div
+              className="rounded-lg shadow-xl p-3 min-w-[180px] text-left"
+              style={{
+                backgroundColor: STARBUCKS.white,
+                border: `1px solid ${STARBUCKS.lightGreen}`,
+                boxShadow: '0 10px 25px rgba(0,0,0,0.15)'
+              }}
+            >
+              <p className="text-xs font-semibold mb-2" style={{ color: STARBUCKS.darkGreen }}>
+                Ad Spend Breakdown
+              </p>
+              <div className="space-y-1.5">
+                {product.adsBreakdown.sponsoredProducts > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs" style={{ color: STARBUCKS.primaryGreen }}>SP (Products)</span>
+                    <span className="text-xs font-medium" style={{ color: '#DC2626' }}>
+                      ${product.adsBreakdown.sponsoredProducts.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                {product.adsBreakdown.sponsoredBrands > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs" style={{ color: STARBUCKS.primaryGreen }}>SB (Brands)</span>
+                    <span className="text-xs font-medium" style={{ color: '#DC2626' }}>
+                      ${product.adsBreakdown.sponsoredBrands.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                {product.adsBreakdown.sponsoredBrandsVideo > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs" style={{ color: STARBUCKS.primaryGreen }}>SBV (Video)</span>
+                    <span className="text-xs font-medium" style={{ color: '#DC2626' }}>
+                      ${product.adsBreakdown.sponsoredBrandsVideo.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                {product.adsBreakdown.sponsoredDisplay > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs" style={{ color: STARBUCKS.primaryGreen }}>SD (Display)</span>
+                    <span className="text-xs font-medium" style={{ color: '#DC2626' }}>
+                      ${product.adsBreakdown.sponsoredDisplay.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="mt-2 pt-2" style={{ borderTop: `1px solid ${STARBUCKS.lightGreen}` }}>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-semibold" style={{ color: STARBUCKS.darkGreen }}>Total</span>
+                  <span className="text-xs font-bold" style={{ color: '#DC2626' }}>
+                    {formatCurrency(product.adSpend)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </td>
 
       {/* Gross Profit */}
@@ -238,7 +312,7 @@ function ProductRow({
   )
 }
 
-export default function ProductTable({ products, onProductClick, onSettingsClick }: ProductTableProps) {
+export default function ProductTable({ products, onProductClick, onSettingsClick, salesApiTotals }: ProductTableProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
 

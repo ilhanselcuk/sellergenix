@@ -166,8 +166,9 @@ export async function handleAmazonCallbackAction(
       console.log('🚀 [OAuth] Triggering 2-year historical sync via Inngest...')
 
       // Orders API sync (2 years) - Settlement sync will be triggered automatically when this completes
+      // FIXED: Changed from 'amazon/sync.historical' to 'amazon/sync.historical-reports' (Sellerboard approach)
       await inngest.send({
-        name: 'amazon/sync.historical',
+        name: 'amazon/sync.historical-reports',
         data: {
           userId,
           refreshToken: refresh_token,
@@ -271,8 +272,9 @@ export async function connectWithManualTokenAction(
       console.log('🚀 Triggering 2-year historical sync via Inngest...')
 
       // Orders API sync (2 years) - Settlement sync will be triggered automatically when this completes
+      // FIXED: Changed from 'amazon/sync.historical' to 'amazon/sync.historical-reports' (Sellerboard approach)
       await inngest.send({
-        name: 'amazon/sync.historical',
+        name: 'amazon/sync.historical-reports',
         data: {
           userId,
           refreshToken,
