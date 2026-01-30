@@ -21,19 +21,18 @@ import { AdsApiResponse, AdsMetrics, SpCampaignReportRow } from './types'
 // ============================================
 
 // Standard metrics for campaign reports
+// NOTE: V3 Reporting - start with minimal columns, add attribution metrics after basic works
 const SP_CAMPAIGN_METRICS = [
   'campaignId',
   'campaignName',
   'campaignStatus',
-  'campaignBudgetType',
-  'campaignBudgetAmount',
   'impressions',
   'clicks',
   'cost',
+  // Attribution metrics (may need different names in v3)
   'purchases14d',           // Orders attributed (14-day window)
   'unitsSold14d',           // Units attributed
   'sales14d',               // Sales attributed
-  'kindleEditionNormalizedPagesRead14d',
 ]
 
 const SB_CAMPAIGN_METRICS = [
@@ -198,34 +197,25 @@ export async function downloadReport(
 async function waitForReport(
   client: AmazonAdsClient,
   reportId: string,
-  maxWaitMs: number = 25 * 1000,  // 25 seconds max (Vercel timeout is ~30s)
-  pollIntervalMs: number = 3000   // Poll every 3 seconds
+  maxWaitMs: number = 5 * 60 * 1000,  // 5 minutes max
+  pollIntervalMs: number = 5000        // Poll every 5 seconds
 ): Promise<AdsApiResponse<ReportStatusResponse>> {
   const startTime = Date.now()
-  let pollCount = 0
-
-  console.log(`[Ads Reports] Waiting for report ${reportId} (max ${maxWaitMs/1000}s, poll every ${pollIntervalMs/1000}s)`)
 
   while (Date.now() - startTime < maxWaitMs) {
-    pollCount++
-    const elapsed = Math.round((Date.now() - startTime) / 1000)
     const result = await getReportStatus(client, reportId)
 
     if (!result.success) {
-      console.log(`[Ads Reports] Poll #${pollCount} (${elapsed}s): Status check failed - ${result.error}`)
       return result
     }
 
     const status = result.data!.status
-    console.log(`[Ads Reports] Poll #${pollCount} (${elapsed}s): Status = ${status}`)
 
     if (status === 'COMPLETED') {
-      console.log(`[Ads Reports] Report ${reportId} completed after ${elapsed}s`)
       return result
     }
 
     if (status === 'FAILED') {
-      console.log(`[Ads Reports] Report ${reportId} FAILED: ${result.data!.failureReason}`)
       return {
         success: false,
         error: `Report failed: ${result.data!.failureReason || 'Unknown reason'}`,
@@ -236,11 +226,9 @@ async function waitForReport(
     await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
   }
 
-  const totalElapsed = Math.round((Date.now() - startTime) / 1000)
-  console.log(`[Ads Reports] Report ${reportId} TIMED OUT after ${totalElapsed}s (${pollCount} polls)`)
   return {
     success: false,
-    error: `Report generation timed out after ${totalElapsed}s`,
+    error: 'Report generation timed out',
   }
 }
 

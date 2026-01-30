@@ -1650,9 +1650,9 @@ export const syncAdsData = inngest.createFunction(
       dailyRecordsSaved: 0,
     };
 
-    // Step 1: Calculate 60-day chunks (API limit) - newest first
+    // Step 1: Calculate 31-day chunks (V3 Reporting API limit) - newest first
     const chunks = await step.run(`calculate-chunks-${runId}`, async () => {
-      const CHUNK_DAYS = 60; // Amazon Ads API max per report
+      const CHUNK_DAYS = 31; // Amazon Ads V3 Reporting max is 31 days!
       const totalDays = monthsBack * 30;
       const numChunks = Math.ceil(totalDays / CHUNK_DAYS);
 
