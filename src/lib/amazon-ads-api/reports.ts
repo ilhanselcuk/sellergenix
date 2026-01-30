@@ -118,6 +118,7 @@ export async function createReport(
     body.configuration.adProduct = 'SPONSORED_DISPLAY'
   }
 
+  console.log(`[Ads Reports] Creating report with body:`, JSON.stringify(body, null, 2))
   return client.post<CreateReportResponse>('/reporting/reports', body)
 }
 
@@ -138,17 +139,49 @@ export async function downloadReport(
   url: string
 ): Promise<AdsApiResponse<SpCampaignReportRow[]>> {
   try {
+    console.log(`[Ads Reports] Downloading report from URL: ${url.substring(0, 100)}...`)
     const response = await fetch(url)
 
+    console.log(`[Ads Reports] Download response status: ${response.status}`)
+    console.log(`[Ads Reports] Download response headers:`, {
+      contentType: response.headers.get('content-type'),
+      contentEncoding: response.headers.get('content-encoding'),
+      contentLength: response.headers.get('content-length'),
+    })
+
     if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`[Ads Reports] Download failed: ${response.status} - ${errorText}`)
       return {
         success: false,
-        error: `Download failed: ${response.status}`,
+        error: `Download failed: ${response.status} - ${errorText}`,
       }
     }
 
-    // Response is gzipped JSON
-    const data = await response.json()
+    // Response is gzipped JSON - Node.js fetch handles decompression automatically
+    const text = await response.text()
+    console.log(`[Ads Reports] Download raw text length: ${text.length}`)
+    console.log(`[Ads Reports] Download raw text preview: ${text.substring(0, 500)}`)
+
+    // Try to parse as JSON
+    let data
+    try {
+      data = JSON.parse(text)
+    } catch (parseError) {
+      console.error(`[Ads Reports] JSON parse error:`, parseError)
+      return {
+        success: false,
+        error: `JSON parse error: ${parseError}`,
+      }
+    }
+
+    console.log(`[Ads Reports] Parsed data type: ${Array.isArray(data) ? 'array' : typeof data}`)
+    console.log(`[Ads Reports] Parsed data length: ${Array.isArray(data) ? data.length : 'N/A'}`)
+    if (Array.isArray(data) && data.length > 0) {
+      console.log(`[Ads Reports] First row keys:`, Object.keys(data[0]))
+      console.log(`[Ads Reports] First row sample:`, JSON.stringify(data[0]).substring(0, 500))
+    }
+
     return { success: true, data }
   } catch (error) {
     console.error('[Ads Reports] Download error:', error)
@@ -331,6 +364,28 @@ export async function getAdsMetrics(
       getSbCampaignReport(client, startDate, endDate),
       getSdCampaignReport(client, startDate, endDate),
     ])
+
+    // Debug: Log status of each report
+    console.log(`[Ads Reports] SP Report Status: ${spResult.status}`)
+    if (spResult.status === 'fulfilled') {
+      console.log(`[Ads Reports] SP Report Success: ${spResult.value.success}, Rows: ${spResult.value.data?.length || 0}, Error: ${spResult.value.error || 'none'}`)
+    } else {
+      console.log(`[Ads Reports] SP Report Rejected:`, spResult.reason)
+    }
+
+    console.log(`[Ads Reports] SB Report Status: ${sbResult.status}`)
+    if (sbResult.status === 'fulfilled') {
+      console.log(`[Ads Reports] SB Report Success: ${sbResult.value.success}, Rows: ${sbResult.value.data?.length || 0}, Error: ${sbResult.value.error || 'none'}`)
+    } else {
+      console.log(`[Ads Reports] SB Report Rejected:`, sbResult.reason)
+    }
+
+    console.log(`[Ads Reports] SD Report Status: ${sdResult.status}`)
+    if (sdResult.status === 'fulfilled') {
+      console.log(`[Ads Reports] SD Report Success: ${sdResult.value.success}, Rows: ${sdResult.value.data?.length || 0}, Error: ${sdResult.value.error || 'none'}`)
+    } else {
+      console.log(`[Ads Reports] SD Report Rejected:`, sdResult.reason)
+    }
 
     // Process Sponsored Products
     // NOTE: SP reports use different field names than SB/SD reports
