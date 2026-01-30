@@ -1863,7 +1863,91 @@ export const syncAdsData = inngest.createFunction(
       }
     });
 
-    // Step 4: Update connection status
+    // Step 4: Sync ASIN-level ads metrics (last 60 days for Products table)
+    const asinResult = await step.run(`sync-asin-ads-${runId}`, async () => {
+      try {
+        console.log(`🎯 [Ads Sync ASIN] Starting ASIN-level sync...`);
+        const { createAdsClient, getDailyAsinAdsMetrics } = await import("@/lib/amazon-ads-api");
+        const clientResult = await createAdsClient(refreshToken, profileId, countryCode);
+
+        if (!clientResult.success || !clientResult.client) {
+          console.error(`❌ [Ads Sync ASIN] Client creation failed`);
+          return { success: false, asinsSaved: 0 };
+        }
+
+        // Get last 60 days of ASIN-level data (for Products table breakdown)
+        const endDate = new Date();
+        endDate.setHours(0, 0, 0, 0);
+        const startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - 60);
+
+        const startDateStr = startDate.toISOString().split('T')[0];
+        const endDateStr = endDate.toISOString().split('T')[0];
+
+        console.log(`📊 [Ads Sync ASIN] Fetching ASIN-level metrics for ${startDateStr} to ${endDateStr}`);
+        const metricsResult = await getDailyAsinAdsMetrics(clientResult.client, startDateStr, endDateStr);
+
+        if (!metricsResult.success || !metricsResult.data) {
+          console.error(`❌ [Ads Sync ASIN] Metrics fetch failed - ${metricsResult.error}`);
+          return { success: false, asinsSaved: 0, error: metricsResult.error };
+        }
+
+        if (metricsResult.data.length === 0) {
+          console.log(`⚠️ [Ads Sync ASIN] No ASIN-level data found`);
+          return { success: true, asinsSaved: 0 };
+        }
+
+        console.log(`📈 [Ads Sync ASIN] Got ${metricsResult.data.length} ASIN-day records`);
+
+        // Save ASIN-level metrics to database
+        let asinsSaved = 0;
+        let totalSpend = 0;
+
+        for (const m of metricsResult.data) {
+          // Skip rows with zero spend
+          if (m.spend === 0 && m.impressions === 0) continue;
+
+          const { error: upsertError } = await supabase
+            .from("ads_asin_daily_metrics")
+            .upsert({
+              user_id: userId,
+              profile_id: profileId,
+              date: m.date,
+              asin: m.asin,
+              sku: m.sku,
+              spend: m.spend,
+              sales: m.sales,
+              impressions: m.impressions,
+              clicks: m.clicks,
+              orders: m.orders,
+              acos: m.acos,
+              roas: m.roas,
+              ctr: m.ctr,
+              cpc: m.cpc,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: "user_id,profile_id,date,asin" });
+
+          if (upsertError) {
+            console.error(`❌ [Ads Sync ASIN] ${m.asin}/${m.date}: DB upsert failed - ${upsertError.message}`);
+          } else {
+            asinsSaved++;
+            totalSpend += m.spend;
+          }
+        }
+
+        console.log(`✅ [Ads Sync ASIN] Saved ${asinsSaved} ASIN-day records, total spend=$${totalSpend.toFixed(2)}`);
+        return { success: true, asinsSaved, totalSpend };
+      } catch (error: any) {
+        console.error(`❌ [Ads Sync ASIN] Exception:`, error.message);
+        return { success: false, asinsSaved: 0, error: error.message };
+      }
+    });
+
+    if (asinResult && asinResult.success) {
+      (results as any).asinRecordsSaved = asinResult.asinsSaved || 0;
+    }
+
+    // Step 5: Update connection status
     await step.run("update-connection-status", async () => {
       await supabase
         .from("amazon_ads_connections")
@@ -1877,7 +1961,7 @@ export const syncAdsData = inngest.createFunction(
     });
 
     results.completedAt = new Date().toISOString();
-    console.log(`🎉 [Ads Sync] Completed: ${results.chunksProcessed} chunks processed`);
+    console.log(`🎉 [Ads Sync] Completed: ${results.chunksProcessed} chunks processed, ${(results as any).asinRecordsSaved || 0} ASIN records saved`);
     return results;
   }
 );

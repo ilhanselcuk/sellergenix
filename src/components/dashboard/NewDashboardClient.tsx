@@ -46,6 +46,18 @@ import ProductTable, { ProductData } from '@/components/dashboard/ProductTable'
 import ProductSettingsModal, { ProductCosts } from '@/components/dashboard/ProductSettingsModal'
 import { ChatBot } from '@/components/ai/ChatBot'
 
+// ASIN-level ads data (from ads_asin_daily_metrics table)
+interface AsinAdsData {
+  asin: string
+  spend: number
+  sales: number
+  impressions: number
+  clicks: number
+  orders: number
+  acos: number
+  roas: number
+}
+
 // Dashboard data from database
 interface DashboardData {
   today: PeriodMetrics
@@ -59,6 +71,13 @@ interface DashboardData {
   orderItems?: any[]
   refunds?: any[]  // Refund data from refunds table
   hasRealData: boolean
+  // ASIN-level ads data for each period (from Amazon Ads API)
+  asinAds?: {
+    today: Record<string, AsinAdsData>
+    yesterday: Record<string, AsinAdsData>
+    thisMonth: Record<string, AsinAdsData>
+    lastMonth: Record<string, AsinAdsData>
+  }
 }
 
 interface PeriodMetrics {
@@ -309,6 +328,8 @@ export default function NewDashboardClient({
   const [syncMessage, setSyncMessage] = useState('')
   const [syncProgress, setSyncProgress] = useState({ total: 0, synced: 0, remaining: 0 })
   const [showOnboarding, setShowOnboarding] = useState(!hasAmazonConnection)
+  // ASIN-level ads data from API (per-product ad spend from Amazon Ads API)
+  const [asinAdsData, setAsinAdsData] = useState<DashboardData['asinAds'] | null>(null)
 
   // Fetch Sales API metrics
   useEffect(() => {
@@ -361,6 +382,10 @@ export default function NewDashboardClient({
               thisMonth: data.metrics['This Month'] || null,
               lastMonth: data.metrics['Last Month'] || null
             })
+          }
+          // Store ASIN-level ads data from API
+          if (data.asinAds) {
+            setAsinAdsData(data.asinAds)
           }
         } else {
           setSalesApiError(data.error || 'Failed to fetch metrics')
@@ -651,6 +676,24 @@ export default function NewDashboardClient({
       }
     })
 
+    // Get ASIN-level ads data for the selected period (from ads_asin_daily_metrics table)
+    // This is REAL per-product ad spend from Amazon Ads API, not estimated/distributed
+    // Priority: asinAdsData state (from API) > dashboardData.asinAds (from server-side)
+    const getAsinAdsForPeriod = (): Record<string, AsinAdsData> => {
+      // Use API-fetched data first (asinAdsData state), fallback to server-side data
+      const adsSource = asinAdsData || dashboardData?.asinAds
+      if (!adsSource) return {}
+      const periodLabel = selectedPeriod?.label || ''
+      switch (periodLabel) {
+        case 'Today': return adsSource.today || {}
+        case 'Yesterday': return adsSource.yesterday || {}
+        case 'This Month': return adsSource.thisMonth || {}
+        case 'Last Month': return adsSource.lastMonth || {}
+        default: return {}
+      }
+    }
+    const asinAdsMap = getAsinAdsForPeriod()
+
     return initialProducts.map(product => {
       const stats = statsByAsin[product.asin] || { units: 0, sales: 0, orders: new Set(), amazonFees: 0, refunds: 0 }
       const sales = stats.sales
@@ -659,8 +702,12 @@ export default function NewDashboardClient({
       const cogs = product.cogs || 0
       const totalCogs = cogs * units
       const amazonFees = stats.amazonFees  // REAL fees only, $0 if none
-      // NO ESTIMATED AD SPEND - show $0 (ad spend comes from Amazon Ads API, not yet integrated)
-      const adSpend = 0
+
+      // Get REAL per-ASIN ad spend from Amazon Ads API
+      // This is the actual ad spend for this specific product, NOT distributed by percentage
+      const asinAdsData = asinAdsMap[product.asin]
+      const adSpend = asinAdsData?.spend || 0
+
       // Calculate profit ONLY from real data - show $0 if no fees available
       const grossProfit = amazonFees > 0 ? sales - totalCogs - amazonFees : 0
       const netProfit = grossProfit - adSpend
@@ -670,14 +717,14 @@ export default function NewDashboardClient({
         units,
         sales,
         refunds: refundCount,  // Real refund count from refunds table
-        adSpend: 0,  // NO FAKE AD SPEND - $0 until Amazon Ads API integration
+        adSpend: parseFloat(adSpend.toFixed(2)),  // REAL per-ASIN ad spend from Amazon Ads API
         grossProfit,
         netProfit,
         margin: (sales > 0 && grossProfit > 0) ? parseFloat(((netProfit / sales) * 100).toFixed(1)) : 0,
         roi: (totalCogs > 0 && netProfit > 0) ? parseFloat(((netProfit / totalCogs) * 100).toFixed(0)) : 0
       }
     }).filter(p => p.units > 0 || p.sales > 0)
-  }, [selectedPeriod, dashboardData, initialProducts])
+  }, [selectedPeriod, dashboardData, initialProducts, asinAdsData])
 
   // Handlers
   const handlePeriodSelect = (index: number) => setSelectedPeriodIndex(index)

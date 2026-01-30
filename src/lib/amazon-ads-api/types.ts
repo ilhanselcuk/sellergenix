@@ -187,6 +187,39 @@ export interface DailyAdsMetrics extends AdsMetrics {
 }
 
 // ============================================
+// ASIN-LEVEL METRICS (for product breakdown)
+// ============================================
+
+export interface SpAdvertisedProductReportRow {
+  advertisedAsin: string
+  advertisedSku?: string
+  impressions: number
+  clicks: number
+  cost: number
+  purchases14d: number
+  sales14d: number
+  date?: string  // Only present when timeUnit is DAILY
+}
+
+export interface AsinAdsMetrics {
+  asin: string
+  sku?: string
+  spend: number        // cost
+  sales: number        // attributed sales (14d)
+  impressions: number
+  clicks: number
+  orders: number       // purchases (14d)
+  acos: number         // (spend / sales) * 100
+  roas: number         // sales / spend
+  ctr: number          // (clicks / impressions) * 100
+  cpc: number          // spend / clicks
+}
+
+export interface DailyAsinAdsMetrics extends AsinAdsMetrics {
+  date: string  // YYYY-MM-DD
+}
+
+// ============================================
 // DATABASE TYPES
 // ============================================
 

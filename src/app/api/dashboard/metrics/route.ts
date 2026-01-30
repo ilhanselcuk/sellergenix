@@ -144,6 +144,12 @@ interface AdsBreakdown {
   sponsoredBrandsVideo: number
   sponsoredDisplay: number
   total: number
+  // Performance metrics
+  acos: number      // Advertising Cost of Sales (%)
+  roas: number      // Return on Ad Spend (x)
+  clicks: number
+  impressions: number
+  adSales: number   // Revenue from ads
 }
 
 /**
@@ -167,31 +173,68 @@ async function getAdsForPeriod(
     sponsoredBrands: 0,
     sponsoredBrandsVideo: 0,
     sponsoredDisplay: 0,
-    total: 0
+    total: 0,
+    acos: 0,
+    roas: 0,
+    clicks: 0,
+    impressions: 0,
+    adSales: 0
   }
 
   try {
-    const startDateStr = startDate.toISOString().split('T')[0]
-    const endDateStr = endDate.toISOString().split('T')[0]
+    // IMPORTANT: Use PST dates for queries, not UTC!
+    // endDate might be "2026-01-30T07:59:59Z" which is still "2026-01-29" in PST
+    const startPST = getPSTDate(startDate)
+    const endPST = getPSTDate(endDate)
+
+    const startDateStr = `${startPST.year}-${String(startPST.month + 1).padStart(2, '0')}-${String(startPST.day).padStart(2, '0')}`
+    const endDateStr = `${endPST.year}-${String(endPST.month + 1).padStart(2, '0')}-${String(endPST.day).padStart(2, '0')}`
+
+    console.log(`🔍 [getAdsForPeriod] Querying ads_daily_metrics:`)
+    console.log(`   userId: ${userId}`)
+    console.log(`   startDate: ${startDateStr}`)
+    console.log(`   endDate: ${endDateStr}`)
 
     // Step 1: Try ads_daily_metrics (Ads API - detailed daily data)
+    // Note: Table has sp_spend, sb_spend, sd_spend but NOT sbv_spend (no separate Sponsored Brands Video column)
     const { data: adsData, error } = await supabase
       .from('ads_daily_metrics')
-      .select('sp_spend, sb_spend, sbv_spend, sd_spend, total_spend')
+      .select('sp_spend, sb_spend, sd_spend, total_spend, total_sales, clicks, impressions, date')
       .eq('user_id', userId)
       .gte('date', startDateStr)
       .lte('date', endDateStr)
 
+    console.log(`   Results: ${adsData?.length || 0} records, error: ${error?.message || 'none'}`)
+    if (adsData && adsData.length > 0) {
+      console.log(`   Sample data: ${JSON.stringify(adsData[0])}`)
+    }
+
     if (!error && adsData && adsData.length > 0) {
       // Sum up all days in the period from Ads API
-      const totals = adsData.reduce((acc, day) => ({
+      // Note: sponsoredBrandsVideo stays 0 as there's no separate column for it
+      const sums = adsData.reduce((acc, day) => ({
         sponsoredProducts: acc.sponsoredProducts + (parseFloat(String(day.sp_spend)) || 0),
         sponsoredBrands: acc.sponsoredBrands + (parseFloat(String(day.sb_spend)) || 0),
-        sponsoredBrandsVideo: acc.sponsoredBrandsVideo + (parseFloat(String(day.sbv_spend)) || 0),
+        sponsoredBrandsVideo: 0, // No separate column in database
         sponsoredDisplay: acc.sponsoredDisplay + (parseFloat(String(day.sd_spend)) || 0),
-        total: acc.total + (parseFloat(String(day.total_spend)) || 0)
+        total: acc.total + (parseFloat(String(day.total_spend)) || 0),
+        clicks: acc.clicks + (parseInt(String(day.clicks)) || 0),
+        impressions: acc.impressions + (parseInt(String(day.impressions)) || 0),
+        adSales: acc.adSales + (parseFloat(String(day.total_sales)) || 0),
+        acos: 0, // Will calculate below
+        roas: 0  // Will calculate below
       }), emptyAds)
 
+      // Calculate ACOS and ROAS from totals
+      // ACOS = (Ad Spend / Ad Sales) * 100
+      // ROAS = Ad Sales / Ad Spend
+      const totals: AdsBreakdown = {
+        ...sums,
+        acos: sums.adSales > 0 ? (sums.total / sums.adSales) * 100 : 0,
+        roas: sums.total > 0 ? sums.adSales / sums.total : 0
+      }
+
+      console.log(`   ✅ Ads totals: SP=$${totals.sponsoredProducts.toFixed(2)}, Total=$${totals.total.toFixed(2)}, ACOS=${totals.acos.toFixed(1)}%, ROAS=${totals.roas.toFixed(2)}x`)
       return totals
     }
 
@@ -222,6 +265,105 @@ async function getAdsForPeriod(
   } catch (error) {
     console.error('Error fetching ads data:', error)
     return emptyAds
+  }
+}
+
+/**
+ * ASIN-level ads data for Products table
+ * Returns a map of ASIN -> { spend, sales, acos, roas }
+ */
+interface AsinAdsData {
+  asin: string
+  spend: number
+  sales: number
+  impressions: number
+  clicks: number
+  orders: number
+  acos: number
+  roas: number
+}
+
+async function getAsinAdsForPeriod(
+  userId: string,
+  startDate: Date,
+  endDate: Date
+): Promise<Map<string, AsinAdsData>> {
+  const result = new Map<string, AsinAdsData>()
+
+  try {
+    // Use PST dates for queries
+    const startPST = getPSTDate(startDate)
+    const endPST = getPSTDate(endDate)
+
+    const startDateStr = `${startPST.year}-${String(startPST.month + 1).padStart(2, '0')}-${String(startPST.day).padStart(2, '0')}`
+    const endDateStr = `${endPST.year}-${String(endPST.month + 1).padStart(2, '0')}-${String(endPST.day).padStart(2, '0')}`
+
+    console.log(`🔍 [getAsinAdsForPeriod] Querying ads_asin_daily_metrics:`)
+    console.log(`   userId: ${userId}`)
+    console.log(`   startDate: ${startDateStr}`)
+    console.log(`   endDate: ${endDateStr}`)
+
+    // Fetch ASIN-level ads data from database
+    const { data: asinAdsData, error } = await supabase
+      .from('ads_asin_daily_metrics')
+      .select('asin, spend, sales, impressions, clicks, orders')
+      .eq('user_id', userId)
+      .gte('date', startDateStr)
+      .lte('date', endDateStr)
+
+    if (error) {
+      console.error(`   ❌ Error fetching ASIN ads: ${error.message}`)
+      return result
+    }
+
+    if (!asinAdsData || asinAdsData.length === 0) {
+      console.log(`   ⚠️ No ASIN-level ads data found for this period`)
+      return result
+    }
+
+    console.log(`   📊 Found ${asinAdsData.length} ASIN-day records`)
+
+    // Aggregate by ASIN (sum all days in the period)
+    for (const row of asinAdsData) {
+      const existing = result.get(row.asin)
+      if (existing) {
+        existing.spend += parseFloat(String(row.spend)) || 0
+        existing.sales += parseFloat(String(row.sales)) || 0
+        existing.impressions += parseInt(String(row.impressions)) || 0
+        existing.clicks += parseInt(String(row.clicks)) || 0
+        existing.orders += parseInt(String(row.orders)) || 0
+      } else {
+        result.set(row.asin, {
+          asin: row.asin,
+          spend: parseFloat(String(row.spend)) || 0,
+          sales: parseFloat(String(row.sales)) || 0,
+          impressions: parseInt(String(row.impressions)) || 0,
+          clicks: parseInt(String(row.clicks)) || 0,
+          orders: parseInt(String(row.orders)) || 0,
+          acos: 0,
+          roas: 0
+        })
+      }
+    }
+
+    // Calculate ACOS and ROAS for each ASIN
+    for (const [asin, data] of result) {
+      data.acos = data.sales > 0 ? (data.spend / data.sales) * 100 : 0
+      data.roas = data.spend > 0 ? data.sales / data.spend : 0
+    }
+
+    console.log(`   ✅ Aggregated to ${result.size} unique ASINs`)
+    if (result.size > 0) {
+      const firstEntry = result.entries().next().value
+      if (firstEntry) {
+        console.log(`   Sample: ${firstEntry[0]} -> spend=$${firstEntry[1].spend.toFixed(2)}, sales=$${firstEntry[1].sales.toFixed(2)}`)
+      }
+    }
+
+    return result
+  } catch (error) {
+    console.error('Error fetching ASIN ads data:', error)
+    return result
   }
 }
 
@@ -1055,18 +1197,24 @@ export async function GET(request: Request) {
     // Fetch real fees AND ads data for each period in parallel
     const [
       todayFees, yesterdayFees, thisMonthFees, lastMonthFees,
-      todayAds, yesterdayAds, thisMonthAds, lastMonthAds
+      todayAds, yesterdayAds, thisMonthAds, lastMonthAds,
+      todayAsinAds, yesterdayAsinAds, thisMonthAsinAds, lastMonthAsinAds
     ] = await Promise.all([
       // Fees
       getRealFeesForPeriod(userId, todayStart, todayEnd),
       getRealFeesForPeriod(userId, yesterdayStart, yesterdayEnd),
       getRealFeesForPeriod(userId, thisMonthStart, thisMonthEnd),
       getRealFeesForPeriod(userId, lastMonthStart, lastMonthEnd),
-      // Ads (from Amazon Advertising API data)
+      // Ads (from Amazon Advertising API data - campaign level)
       getAdsForPeriod(userId, todayStart, todayEnd),
       getAdsForPeriod(userId, yesterdayStart, yesterdayEnd),
       getAdsForPeriod(userId, thisMonthStart, thisMonthEnd),
       getAdsForPeriod(userId, lastMonthStart, lastMonthEnd),
+      // ASIN-level ads (from ads_asin_daily_metrics table)
+      getAsinAdsForPeriod(userId, todayStart, todayEnd),
+      getAsinAdsForPeriod(userId, yesterdayStart, yesterdayEnd),
+      getAsinAdsForPeriod(userId, thisMonthStart, thisMonthEnd),
+      getAsinAdsForPeriod(userId, lastMonthStart, lastMonthEnd),
     ])
 
     console.log('💰 Fee data retrieved:')
@@ -1080,6 +1228,12 @@ export async function GET(request: Request) {
     console.log(`   Yesterday: $${yesterdayAds.total.toFixed(2)} (SP: $${yesterdayAds.sponsoredProducts.toFixed(2)})`)
     console.log(`   This Month: $${thisMonthAds.total.toFixed(2)} (SP: $${thisMonthAds.sponsoredProducts.toFixed(2)})`)
     console.log(`   Last Month: $${lastMonthAds.total.toFixed(2)} (SP: $${lastMonthAds.sponsoredProducts.toFixed(2)})`)
+
+    console.log('🎯 ASIN-level Ads data retrieved:')
+    console.log(`   Today: ${todayAsinAds.size} ASINs with ads`)
+    console.log(`   Yesterday: ${yesterdayAsinAds.size} ASINs with ads`)
+    console.log(`   This Month: ${thisMonthAsinAds.size} ASINs with ads`)
+    console.log(`   Last Month: ${lastMonthAsinAds.size} ASINs with ads`)
 
     // Format metrics for dashboard with REAL fees AND ads data
     const dashboardMetrics = {
@@ -1110,6 +1264,14 @@ export async function GET(request: Request) {
         yesterday: yesterdayAds,
         thisMonth: thisMonthAds,
         lastMonth: lastMonthAds,
+      },
+
+      // ASIN-level ads data (for products table)
+      _asinAdsInfo: {
+        today: Object.fromEntries(todayAsinAds),
+        yesterday: Object.fromEntries(yesterdayAsinAds),
+        thisMonth: Object.fromEntries(thisMonthAsinAds),
+        lastMonth: Object.fromEntries(lastMonthAsinAds),
       }
     }
 
@@ -1214,10 +1376,11 @@ export async function POST(request: Request) {
       const pstStart = createPSTMidnight(startYear, startMonth, startDay)
       const pstEnd = createPSTEndOfDay(endYear, endMonth, endDay)
 
-      // Fetch fees and ads data in parallel
-      const [feeData, adsData] = await Promise.all([
+      // Fetch fees and ads data in parallel (campaign-level + ASIN-level)
+      const [feeData, adsData, asinAdsData] = await Promise.all([
         getRealFeesForPeriod(userId, pstStart, pstEnd),
-        getAdsForPeriod(userId, pstStart, pstEnd)
+        getAdsForPeriod(userId, pstStart, pstEnd),
+        getAsinAdsForPeriod(userId, pstStart, pstEnd)
       ])
 
       // Debug logging for fee breakdown
@@ -1240,6 +1403,8 @@ export async function POST(request: Request) {
         startDate: period.startDate,
         endDate: period.endDate,
         metrics: result.success ? formatMetrics(result.metrics, feeData, adsData) : null,
+        // ASIN-level ads data for products table
+        asinAds: Object.fromEntries(asinAdsData),
         error: result.error || null,
         // Include debug info in response for troubleshooting
         _debug: {
@@ -1252,7 +1417,8 @@ export async function POST(request: Request) {
             feeBreakdown: feeData.feeBreakdown,
             refunds: feeData.refunds,
             refundCount: feeData.refundCount
-          }
+          },
+          asinAdsCount: asinAdsData.size
         }
       }
     })
@@ -1261,6 +1427,7 @@ export async function POST(request: Request) {
 
     // Build response object with period labels as keys
     const metricsMap: { [key: string]: any } = {}
+    const asinAdsMap: { [key: string]: any } = {}
     const debugMap: { [key: string]: any } = {}
     for (const result of results) {
       metricsMap[result.label] = result.metrics || {
@@ -1279,6 +1446,10 @@ export async function POST(request: Request) {
         refundCount: 0,
         error: result.error
       }
+      // Collect ASIN-level ads data for each period
+      if (result.asinAds) {
+        asinAdsMap[result.label] = result.asinAds
+      }
       // Collect debug info
       if ((result as any)._debug) {
         debugMap[result.label] = (result as any)._debug
@@ -1291,6 +1462,8 @@ export async function POST(request: Request) {
       success: true,
       hasConnection: true,
       metrics: metricsMap,
+      // ASIN-level ads data for products table
+      asinAds: asinAdsMap,
       periodCount: periods.length,
       source: 'amazon_sales_api',
       fetchedAt: new Date().toISOString(),

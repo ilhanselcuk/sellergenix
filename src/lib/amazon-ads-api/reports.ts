@@ -14,7 +14,7 @@
  */
 
 import { AmazonAdsClient } from './client'
-import { AdsApiResponse, AdsMetrics, DailyAdsMetrics, SpCampaignReportRow } from './types'
+import { AdsApiResponse, AdsMetrics, DailyAdsMetrics, SpCampaignReportRow, SpAdvertisedProductReportRow, AsinAdsMetrics, DailyAsinAdsMetrics } from './types'
 
 // ============================================
 // REPORT CONFIGURATION
@@ -47,6 +47,18 @@ const SB_CAMPAIGN_METRICS = [
 const SD_CAMPAIGN_METRICS = [
   'campaignId',
   'campaignName',
+  'impressions',
+  'clicks',
+  'cost',
+  'purchases14d',
+  'sales14d',
+]
+
+// ASIN-level metrics for Sponsored Products Advertised Product report
+// This gives us per-ASIN ad spend, sales, and performance data
+const SP_ADVERTISED_PRODUCT_METRICS = [
+  'advertisedAsin',
+  'advertisedSku',
   'impressions',
   'clicks',
   'cost',
@@ -722,6 +734,210 @@ export function getAdsDateRange(period: 'today' | 'yesterday' | '7d' | '30d' | '
         startDate: formatDateForAds(start),
         endDate: formatDateForAds(end),
       }
+    }
+  }
+}
+
+// ============================================
+// ASIN-LEVEL REPORT FUNCTIONS
+// ============================================
+
+/**
+ * Create ASIN-level report for Sponsored Products
+ * Uses spAdvertisedProduct report type - this automatically returns ASIN-level data
+ * No groupBy needed - the report type itself is at the advertised product level
+ */
+async function createAsinReport(
+  client: AmazonAdsClient,
+  request: Omit<CreateReportRequest, 'columns'> & { columns?: string[] }
+): Promise<AdsApiResponse<CreateReportResponse>> {
+  const body = {
+    name: `SellerGenix_ASIN_${Date.now()}`,
+    startDate: request.startDate,
+    endDate: request.endDate,
+    configuration: {
+      adProduct: 'SPONSORED_PRODUCTS',
+      // spAdvertisedProduct report requires groupBy: ['advertiser']
+      // The report still returns ASIN-level data via advertisedAsin column
+      groupBy: ['advertiser'],
+      columns: request.columns || SP_ADVERTISED_PRODUCT_METRICS,
+      reportTypeId: 'spAdvertisedProduct',  // ASIN-level report type
+      timeUnit: request.timeUnit,
+      format: 'GZIP_JSON',
+    },
+  }
+
+  console.log(`[Ads Reports] Creating ASIN-level report with body:`, JSON.stringify(body, null, 2))
+
+  return client.request<CreateReportResponse>('/reporting/reports', {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/vnd.createasyncreportrequest.v3+json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+}
+
+/**
+ * Get Sponsored Products ASIN-level report
+ * Returns ad spend, sales, and performance metrics per ASIN
+ */
+export async function getSpAsinReport(
+  client: AmazonAdsClient,
+  startDate: string,
+  endDate: string,
+  timeUnit: 'SUMMARY' | 'DAILY' = 'SUMMARY'
+): Promise<AdsApiResponse<SpAdvertisedProductReportRow[]>> {
+  console.log(`[SP ASIN Report] Creating report for ${startDate} to ${endDate} (timeUnit: ${timeUnit})`)
+
+  // Create report request
+  const createResult = await createAsinReport(client, {
+    reportType: 'sp',
+    columns: [...SP_ADVERTISED_PRODUCT_METRICS, ...(timeUnit === 'DAILY' ? ['date'] : [])],
+    startDate,
+    endDate,
+    timeUnit,
+  })
+
+  console.log(`[SP ASIN Report] Create result:`, JSON.stringify(createResult))
+
+  if (!createResult.success || !createResult.data) {
+    console.error(`[SP ASIN Report] Create failed:`, createResult.error)
+    return { success: false, error: createResult.error }
+  }
+
+  // Wait for completion
+  console.log(`[SP ASIN Report] Waiting for report ${createResult.data.reportId}`)
+  const statusResult = await waitForReport(client, createResult.data.reportId)
+
+  console.log(`[SP ASIN Report] Status result:`, JSON.stringify(statusResult))
+
+  if (!statusResult.success || !statusResult.data?.url) {
+    console.error(`[SP ASIN Report] No URL:`, statusResult.error)
+    return { success: false, error: statusResult.error || 'No download URL' }
+  }
+
+  // Download and return data
+  console.log(`[SP ASIN Report] Downloading from URL...`)
+  const downloadResult = await downloadReport(statusResult.data.url)
+  console.log(`[SP ASIN Report] Download result: success=${downloadResult.success}, rows=${downloadResult.data?.length || 0}`)
+  if (downloadResult.data && downloadResult.data.length > 0) {
+    console.log(`[SP ASIN Report] Sample row:`, JSON.stringify(downloadResult.data[0]))
+  }
+  return downloadResult as AdsApiResponse<SpAdvertisedProductReportRow[]>
+}
+
+/**
+ * Get aggregated ASIN-level advertising metrics for a date range
+ * Returns per-ASIN ad spend, sales, ACOS, ROAS, etc.
+ */
+export async function getAsinAdsMetrics(
+  client: AmazonAdsClient,
+  startDate: string,
+  endDate: string
+): Promise<AdsApiResponse<AsinAdsMetrics[]>> {
+  try {
+    console.log(`[Ads Reports] Fetching ASIN-level metrics for ${startDate} to ${endDate}`)
+
+    // Get ASIN-level report (SUMMARY mode for aggregated data)
+    const result = await getSpAsinReport(client, startDate, endDate, 'SUMMARY')
+
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error }
+    }
+
+    // Convert to AsinAdsMetrics format
+    const metrics: AsinAdsMetrics[] = result.data.map(row => {
+      const spend = row.cost || 0
+      const sales = row.sales14d || 0
+      const impressions = row.impressions || 0
+      const clicks = row.clicks || 0
+      const orders = row.purchases14d || 0
+
+      return {
+        asin: row.advertisedAsin,
+        sku: row.advertisedSku,
+        spend,
+        sales,
+        impressions,
+        clicks,
+        orders,
+        acos: sales > 0 ? (spend / sales) * 100 : 0,
+        roas: spend > 0 ? sales / spend : 0,
+        ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+        cpc: clicks > 0 ? spend / clicks : 0,
+      }
+    })
+
+    console.log(`[Ads Reports] ASIN-level metrics: ${metrics.length} ASINs`)
+    if (metrics.length > 0) {
+      console.log(`[Ads Reports] Sample ASIN: ${metrics[0].asin}, spend=$${metrics[0].spend.toFixed(2)}, sales=$${metrics[0].sales.toFixed(2)}`)
+    }
+
+    return { success: true, data: metrics }
+  } catch (error) {
+    console.error('[Ads Reports] Get ASIN metrics error:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+/**
+ * Get DAILY ASIN-level advertising metrics for a date range
+ * Returns per-ASIN, per-day ad spend, sales, ACOS, ROAS, etc.
+ */
+export async function getDailyAsinAdsMetrics(
+  client: AmazonAdsClient,
+  startDate: string,
+  endDate: string
+): Promise<AdsApiResponse<DailyAsinAdsMetrics[]>> {
+  try {
+    console.log(`[Ads Reports] Fetching DAILY ASIN-level metrics for ${startDate} to ${endDate}`)
+
+    // Get ASIN-level report with DAILY granularity
+    const result = await getSpAsinReport(client, startDate, endDate, 'DAILY')
+
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error }
+    }
+
+    // Convert to DailyAsinAdsMetrics format
+    const metrics: DailyAsinAdsMetrics[] = result.data
+      .filter(row => row.date)  // Only include rows with date
+      .map(row => {
+        const spend = row.cost || 0
+        const sales = row.sales14d || 0
+        const impressions = row.impressions || 0
+        const clicks = row.clicks || 0
+        const orders = row.purchases14d || 0
+
+        return {
+          date: row.date!,
+          asin: row.advertisedAsin,
+          sku: row.advertisedSku,
+          spend,
+          sales,
+          impressions,
+          clicks,
+          orders,
+          acos: sales > 0 ? (spend / sales) * 100 : 0,
+          roas: spend > 0 ? sales / spend : 0,
+          ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+          cpc: clicks > 0 ? spend / clicks : 0,
+        }
+      })
+
+    console.log(`[Ads Reports] DAILY ASIN-level metrics: ${metrics.length} rows`)
+
+    return { success: true, data: metrics }
+  } catch (error) {
+    console.error('[Ads Reports] Get daily ASIN metrics error:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
     }
   }
 }

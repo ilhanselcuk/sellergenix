@@ -47,6 +47,10 @@ export {
   getSdCampaignReport,
   formatDateForAds,
   getAdsDateRange,
+  // ASIN-level reports (for Products table ad spend)
+  getSpAsinReport,
+  getAsinAdsMetrics,
+  getDailyAsinAdsMetrics,
 } from './reports'
 
 // Types
@@ -67,4 +71,8 @@ export type {
   AmazonAdsConnection,
   AdsApiResponse,
   SpCampaignReportRow,
+  // ASIN-level types
+  SpAdvertisedProductReportRow,
+  AsinAdsMetrics,
+  DailyAsinAdsMetrics,
 } from './types'
