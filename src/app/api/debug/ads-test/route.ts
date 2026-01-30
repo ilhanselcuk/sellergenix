@@ -173,10 +173,17 @@ export async function GET(request: NextRequest) {
     results.reportRequest = reportRequestBody;
     (results.steps as string[]).push("Sending report creation request...");
 
-    // Use the client to make the request
-    const createResponse = await clientResult.client.post<{ reportId: string }>(
+    // Use the client to make the request with v3 headers
+    const createResponse = await clientResult.client.request<{ reportId: string }>(
       "/reporting/reports",
-      reportRequestBody
+      {
+        method: "POST",
+        headers: {
+          "Accept": "application/vnd.createasyncreportrequest.v3+json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(reportRequestBody),
+      }
     );
 
     results.createReportResponse = createResponse;
