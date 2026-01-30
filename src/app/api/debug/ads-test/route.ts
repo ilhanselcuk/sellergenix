@@ -15,10 +15,11 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const daysBack = parseInt(searchParams.get("days") || "7", 10);
   const reportIdToCheck = searchParams.get("reportId");
+  const includeSales = searchParams.get("includeSales") === "true";
 
   const results: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
-    params: { daysBack, reportIdToCheck },
+    params: { daysBack, reportIdToCheck, includeSales },
     steps: [],
   };
 
@@ -147,8 +148,23 @@ export async function GET(request: NextRequest) {
     (results.steps as string[]).push(`Testing date range: ${startDateStr} to ${endDateStr} (${daysBack} days)`);
 
     // Step 4: Create report request manually to see raw response
-    // V3 API - Try simplest possible request
+    // V3 API - Simplest possible request with basic columns only
     const uniqueId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // Base columns that always work
+    const columns = [
+      "campaignId",
+      "campaignName",
+      "impressions",
+      "clicks",
+      "cost",
+    ];
+
+    // Optionally include sales/purchases columns (may not work for all profiles)
+    if (includeSales) {
+      columns.push("purchases", "sales");
+    }
+
     const reportRequestBody = {
       name: `SellerGenix_Debug_${uniqueId}`,
       startDate: startDateStr,
@@ -156,18 +172,10 @@ export async function GET(request: NextRequest) {
       configuration: {
         adProduct: "SPONSORED_PRODUCTS",
         groupBy: ["campaign"],
-        columns: [
-          "campaignId",
-          "campaignName",
-          "impressions",
-          "clicks",
-          "cost",
-          "purchases",       // V3 uses "purchases" not "purchases14d"
-          "sales",           // V3 uses "sales" not "sales14d"
-        ],
+        columns,
         reportTypeId: "spCampaigns",
         timeUnit: "SUMMARY",
-        format: "GZIP_JSON",
+        format: "JSON",  // Use JSON instead of GZIP_JSON for simpler debugging
       },
     };
 
@@ -199,14 +207,15 @@ export async function GET(request: NextRequest) {
     const reportId = createResponse.data.reportId;
     (results.steps as string[]).push(`Report created: ${reportId}`);
 
-    // Step 5: Poll for report completion (max 120 seconds)
+    // Step 5: Poll for report completion (max 5 minutes)
+    // Some reports take longer to process, especially for larger date ranges
     let reportStatus: {
       status: string;
       url?: string;
       failureReason?: string;
     } | null = null;
-    const maxWait = 120000; // 2 minutes
-    const pollInterval = 5000; // 5 seconds
+    const maxWait = 300000; // 5 minutes
+    const pollInterval = 10000; // 10 seconds
     const startTime = Date.now();
 
     while (Date.now() - startTime < maxWait) {
