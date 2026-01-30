@@ -212,6 +212,8 @@ export async function getSpCampaignReport(
   startDate: string,
   endDate: string
 ): Promise<AdsApiResponse<SpCampaignReportRow[]>> {
+  console.log(`[SP Report] Creating report for ${startDate} to ${endDate}`)
+
   // Create report request
   const createResult = await createReport(client, {
     reportType: 'sp',
@@ -221,19 +223,32 @@ export async function getSpCampaignReport(
     timeUnit: 'SUMMARY',
   })
 
+  console.log(`[SP Report] Create result:`, JSON.stringify(createResult))
+
   if (!createResult.success || !createResult.data) {
+    console.error(`[SP Report] Create failed:`, createResult.error)
     return { success: false, error: createResult.error }
   }
 
   // Wait for completion
+  console.log(`[SP Report] Waiting for report ${createResult.data.reportId}`)
   const statusResult = await waitForReport(client, createResult.data.reportId)
 
+  console.log(`[SP Report] Status result:`, JSON.stringify(statusResult))
+
   if (!statusResult.success || !statusResult.data?.url) {
+    console.error(`[SP Report] No URL:`, statusResult.error)
     return { success: false, error: statusResult.error || 'No download URL' }
   }
 
   // Download and return data
-  return downloadReport(statusResult.data.url)
+  console.log(`[SP Report] Downloading from URL...`)
+  const downloadResult = await downloadReport(statusResult.data.url)
+  console.log(`[SP Report] Download result: success=${downloadResult.success}, rows=${downloadResult.data?.length || 0}`)
+  if (downloadResult.data && downloadResult.data.length > 0) {
+    console.log(`[SP Report] Sample row:`, JSON.stringify(downloadResult.data[0]))
+  }
+  return downloadResult
 }
 
 /**
