@@ -666,6 +666,466 @@ src/
 
 ---
 
+## 🚨🚨🚨 AMAZON ADS API V3 REPORTS - KAPSAMLI UYGULAMA REHBERİ (30 Ocak 2026) 🚨🚨🚨
+
+**⚠️ BU BÖLÜMÜ MUTLAKA OKU! Ads API ile çalışırken çok kritik bilgiler içeriyor.**
+
+**Son Güncelleme:** 30 Ocak 2026
+**Durum:** ✅ PRODUCTION'DA ÇALIŞIYOR (ZYRA TASTE hesabı test edildi)
+
+---
+
+### 📋 ÖZET: V3 API KRİTİK GEREKSİNİMLER
+
+| Gereksinim | DOĞRU | YANLIŞ |
+|------------|-------|--------|
+| **Accept Header** | `application/vnd.createasyncreportrequest.v3+json` | `application/json` |
+| **Report Format** | `GZIP_JSON` | `JSON` |
+| **Column Names** | `purchases`, `sales` | `purchases14d`, `sales14d` |
+| **Campaigns API Accept** | `application/vnd.spcampaign.v3+json` | `application/json` |
+| **Polling Timeout** | 5+ dakika (300s) | 2 dakika |
+| **Decompress** | ✅ GZIP decompress gerekli | Raw text okuma |
+
+---
+
+### 🔴 YAŞANAN HATALAR VE ÇÖZÜMLERİ
+
+#### ❌ HATA 1: Report PENDING'de Kalıyor (2+ dakika)
+
+**Belirti:**
+```
+Polling report status... Status: PENDING
+Polling report status... Status: PENDING
+... (24 kez tekrar)
+Error: Report did not complete. Final status: PENDING
+```
+
+**Sebep:** Amazon Ads Reports API gerçekten yavaş! Report oluşturma 5-10 dakika sürebilir.
+
+**✅ Çözüm:**
+```typescript
+// YANLIŞ - 2 dakika timeout
+const maxWait = 120000  // 2 min - YETERSİZ!
+const pollInterval = 5000  // 5 sec
+
+// DOĞRU - 5 dakika timeout
+const maxWait = 300000  // 5 min
+const pollInterval = 10000  // 10 sec (daha az API çağrısı)
+```
+
+---
+
+#### ❌ HATA 2: "configuration format is not supported for this report type"
+
+**Belirti:**
+```json
+{
+  "code": "400",
+  "details": "configuration format is not supported for this report type"
+}
+```
+
+**Sebep:** `format: "JSON"` kullanmak. spCampaigns report tipi SADECE `GZIP_JSON` destekler!
+
+**✅ Çözüm:**
+```typescript
+// YANLIŞ
+format: "JSON"  // ❌ 400 hatası verir!
+
+// DOĞRU
+format: "GZIP_JSON"  // ✅ Tek desteklenen format
+```
+
+---
+
+#### ❌ HATA 3: Report Data undefined/parse edilemiyor
+
+**Belirti:**
+```
+Raw text length: 156
+Raw text preview: (garip karakterler, binary data)
+Parse error: Unexpected token...
+```
+
+**Sebep:** `GZIP_JSON` formatı GZIP ile sıkıştırılmış veri döndürür. Direkt text olarak okunamaz!
+
+**✅ Çözüm - GZIP Decompression:**
+```typescript
+// Download response'u decompress et
+const downloadResponse = await fetch(reportStatus.url);
+const arrayBuffer = await downloadResponse.arrayBuffer();
+
+// DecompressionStream ile GZIP aç
+const decompressedStream = new Response(arrayBuffer).body!
+  .pipeThrough(new DecompressionStream("gzip"));
+const rawText = await new Response(decompressedStream).text();
+
+// Şimdi JSON parse edilebilir
+const reportData = JSON.parse(rawText);
+```
+
+---
+
+#### ❌ HATA 4: V3 API Headers Eksik
+
+**Belirti:**
+```json
+{
+  "code": "400",
+  "message": "Invalid request"
+}
+```
+
+**Sebep:** V3 API özel Accept header gerektirir.
+
+**✅ Çözüm - V3 Headers:**
+```typescript
+// Report oluşturma
+const createResponse = await client.request('/reporting/reports', {
+  method: 'POST',
+  headers: {
+    'Accept': 'application/vnd.createasyncreportrequest.v3+json',  // ✅ V3 header
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify(reportRequestBody),
+});
+
+// Report status kontrol
+const statusResponse = await client.request(`/reporting/reports/${reportId}`, {
+  method: 'GET',
+  headers: {
+    'Accept': 'application/vnd.createasyncreportrequest.v3+json',  // ✅ V3 header
+  },
+});
+
+// Kampanya listesi (farklı header!)
+const campaignsResponse = await client.request('/sp/campaigns/list', {
+  method: 'POST',
+  headers: {
+    'Accept': 'application/vnd.spcampaign.v3+json',  // ✅ Campaigns V3 header
+    'Content-Type': 'application/vnd.spcampaign.v3+json',
+  },
+  body: JSON.stringify({ maxResults: 100 }),
+});
+```
+
+---
+
+#### ❌ HATA 5: Yanlış Column İsimleri (V3 vs V2)
+
+**Belirti:**
+```
+reportData[0] = { campaignId: "123", cost: 45.67 }
+// purchases14d ve sales14d undefined!
+```
+
+**Sebep:** V3 API farklı column isimleri kullanıyor.
+
+**✅ Çözüm - V3 Column İsimleri:**
+```typescript
+// V2 (ESKİ - KULLANMA!)
+columns: ['purchases14d', 'sales14d', 'attributedSales14d']
+
+// V3 (YENİ - DOĞRU!)
+columns: ['purchases', 'sales', 'impressions', 'clicks', 'cost']
+```
+
+**V3 Column Mapping (en yaygın kullanılanlar):**
+
+| V3 Column | Açıklama |
+|-----------|----------|
+| `campaignId` | Kampanya ID |
+| `campaignName` | Kampanya adı |
+| `impressions` | Gösterim sayısı |
+| `clicks` | Tıklama sayısı |
+| `cost` | Harcama ($) |
+| `purchases` | Satın alma sayısı (attributed) |
+| `sales` | Satış geliri ($, attributed) |
+
+---
+
+### ✅ ÇALIŞAN PRODUCTION KODU
+
+#### 1. Report Request Body (Doğru Format)
+
+```typescript
+const reportRequestBody = {
+  name: `SellerGenix_SP_${Date.now()}`,
+  startDate: "2026-01-23",  // YYYY-MM-DD
+  endDate: "2026-01-29",    // YYYY-MM-DD
+  configuration: {
+    adProduct: "SPONSORED_PRODUCTS",
+    groupBy: ["campaign"],
+    columns: [
+      "campaignId",
+      "campaignName",
+      "impressions",
+      "clicks",
+      "cost",
+      "purchases",  // V3 format
+      "sales",      // V3 format
+    ],
+    reportTypeId: "spCampaigns",
+    timeUnit: "SUMMARY",
+    format: "GZIP_JSON",  // SADECE bu format destekleniyor!
+  },
+};
+```
+
+#### 2. Report Oluşturma
+
+```typescript
+const createResponse = await client.request<{ reportId: string }>(
+  "/reporting/reports",
+  {
+    method: "POST",
+    headers: {
+      "Accept": "application/vnd.createasyncreportrequest.v3+json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(reportRequestBody),
+  }
+);
+
+if (!createResponse.success || !createResponse.data?.reportId) {
+  throw new Error("Report creation failed");
+}
+
+const reportId = createResponse.data.reportId;
+```
+
+#### 3. Report Status Polling
+
+```typescript
+const maxWait = 300000;  // 5 dakika
+const pollInterval = 10000;  // 10 saniye
+const startTime = Date.now();
+
+let reportStatus = null;
+
+while (Date.now() - startTime < maxWait) {
+  const statusResponse = await client.request<{
+    reportId: string;
+    status: string;
+    url?: string;
+    failureReason?: string;
+  }>(`/reporting/reports/${reportId}`, {
+    method: "GET",
+    headers: {
+      "Accept": "application/vnd.createasyncreportrequest.v3+json",
+    },
+  });
+
+  reportStatus = statusResponse.data;
+
+  if (reportStatus?.status === "COMPLETED") {
+    break;
+  }
+
+  if (reportStatus?.status === "FAILED") {
+    throw new Error(`Report failed: ${reportStatus.failureReason}`);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, pollInterval));
+}
+```
+
+#### 4. Report Download ve GZIP Decompress
+
+```typescript
+if (!reportStatus?.url) {
+  throw new Error("Report completed but no download URL");
+}
+
+const downloadResponse = await fetch(reportStatus.url);
+
+// GZIP decompress
+const arrayBuffer = await downloadResponse.arrayBuffer();
+const decompressedStream = new Response(arrayBuffer).body!
+  .pipeThrough(new DecompressionStream("gzip"));
+const rawText = await new Response(decompressedStream).text();
+
+// JSON parse
+const reportData = JSON.parse(rawText);
+
+// Veriyi işle
+let totalCost = 0;
+let totalSales = 0;
+let totalImpressions = 0;
+let totalClicks = 0;
+let totalPurchases = 0;
+
+for (const row of reportData) {
+  totalCost += row.cost || 0;
+  totalSales += row.sales || 0;
+  totalImpressions += row.impressions || 0;
+  totalClicks += row.clicks || 0;
+  totalPurchases += row.purchases || 0;
+}
+```
+
+---
+
+### 📁 İLGİLİ DOSYALAR
+
+| Dosya | Amaç |
+|-------|------|
+| `/src/lib/amazon-ads-api/client.ts` | Ads API client (OAuth, request helper) |
+| `/src/lib/amazon-ads-api/reports.ts` | V3 Reports API functions |
+| `/src/app/api/debug/ads-test/route.ts` | Debug endpoint (test için) |
+| `/src/app/api/sync/ads-metrics/route.ts` | Inngest trigger endpoint |
+| `/src/inngest/functions.ts` → `syncAdsData` | Background ads sync job |
+
+---
+
+### 🔧 DEBUG CONSOLE KODLARI
+
+```javascript
+// 📊 Ads API Test (7 gün, report oluştur ve indir)
+fetch('/api/debug/ads-test?days=7')
+  .then(r => r.json())
+  .then(d => {
+    console.log('✅ Ads Test:', d)
+    if (d.calculatedTotals) {
+      console.log('💰 Cost:', d.calculatedTotals.cost)
+      console.log('📈 Sales:', d.calculatedTotals.sales)
+      console.log('👁️ Impressions:', d.calculatedTotals.impressions)
+    }
+  })
+
+// 📋 Kampanya Listesi (V3 API)
+fetch('/api/debug/ads-test?listCampaigns=true')
+  .then(r => r.json())
+  .then(d => console.log('📋 Campaigns:', d.campaignCount, d.sampleCampaign))
+
+// 🔍 Mevcut Report Durumu Kontrol
+fetch('/api/debug/ads-test?reportId=YOUR_REPORT_ID')
+  .then(r => r.json())
+  .then(d => console.log('📊 Report Status:', d))
+
+// 🚀 Inngest ile Ads Sync Tetikle (Production için)
+fetch('/api/sync/ads-metrics', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ monthsBack: 1 })
+}).then(r => r.json()).then(d => console.log('🚀 Ads Sync:', d))
+```
+
+---
+
+### ⏱️ INNGEST İLE BACKGROUND PROCESSING
+
+**Neden Inngest?**
+- Report oluşturma 5-10 dakika sürebilir
+- Vercel Function timeout (60s) yeterli değil
+- Inngest background job ile timeout yok
+
+**Dosya:** `/src/inngest/functions.ts` → `syncAdsData`
+
+```typescript
+export const syncAdsData = inngest.createFunction(
+  {
+    id: "sync-ads-data",
+    concurrency: { limit: 1, key: "event.data.userId" },
+    retries: 3,
+  },
+  { event: "amazon/sync.ads" },
+  async ({ event, step }) => {
+    const { userId, profileId, refreshToken, countryCode, monthsBack } = event.data;
+
+    // Her ay için ayrı step (31 günlük chunk'lar)
+    for (let month = 0; month < monthsBack; month++) {
+      await step.run(`sync-month-${month}`, async () => {
+        const metrics = await getAdsMetrics(
+          refreshToken,
+          profileId,
+          countryCode,
+          startDate,
+          endDate
+        );
+
+        // ads_daily_metrics tablosuna kaydet
+        await supabase.from("ads_daily_metrics").upsert(metrics);
+      });
+
+      // Rate limit için 5 saniye bekle
+      await step.sleep("rate-limit", "5s");
+    }
+  }
+);
+```
+
+---
+
+### 📊 DATABASE SCHEMA
+
+**Tablo:** `ads_daily_metrics`
+
+```sql
+CREATE TABLE ads_daily_metrics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES profiles(id),
+  profile_id TEXT NOT NULL,  -- Amazon Ads profile ID
+  date DATE NOT NULL,
+
+  -- Metrics
+  impressions BIGINT DEFAULT 0,
+  clicks BIGINT DEFAULT 0,
+  cost DECIMAL(12,2) DEFAULT 0,
+  purchases BIGINT DEFAULT 0,
+  sales DECIMAL(12,2) DEFAULT 0,
+
+  -- Calculated
+  ctr DECIMAL(8,4),  -- Click-through rate
+  cpc DECIMAL(8,4),  -- Cost per click
+  acos DECIMAL(8,4), -- Advertising cost of sales
+  roas DECIMAL(8,4), -- Return on ad spend
+
+  -- Metadata
+  ad_product TEXT,  -- SPONSORED_PRODUCTS, SPONSORED_BRANDS, etc.
+  sync_source TEXT DEFAULT 'api',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  UNIQUE(user_id, profile_id, date, ad_product)
+);
+```
+
+---
+
+### ⚠️ ÖNEMLİ NOTLAR VE UYARILAR
+
+1. **Report Timeout:** 5 dakika minimum bekle. Bazı büyük hesaplarda 10 dakikaya kadar çıkabilir.
+
+2. **GZIP Zorunlu:** `JSON` format desteklenmiyor. Her zaman `GZIP_JSON` kullan ve decompress et.
+
+3. **V3 Headers:** Her request'te doğru V3 Accept header kullan. Yanlış header 400 verir.
+
+4. **Column Names:** V2 column isimleri (purchases14d, sales14d) V3'te çalışmaz.
+
+5. **Rate Limits:** Amazon Ads API rate limit'i var. Chunk'lar arasında 5s bekle.
+
+6. **Attribution Window:** `purchases` ve `sales` değerleri 14 günlük attribution window ile hesaplanır.
+
+7. **Inngest Kullan:** Production'da her zaman Inngest ile background job kullan.
+
+8. **Test Endpoint:** `/api/debug/ads-test` endpoint'i ile önce test et, sonra Inngest'e geç.
+
+---
+
+### 🎯 CHECKLIST: Ads API Entegrasyonu
+
+- [ ] Amazon Ads connection var mı? (`amazon_ads_connections` tablosu)
+- [ ] Profile ID doğru mu? (country_code ile eşleşmeli)
+- [ ] Debug endpoint çalışıyor mu? (`/api/debug/ads-test`)
+- [ ] Report COMPLETED oluyor mu? (5 dakika bekle)
+- [ ] GZIP decompress çalışıyor mu?
+- [ ] V3 column'lar doğru mu? (`purchases`, `sales`)
+- [ ] Inngest function aktif mi? (`syncAdsData`)
+- [ ] `ads_daily_metrics` tablosu var mı?
+
+---
+
 ## 📋 SONRA ÜZERİNE DÜŞÜLECEKLER (Backlog)
 
 **Son Güncelleme:** 28 Ocak 2026

@@ -20,45 +20,36 @@ import { AdsApiResponse, AdsMetrics, SpCampaignReportRow } from './types'
 // REPORT CONFIGURATION
 // ============================================
 
-// Standard metrics for campaign reports
-// NOTE: V3 Reporting - start with minimal columns, add attribution metrics after basic works
+// Standard metrics for campaign reports - V3 API format
+// V3 uses simplified column names without "14d" suffix
 const SP_CAMPAIGN_METRICS = [
   'campaignId',
   'campaignName',
-  'campaignStatus',
   'impressions',
   'clicks',
   'cost',
-  // Attribution metrics (may need different names in v3)
-  'purchases14d',           // Orders attributed (14-day window)
-  'unitsSold14d',           // Units attributed
-  'sales14d',               // Sales attributed
+  'purchases',    // Attributed purchases (V3 format)
+  'sales',        // Attributed sales (V3 format)
 ]
 
 const SB_CAMPAIGN_METRICS = [
   'campaignId',
   'campaignName',
-  'campaignStatus',
-  'campaignBudget',
   'impressions',
   'clicks',
   'cost',
-  'attributedSales14d',
-  'attributedUnitsOrdered14d',
-  'attributedConversions14d',
+  'purchases',
+  'sales',
 ]
 
 const SD_CAMPAIGN_METRICS = [
   'campaignId',
   'campaignName',
-  'campaignStatus',
-  'campaignBudget',
   'impressions',
   'clicks',
   'cost',
-  'purchases14d',
-  'unitsSold14d',
-  'sales14d',
+  'purchases',
+  'sales',
 ]
 
 // ============================================
@@ -85,7 +76,7 @@ interface ReportStatusResponse {
 }
 
 /**
- * Create a new report request
+ * Create a new report request - V3 API
  */
 export async function createReport(
   client: AmazonAdsClient,
@@ -118,21 +109,35 @@ export async function createReport(
   }
 
   console.log(`[Ads Reports] Creating report with body:`, JSON.stringify(body, null, 2))
-  return client.post<CreateReportResponse>('/reporting/reports', body)
+
+  // V3 API requires specific Accept header
+  return client.request<CreateReportResponse>('/reporting/reports', {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/vnd.createasyncreportrequest.v3+json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
 }
 
 /**
- * Check report status
+ * Check report status - V3 API
  */
 export async function getReportStatus(
   client: AmazonAdsClient,
   reportId: string
 ): Promise<AdsApiResponse<ReportStatusResponse>> {
-  return client.get<ReportStatusResponse>(`/reporting/reports/${reportId}`)
+  return client.request<ReportStatusResponse>(`/reporting/reports/${reportId}`, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/vnd.createasyncreportrequest.v3+json',
+    },
+  })
 }
 
 /**
- * Download report data from URL
+ * Download report data from URL - handles GZIP decompression
  */
 export async function downloadReport(
   url: string
@@ -157,10 +162,22 @@ export async function downloadReport(
       }
     }
 
-    // Response is gzipped JSON - Node.js fetch handles decompression automatically
-    const text = await response.text()
-    console.log(`[Ads Reports] Download raw text length: ${text.length}`)
-    console.log(`[Ads Reports] Download raw text preview: ${text.substring(0, 500)}`)
+    // Response is GZIP compressed - decompress manually
+    let text: string
+    try {
+      const arrayBuffer = await response.arrayBuffer()
+      const decompressedStream = new Response(arrayBuffer).body!
+        .pipeThrough(new DecompressionStream('gzip'))
+      text = await new Response(decompressedStream).text()
+      console.log(`[Ads Reports] GZIP decompressed successfully`)
+    } catch (decompressError) {
+      // Fallback: try as plain text (in case server already decompressed)
+      console.log(`[Ads Reports] GZIP decompression failed, trying as plain text`)
+      text = await response.clone().text()
+    }
+
+    console.log(`[Ads Reports] Download text length: ${text.length}`)
+    console.log(`[Ads Reports] Download text preview: ${text.substring(0, 500)}`)
 
     // Try to parse as JSON
     let data
@@ -386,48 +403,41 @@ export async function getAdsMetrics(
       console.log(`[Ads Reports] SD Report Rejected:`, sdResult.reason)
     }
 
-    // Process Sponsored Products
-    // NOTE: SP reports use different field names than SB/SD reports
-    // SP: sales14d, purchases14d, unitsSold14d
-    // SB/SD: attributedSales14d, attributedConversions14d, attributedUnitsOrdered14d
-    let spSpend = 0, spSales = 0, spImpressions = 0, spClicks = 0, spOrders = 0, spUnits = 0
+    // Process Sponsored Products - V3 uses 'sales' and 'purchases' (no 14d suffix)
+    let spSpend = 0, spSales = 0, spImpressions = 0, spClicks = 0, spOrders = 0
     if (spResult.status === 'fulfilled' && spResult.value.success && spResult.value.data) {
       for (const row of spResult.value.data) {
         spSpend += row.cost || 0
-        // SP uses 'sales14d', fallback to 'attributedSales14d' for safety
-        spSales += (row as any).sales14d || row.attributedSales14d || 0
+        // V3 uses 'sales', fallback to legacy names
+        spSales += (row as any).sales || (row as any).sales14d || row.attributedSales14d || 0
         spImpressions += row.impressions || 0
         spClicks += row.clicks || 0
-        // SP uses 'purchases14d', fallback to 'attributedConversions14d'
-        spOrders += (row as any).purchases14d || row.attributedConversions14d || 0
-        // SP uses 'unitsSold14d', fallback to 'attributedUnitsOrdered14d'
-        spUnits += (row as any).unitsSold14d || row.attributedUnitsOrdered14d || 0
+        // V3 uses 'purchases', fallback to legacy names
+        spOrders += (row as any).purchases || (row as any).purchases14d || row.attributedConversions14d || 0
       }
     }
 
-    // Process Sponsored Brands
-    let sbSpend = 0, sbSales = 0, sbImpressions = 0, sbClicks = 0, sbOrders = 0, sbUnits = 0
+    // Process Sponsored Brands - V3 format
+    let sbSpend = 0, sbSales = 0, sbImpressions = 0, sbClicks = 0, sbOrders = 0
     if (sbResult.status === 'fulfilled' && sbResult.value.success && sbResult.value.data) {
       for (const row of sbResult.value.data) {
         sbSpend += row.cost || 0
-        sbSales += row.attributedSales14d || 0
+        sbSales += (row as any).sales || row.attributedSales14d || 0
         sbImpressions += row.impressions || 0
         sbClicks += row.clicks || 0
-        sbOrders += row.attributedConversions14d || 0
-        sbUnits += row.attributedUnitsOrdered14d || 0
+        sbOrders += (row as any).purchases || row.attributedConversions14d || 0
       }
     }
 
-    // Process Sponsored Display
-    let sdSpend = 0, sdSales = 0, sdImpressions = 0, sdClicks = 0, sdOrders = 0, sdUnits = 0
+    // Process Sponsored Display - V3 format
+    let sdSpend = 0, sdSales = 0, sdImpressions = 0, sdClicks = 0, sdOrders = 0
     if (sdResult.status === 'fulfilled' && sdResult.value.success && sdResult.value.data) {
       for (const row of sdResult.value.data) {
         sdSpend += row.cost || 0
-        sdSales += row.attributedSales14d || 0
+        sdSales += (row as any).sales || row.attributedSales14d || 0
         sdImpressions += row.impressions || 0
         sdClicks += row.clicks || 0
-        sdOrders += row.attributedConversions14d || 0
-        sdUnits += row.attributedUnitsOrdered14d || 0
+        sdOrders += (row as any).purchases || row.attributedConversions14d || 0
       }
     }
 
