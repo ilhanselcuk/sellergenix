@@ -874,6 +874,120 @@ fetch('/api/debug/ads-test?days=30')
 
 ---
 
+### 🔄 HYBRID ADS DATA STRATEGY - API + Settlement Report (31 Ocak 2026)
+
+**⚠️ KRİTİK:** Yeni müşteri bağlandığında en fazla geçmiş veriyi almak için iki kaynak birleştirilir.
+
+#### 📊 VERİ KAYNAKLARI
+
+| Kaynak | Geriye Dönük | Detay Seviyesi | Tablo |
+|--------|--------------|----------------|-------|
+| **Ads API** | 60-95 gün | Günlük, kampanya bazlı | `ads_daily_metrics` |
+| **Settlement Report** | 24 ay | Aylık toplam | `service_fees` (category='advertising') |
+
+#### 🎯 YENİ MÜŞTERİ BAĞLANDIĞINDA
+
+```
+Yeni müşteri hesabını bağladı (bugün: 31 Ocak 2026)
+    ↓
+1. Ads API Sync (OAuth callback tetikler)
+   → Son 95 gün (SP), 60 gün (SB), 65 gün (SD)
+   → ads_daily_metrics tablosuna günlük kayıt
+   → Detay: SP/SB/SBV/SD ayrı ayrı
+    ↓
+2. Settlement Report Sync (zaten çalışıyor)
+   → 24 ay geriye (Ocak 2024 - Ocak 2026)
+   → service_fees tablosuna "Cost of Advertising" satırları
+   → Detay: Aylık toplam (ad tipi kırılımı yok)
+    ↓
+3. Dashboard Görüntüleme
+   → Son 60-95 gün: ads_daily_metrics (detaylı)
+   → Daha eski aylar: service_fees (aylık toplam)
+```
+
+#### 🖥️ DASHBOARD HYBRID LOOKUP
+
+**Dosya:** `/src/app/api/dashboard/metrics/route.ts` → `getAdsForPeriod()`
+
+```typescript
+async function getAdsForPeriod(userId, startDate, endDate) {
+  // Step 1: Önce ads_daily_metrics'ten dene (Ads API - detaylı)
+  const adsApiData = await supabase
+    .from('ads_daily_metrics')
+    .select('sp_spend, sb_spend, sbv_spend, sd_spend, total_spend')
+    .eq('user_id', userId)
+    .gte('date', startDateStr)
+    .lte('date', endDateStr)
+
+  if (adsApiData.length > 0) {
+    // Ads API verisi var - detaylı breakdown döndür
+    return aggregateAdsApiData(adsApiData)
+  }
+
+  // Step 2: Ads API verisi yok - Settlement Report'a bak
+  const settlementData = await supabase
+    .from('service_fees')
+    .select('amount, fee_date')
+    .eq('user_id', userId)
+    .eq('category', 'advertising')  // "Cost of Advertising" satırları
+    .gte('fee_date', startDateStr)
+    .lte('fee_date', endDateStr)
+
+  if (settlementData.length > 0) {
+    // Settlement'tan toplam ad spend döndür (kırılım yok)
+    return { total: sumAmounts(settlementData) }
+  }
+
+  return { total: 0 }
+}
+```
+
+#### 📅 ÖRNEK: 2 YILLIK MÜŞTERİ
+
+```
+Müşteri: Ocak 2024'ten beri reklam veriyor
+Bugün: 31 Ocak 2026
+Ads API bağlantısı: Bugün yapıldı
+
+Dashboard'da görüntüleme:
+├── Ocak 2026: ads_daily_metrics (günlük detay, SP/SB/SD ayrı)
+├── Aralık 2025: ads_daily_metrics (günlük detay)
+├── Kasım 2025: ads_daily_metrics (kısmen, son 95 gün SP)
+├── Ekim 2025: service_fees (aylık toplam)
+├── Eylül 2025: service_fees (aylık toplam)
+├── ... (her ay Settlement Report'tan)
+└── Ocak 2024: service_fees (aylık toplam)
+```
+
+#### 🔄 ZAMANLA VERİ ZENGİNLEŞMESİ
+
+```
+Ocak 2026: Müşteri bağlandı
+  → API: 95 gün detay
+  → Settlement: 24 ay toplam
+
+Şubat 2026: Bir ay geçti
+  → API: 95 gün detay (şimdi Aralık 2025 dahil)
+  → Settlement: 24 ay toplam
+  → ads_daily_metrics'te Ocak 2026 verisi kalıcı
+
+Ocak 2027: Bir yıl geçti
+  → API: 95 gün detay
+  → Settlement: 24 ay toplam
+  → ads_daily_metrics'te 12 aylık veri biriktirdik!
+  → YoY karşılaştırma: Ocak 2026 vs Ocak 2027 ✅
+```
+
+#### ⚠️ ÖNEMLİ KURALLAR
+
+1. **VERİ ASLA SİLİNMEZ:** Müşteri bizimle çalıştığı sürece tüm veriler saklanır
+2. **Ads API öncelikli:** Aynı dönem için API verisi varsa Settlement'a bakılmaz
+3. **Settlement fallback:** API verisi yoksa Settlement'tan okunur
+4. **Günlük sync:** Her gün Ads API'den 60 gün çekilerek attribution güncellemeleri yakalanır
+5. **Upsert pattern:** Aynı tarih için veri güncellenebilir (attribution window)
+
+---
+
 ### 🔴 YAŞANAN HATALAR VE ÇÖZÜMLERİ
 
 #### ❌ HATA 1: Report PENDING'de Kalıyor (2+ dakika)

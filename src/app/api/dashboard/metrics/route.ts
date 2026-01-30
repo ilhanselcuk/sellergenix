@@ -149,6 +149,13 @@ interface AdsBreakdown {
 /**
  * Get ads breakdown from ads_daily_metrics table for a date range
  * Returns SP/SB/SBV/SD spend breakdown
+ *
+ * HYBRID STRATEGY (31 Jan 2026):
+ * 1. First try ads_daily_metrics (Ads API - detailed, last 60-95 days)
+ * 2. If no data, fallback to service_fees (Settlement Report - monthly, up to 24 months)
+ *
+ * This allows showing historical ad spend even before Ads API connection,
+ * because Settlement Reports contain "Cost of Advertising" line items.
  */
 async function getAdsForPeriod(
   userId: string,
@@ -167,6 +174,7 @@ async function getAdsForPeriod(
     const startDateStr = startDate.toISOString().split('T')[0]
     const endDateStr = endDate.toISOString().split('T')[0]
 
+    // Step 1: Try ads_daily_metrics (Ads API - detailed daily data)
     const { data: adsData, error } = await supabase
       .from('ads_daily_metrics')
       .select('sp_spend, sb_spend, sbv_spend, sd_spend, total_spend')
@@ -174,20 +182,43 @@ async function getAdsForPeriod(
       .gte('date', startDateStr)
       .lte('date', endDateStr)
 
-    if (error || !adsData || adsData.length === 0) {
-      return emptyAds
+    if (!error && adsData && adsData.length > 0) {
+      // Sum up all days in the period from Ads API
+      const totals = adsData.reduce((acc, day) => ({
+        sponsoredProducts: acc.sponsoredProducts + (parseFloat(String(day.sp_spend)) || 0),
+        sponsoredBrands: acc.sponsoredBrands + (parseFloat(String(day.sb_spend)) || 0),
+        sponsoredBrandsVideo: acc.sponsoredBrandsVideo + (parseFloat(String(day.sbv_spend)) || 0),
+        sponsoredDisplay: acc.sponsoredDisplay + (parseFloat(String(day.sd_spend)) || 0),
+        total: acc.total + (parseFloat(String(day.total_spend)) || 0)
+      }), emptyAds)
+
+      return totals
     }
 
-    // Sum up all days in the period
-    const totals = adsData.reduce((acc, day) => ({
-      sponsoredProducts: acc.sponsoredProducts + (parseFloat(String(day.sp_spend)) || 0),
-      sponsoredBrands: acc.sponsoredBrands + (parseFloat(String(day.sb_spend)) || 0),
-      sponsoredBrandsVideo: acc.sponsoredBrandsVideo + (parseFloat(String(day.sbv_spend)) || 0),
-      sponsoredDisplay: acc.sponsoredDisplay + (parseFloat(String(day.sd_spend)) || 0),
-      total: acc.total + (parseFloat(String(day.total_spend)) || 0)
-    }), emptyAds)
+    // Step 2: Fallback to service_fees (Settlement Report - "advertising" category)
+    // This covers historical periods before Ads API was connected
+    const { data: settlementAds, error: settlementError } = await supabase
+      .from('service_fees')
+      .select('amount, fee_date')
+      .eq('user_id', userId)
+      .eq('category', 'advertising')
+      .gte('fee_date', startDateStr)
+      .lte('fee_date', endDateStr)
 
-    return totals
+    if (!settlementError && settlementAds && settlementAds.length > 0) {
+      // Sum up all advertising fees from Settlement Reports
+      const totalFromSettlement = settlementAds.reduce((acc, fee) => {
+        return acc + Math.abs(parseFloat(String(fee.amount)) || 0)
+      }, 0)
+
+      // Settlement Report doesn't break down by ad type, so put all in total
+      return {
+        ...emptyAds,
+        total: totalFromSettlement
+      }
+    }
+
+    return emptyAds
   } catch (error) {
     console.error('Error fetching ads data:', error)
     return emptyAds
