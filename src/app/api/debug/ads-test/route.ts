@@ -67,6 +67,29 @@ export async function GET(request: NextRequest) {
     (results.steps as string[]).push("Client created successfully");
     results.clientBaseUrl = clientResult.client.getBaseUrl();
 
+    // First, check if the profile has campaigns (sanity check)
+    const listCampaigns = searchParams.get("listCampaigns") === "true";
+    if (listCampaigns) {
+      (results.steps as string[]).push("Listing SP campaigns to verify account...");
+
+      // Try to list SP campaigns via campaigns API
+      const campaignsResponse = await clientResult.client.get<unknown[]>(
+        "/sp/campaigns"
+      );
+      results.campaignsResponse = campaignsResponse;
+
+      if (campaignsResponse.success && campaignsResponse.data) {
+        results.campaignCount = Array.isArray(campaignsResponse.data)
+          ? campaignsResponse.data.length
+          : 0;
+        if (Array.isArray(campaignsResponse.data) && campaignsResponse.data.length > 0) {
+          results.sampleCampaign = campaignsResponse.data[0];
+        }
+      }
+
+      return NextResponse.json(results);
+    }
+
     // If reportId is provided, just check its status
     if (reportIdToCheck) {
       (results.steps as string[]).push(`Checking status of existing report: ${reportIdToCheck}`);
@@ -132,7 +155,7 @@ export async function GET(request: NextRequest) {
           "cost",
         ],
         reportTypeId: "spCampaigns",
-        timeUnit: "SUMMARY",
+        timeUnit: "DAILY",  // DAILY is better for debugging than SUMMARY
         format: "GZIP_JSON",
       },
     };
