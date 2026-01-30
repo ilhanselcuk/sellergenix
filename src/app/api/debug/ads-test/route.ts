@@ -116,9 +116,23 @@ export async function GET(request: NextRequest) {
       results.existingReportStatus = statusResponse;
 
       if (statusResponse.success && statusResponse.data?.url) {
-        // Download and show the data
+        // Download and decompress the GZIP data
         const downloadResponse = await fetch(statusResponse.data.url);
-        const rawText = await downloadResponse.text();
+
+        let rawText: string;
+        try {
+          // Try to decompress GZIP data
+          const arrayBuffer = await downloadResponse.arrayBuffer();
+          const decompressedStream = new Response(arrayBuffer).body!
+            .pipeThrough(new DecompressionStream("gzip"));
+          rawText = await new Response(decompressedStream).text();
+          results.decompressed = true;
+        } catch {
+          // If decompression fails, try as plain text
+          rawText = await downloadResponse.clone().text();
+          results.decompressed = false;
+        }
+
         results.rawTextLength = rawText.length;
         results.rawTextPreview = rawText.substring(0, 2000);
         try {
@@ -175,7 +189,7 @@ export async function GET(request: NextRequest) {
         columns,
         reportTypeId: "spCampaigns",
         timeUnit: "SUMMARY",
-        format: "JSON",  // Use JSON instead of GZIP_JSON for simpler debugging
+        format: "GZIP_JSON",  // Only GZIP_JSON is supported for spCampaigns
       },
     };
 
@@ -293,8 +307,21 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get raw text first
-    const rawText = await downloadResponse.text();
+    // Get raw data and decompress if needed (GZIP_JSON format)
+    let rawText: string;
+    try {
+      // Try to decompress GZIP data
+      const arrayBuffer = await downloadResponse.arrayBuffer();
+      const decompressedStream = new Response(arrayBuffer).body!
+        .pipeThrough(new DecompressionStream("gzip"));
+      rawText = await new Response(decompressedStream).text();
+      results.decompressed = true;
+    } catch {
+      // If decompression fails, try as plain text
+      rawText = await downloadResponse.clone().text();
+      results.decompressed = false;
+    }
+
     results.rawTextLength = rawText.length;
     results.rawTextPreview = rawText.substring(0, 1000);
 
