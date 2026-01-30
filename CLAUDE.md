@@ -681,10 +681,16 @@ src/
 |------------|-------|--------|
 | **Accept Header** | `application/vnd.createasyncreportrequest.v3+json` | `application/json` |
 | **Report Format** | `GZIP_JSON` | `JSON` |
-| **Column Names** | `purchases`, `sales` | `purchases14d`, `sales14d` |
+| **Column Names** | `purchases14d`, `sales14d` | `purchases`, `sales` |
 | **Campaigns API Accept** | `application/vnd.spcampaign.v3+json` | `application/json` |
 | **Polling Timeout** | 5+ dakika (300s) | 2 dakika |
 | **Decompress** | ✅ GZIP decompress gerekli | Raw text okuma |
+
+⚠️ **KRİTİK:** Column isimleri için `14d` suffix **ZORUNLUDUR**! `purchases` veya `sales` kullanmak 400 hatası döndürür:
+```
+"configuration columns includes invalid values: (purchases, sales).
+Allowed values: (sales14d, purchases14d, cost, impressions, clicks...)"
+```
 
 ---
 
@@ -811,23 +817,25 @@ const campaignsResponse = await client.request('/sp/campaigns/list', {
 
 ---
 
-#### ❌ HATA 5: Yanlış Column İsimleri (V3 vs V2)
+#### ❌ HATA 5: Yanlış Column İsimleri - 14d Suffix GEREKLİ!
 
 **Belirti:**
-```
-reportData[0] = { campaignId: "123", cost: 45.67 }
-// purchases14d ve sales14d undefined!
+```json
+{
+  "code": "400",
+  "details": "configuration columns includes invalid values: (purchases, sales). Allowed values: (sales14d, purchases14d, cost, impressions, clicks...)"
+}
 ```
 
-**Sebep:** V3 API farklı column isimleri kullanıyor.
+**Sebep:** V3 API attribution metriklerinde `14d` suffix **ZORUNLU**.
 
-**✅ Çözüm - V3 Column İsimleri:**
+**✅ Çözüm - V3 Column İsimleri (14-day attribution):**
 ```typescript
-// V2 (ESKİ - KULLANMA!)
-columns: ['purchases14d', 'sales14d', 'attributedSales14d']
+// YANLIŞ - 400 hatası verir!
+columns: ['purchases', 'sales']  // ❌
 
-// V3 (YENİ - DOĞRU!)
-columns: ['purchases', 'sales', 'impressions', 'clicks', 'cost']
+// DOĞRU - 14d suffix kullan!
+columns: ['purchases14d', 'sales14d', 'impressions', 'clicks', 'cost']  // ✅
 ```
 
 **V3 Column Mapping (en yaygın kullanılanlar):**
@@ -839,8 +847,8 @@ columns: ['purchases', 'sales', 'impressions', 'clicks', 'cost']
 | `impressions` | Gösterim sayısı |
 | `clicks` | Tıklama sayısı |
 | `cost` | Harcama ($) |
-| `purchases` | Satın alma sayısı (attributed) |
-| `sales` | Satış geliri ($, attributed) |
+| `purchases14d` | Satın alma sayısı (14-day attribution) |
+| `sales14d` | Satış geliri ($, 14-day attribution) |
 
 ---
 
@@ -862,8 +870,8 @@ const reportRequestBody = {
       "impressions",
       "clicks",
       "cost",
-      "purchases",  // V3 format
-      "sales",      // V3 format
+      "purchases14d",  // V3 format - 14d suffix ZORUNLU!
+      "sales14d",      // V3 format - 14d suffix ZORUNLU!
     ],
     reportTypeId: "spCampaigns",
     timeUnit: "SUMMARY",
@@ -948,7 +956,7 @@ const rawText = await new Response(decompressedStream).text();
 // JSON parse
 const reportData = JSON.parse(rawText);
 
-// Veriyi işle
+// Veriyi işle - V3 14d suffix column isimleri kullan!
 let totalCost = 0;
 let totalSales = 0;
 let totalImpressions = 0;
@@ -957,10 +965,10 @@ let totalPurchases = 0;
 
 for (const row of reportData) {
   totalCost += row.cost || 0;
-  totalSales += row.sales || 0;
+  totalSales += row.sales14d || 0;       // ✅ sales14d
   totalImpressions += row.impressions || 0;
   totalClicks += row.clicks || 0;
-  totalPurchases += row.purchases || 0;
+  totalPurchases += row.purchases14d || 0;  // ✅ purchases14d
 }
 ```
 
