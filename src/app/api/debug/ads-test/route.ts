@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
     }
 
     (results.steps as string[]).push("Client created successfully");
+    results.clientBaseUrl = clientResult.client.getBaseUrl();
 
     // Step 3: Try to create a simple SP report for yesterday
     const yesterday = new Date();
@@ -74,6 +75,7 @@ export async function GET(request: NextRequest) {
     (results.steps as string[]).push(`Testing date range: ${weekAgoStr} to ${yesterdayStr}`);
 
     // Step 4: Create report request manually to see raw response
+    // V3 API - Start with MINIMAL columns to ensure it works
     const reportRequestBody = {
       name: `SellerGenix_Debug_${Date.now()}`,
       startDate: weekAgoStr,
@@ -81,15 +83,13 @@ export async function GET(request: NextRequest) {
       configuration: {
         adProduct: "SPONSORED_PRODUCTS",
         groupBy: ["campaign"],
+        // MINIMAL columns first - V3 API might reject unknown columns
         columns: [
           "campaignId",
           "campaignName",
           "impressions",
           "clicks",
           "cost",
-          // Try both naming conventions
-          "purchases14d",
-          "sales14d",
         ],
         reportTypeId: "spCampaigns",
         timeUnit: "SUMMARY",
@@ -118,14 +118,14 @@ export async function GET(request: NextRequest) {
     const reportId = createResponse.data.reportId;
     (results.steps as string[]).push(`Report created: ${reportId}`);
 
-    // Step 5: Poll for report completion (max 60 seconds)
+    // Step 5: Poll for report completion (max 120 seconds)
     let reportStatus: {
       status: string;
       url?: string;
       failureReason?: string;
     } | null = null;
-    const maxWait = 60000;
-    const pollInterval = 3000;
+    const maxWait = 120000; // 2 minutes
+    const pollInterval = 5000; // 5 seconds
     const startTime = Date.now();
 
     while (Date.now() - startTime < maxWait) {
