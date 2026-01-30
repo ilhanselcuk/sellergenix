@@ -1689,7 +1689,8 @@ export const syncAdsData = inngest.createFunction(
 
     for (const chunk of chunks) {
       // Step 2a: Fetch SP (Sponsored Products) daily data
-      await step.run(`sp-chunk-${runId}-${chunk.chunkIndex}`, async () => {
+      // IMPORTANT: Capture result to track saves outside step.run (Inngest memoization)
+      const chunkResult = await step.run(`sp-chunk-${runId}-${chunk.chunkIndex}`, async () => {
         try {
           console.log(`📊 [Ads Sync] Processing chunk ${chunk.chunkIndex}: ${chunk.startDate} to ${chunk.endDate}`);
           console.log(`📊 [Ads Sync] ENV CHECK: AMAZON_ADS_CLIENT_ID=${process.env.AMAZON_ADS_CLIENT_ID ? 'SET (' + process.env.AMAZON_ADS_CLIENT_ID.substring(0, 10) + '...)' : 'MISSING!'}`);
@@ -1757,13 +1758,17 @@ export const syncAdsData = inngest.createFunction(
           }
 
           console.log(`✅ [Ads Sync] Chunk ${chunk.chunkIndex}: Saved to DB - $${m.totalSpend.toFixed(2)} spend, ${m.acos.toFixed(1)}% ACOS`);
-          (results.dailyRecordsSaved as number)++;
           return { success: true, spend: m.totalSpend, sales: m.totalSales };
         } catch (error: any) {
           console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex} exception:`, error.message);
           return { success: false, error: error.message };
         }
       });
+
+      // Track saves OUTSIDE step.run to avoid Inngest memoization issues
+      if (chunkResult && chunkResult.success) {
+        (results.dailyRecordsSaved as number)++;
+      }
 
       // Rate limit between chunks
       if (chunk.chunkIndex < chunks.length - 1) {
