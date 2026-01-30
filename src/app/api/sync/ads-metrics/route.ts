@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Trigger Inngest sync for this connection
+      // runId in event data ensures fresh step execution while allowing retries
       await inngest.send({
         name: "amazon/sync.ads",
         data: {
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
           refreshToken: conn.refresh_token,
           countryCode: conn.country_code,
           monthsBack,
+          runId: Date.now().toString(36), // Unique per trigger, same on retries
         },
       });
 
@@ -67,6 +69,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Trigger sync for each connection
+    // runId in event data ensures fresh step execution while allowing retries
+    const runId = Date.now().toString(36);
     const events = connections.map((conn) => ({
       name: "amazon/sync.ads" as const,
       data: {
@@ -75,6 +79,7 @@ export async function POST(request: NextRequest) {
         refreshToken: conn.refresh_token,
         countryCode: conn.country_code,
         monthsBack,
+        runId, // Same runId for all profiles in this batch
       },
     }));
 
