@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
 
       // Try to list SP campaigns via campaigns API
       const campaignsResponse = await clientResult.client.get<unknown[]>(
-        "/sp/campaigns"
+        "/v2/sp/campaigns"
       );
       results.campaignsResponse = campaignsResponse;
 
