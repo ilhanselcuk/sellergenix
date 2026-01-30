@@ -694,6 +694,186 @@ Allowed values: (sales14d, purchases14d, cost, impressions, clicks...)"
 
 ---
 
+### 🚨🚨🚨 KRİTİK API LİMİTLERİ VE GÜNLÜK VERİ STRATEJİSİ (31 Ocak 2026) 🚨🚨🚨
+
+**⚠️ BU BÖLÜM MUTLAKA OKUNMALI! Amazon Ads API'nin donanımsal sınırlamaları var.**
+
+#### 📊 TEK SEFERDE MAKSİMUM 31 GÜN!
+
+**KRİTİK LİMİT:** Amazon Ads API tek bir report request'te **MAKSİMUM 31 GÜN** veri döndürür.
+
+```typescript
+// ❌ YANLIŞ - 60 gün istersen hata veya eksik veri alırsın!
+const reportRequestBody = {
+  startDate: "2025-12-01",
+  endDate: "2026-01-30",  // 60 gün - ÇALIŞMAZ!
+  ...
+}
+
+// ✅ DOĞRU - 31 günlük chunk'lara böl
+const chunk1 = { startDate: "2025-12-01", endDate: "2025-12-31" }  // 31 gün
+const chunk2 = { startDate: "2026-01-01", endDate: "2026-01-30" }  // 30 gün
+```
+
+#### 📅 HISTORICAL DATA LOOKBACK LİMİTLERİ
+
+Amazon Ads API **GERİYE DÖNÜK VERİ LİMİTLERİ** var - bu limitten önceki verileri ÇEKEMEZSİN:
+
+| Ad Product | Max Lookback | Açıklama |
+|------------|--------------|----------|
+| **Sponsored Products (SP)** | 95 gün | En geniş limit |
+| **Sponsored Brands (SB)** | 60 gün | Daha kısıtlı |
+| **Sponsored Display (SD)** | 65 gün | Orta seviye |
+
+**Örnek:** Bugün 31 Ocak 2026 ise:
+- SP verileri: En erken 28 Ekim 2025'e kadar gider
+- SB verileri: En erken 2 Aralık 2025'e kadar gider
+- SD verileri: En erken 27 Kasım 2025'e kadar gider
+
+**⚠️ Sellerboard Haziran 2025 verisi nasıl gösteriyor?**
+Sellerboard o verileri **o tarihte günlük olarak çekip kendi veritabanında sakladı**. Amazon API'den şu an Haziran 2025 verisi almak **İMKANSIZ**.
+
+#### 🔄 GÜNLÜK VERİ ÇEKME STRATEJİSİ (YoY Karşılaştırma İçin)
+
+**Profesyonel PPC araçları (Sellerboard, Intentwise, Adtomic) şöyle yapıyor:**
+
+1. **Her gün** API'den son 30-60 günlük veriyi çek (attribution window + buffer)
+2. **Kendi veritabanına kaydet** (upsert ile güncelle)
+3. **Zaman içinde historical data birikir** → YoY karşılaştırma mümkün!
+
+```
+Günlük Sync Stratejisi:
+─────────────────────────
+
+📅 1 Ocak 2026:
+   → API'den 1 Kasım - 31 Aralık 2025 çek (60 gün)
+   → ads_daily_metrics'e kaydet
+
+📅 2 Ocak 2026:
+   → API'den 2 Kasım 2025 - 1 Ocak 2026 çek (61 gün)
+   → Yeni günler eklenir, eski günler güncellenir (attribution window)
+
+📅 ... (her gün devam)
+
+📅 1 Ocak 2027:
+   → Artık 1 yıllık data biriktirdik!
+   → YoY karşılaştırma mümkün: Ocak 2026 vs Ocak 2027
+```
+
+#### 🎯 14 GÜNLÜK ATTRİBUTİON WINDOW
+
+Amazon Ads'de bir reklam tıklamasından sonra **14 gün** içinde yapılan satışlar o reklama atfedilir.
+
+**Bu yüzden:**
+- Dünün datası **kesin değil** - önümüzdeki 14 gün boyunca değişebilir
+- 14 günden eski data **stabilize olmuştur**
+- Günlük sync bunu otomatik handle eder (upsert ile güncelleme)
+
+```typescript
+// Attribution window örneği:
+// 15 Ocak'ta tıklama → 28 Ocak'ta satış = sales14d'ye yansır
+// 30 Ocak'ta çekilen raporda 15 Ocak'ın datası güncellenmiş olur
+```
+
+#### ⏰ SCHEDULED ADS SYNC (SellerGenix Implementasyonu)
+
+**Dosya:** `/src/inngest/functions.ts` → `scheduledAdsSync`
+
+```typescript
+export const scheduledAdsSync = inngest.createFunction(
+  {
+    id: "scheduled-ads-sync",
+    retries: 2,
+  },
+  { cron: "0 */3 * * *" },  // Her 3 saatte bir
+  async ({ step }) => {
+    // monthsBack: 2 = 60 gün geriye git
+    // 31 günlük chunk'lara böl → 2 chunk
+    // Her chunk için SP + SB + SD raporu çek
+    // DAILY timeUnit ile günlük veri al
+    // ads_daily_metrics'e upsert yap
+  }
+);
+```
+
+**Neden 60 gün (monthsBack: 2)?**
+- 14 gün attribution window → son 14 günün verileri değişebilir
+- + 46 gün buffer → SB'nin 60 gün limitine yakın
+- Daha geriye gitsen bile SB/SD datası gelmez
+
+#### 📊 DAILY vs SUMMARY timeUnit
+
+**SUMMARY (Eski Yanlış Kullanım):**
+```typescript
+timeUnit: 'SUMMARY'  // ❌ Tüm tarihleri tek satırda toplar
+// Sonuç: 3 aylık sync = 3 kayıt (ayda 1)
+```
+
+**DAILY (Doğru Kullanım):**
+```typescript
+timeUnit: 'DAILY'  // ✅ Her gün için ayrı satır
+columns: [..., 'date']  // date column'ı da ekle!
+// Sonuç: 3 aylık sync = ~90 kayıt (günde 1)
+```
+
+#### ✅ ads_daily_metrics TABLOSU
+
+```sql
+CREATE TABLE ads_daily_metrics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  profile_id TEXT NOT NULL,
+  date DATE NOT NULL,  -- ← Günlük veri için kritik!
+
+  -- Core metrics
+  impressions INTEGER DEFAULT 0,
+  clicks INTEGER DEFAULT 0,
+  cost DECIMAL(12,2) DEFAULT 0,
+  purchases INTEGER DEFAULT 0,
+  sales DECIMAL(12,2) DEFAULT 0,
+
+  -- Calculated
+  ctr DECIMAL(8,4),
+  cpc DECIMAL(8,4),
+  acos DECIMAL(8,4),
+  roas DECIMAL(8,4),
+
+  -- By ad type (opsiyonel)
+  sp_spend DECIMAL(12,2) DEFAULT 0,
+  sb_spend DECIMAL(12,2) DEFAULT 0,
+  sd_spend DECIMAL(12,2) DEFAULT 0,
+
+  UNIQUE(user_id, profile_id, date)  -- ← Upsert için kritik!
+);
+```
+
+#### 🔧 CONSOLE KODU - ADS SYNC TETİKLE
+
+```javascript
+// 🚀 Ads Sync (60 gün - son 2 ay)
+fetch('/api/sync/ads-metrics', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ monthsBack: 2 })
+}).then(r => r.json()).then(d => console.log('🚀 Ads Sync:', d))
+
+// 📊 Günlük Ads Verilerini Kontrol Et
+fetch('/api/debug/ads-test?days=30')
+  .then(r => r.json())
+  .then(d => console.log('📊 Last 30 Days Ads:', d))
+```
+
+#### ⚠️ ÖNEMLİ NOTLAR
+
+1. **31 Gün Limiti:** Tek seferde 31 günden fazla isteme
+2. **Lookback Limiti:** SP=95, SB=60, SD=65 gün - daha geriye gidemezsin
+3. **Günlük Fetch:** YoY karşılaştırma için her gün sync çalıştır
+4. **Attribution Window:** Son 14 günün datası değişebilir - upsert kullan
+5. **DAILY timeUnit:** Günlük veri için SUMMARY değil DAILY kullan
+6. **date Column:** DAILY kullanırken columns array'ine 'date' ekle
+
+---
+
 ### 🔴 YAŞANAN HATALAR VE ÇÖZÜMLERİ
 
 #### ❌ HATA 1: Report PENDING'de Kalıyor (2+ dakika)

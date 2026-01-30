@@ -1860,8 +1860,20 @@ export const syncAdsData = inngest.createFunction(
 /**
  * Scheduled Ads Sync - Every 3 hours
  *
- * Syncs the last month of ads data for all active connections.
- * Keeps dashboard current without overwhelming the API.
+ * CRITICAL STRATEGY: Amazon Ads API has limited historical data (60-95 days).
+ * Professional tools (Sellerboard, Intentwise) fetch daily and store in their own DB.
+ *
+ * We fetch 2 months of data every 3 hours because:
+ * 1. Attribution window: Amazon uses 14-day attribution (sales14d)
+ *    - Data for a given day can update for up to 14 days after the click
+ * 2. Building historical data: Each day we capture becomes permanent in our DB
+ *    - After 1 year, we'll have full YoY comparison capability
+ * 3. Redundancy: 60 days covers the attribution window (14d) + buffer
+ *
+ * API Limits (as of Jan 2026):
+ * - Sponsored Products: 95 days
+ * - Sponsored Brands: 60 days
+ * - Sponsored Display: 65 days
  */
 export const scheduledAdsSync = inngest.createFunction(
   {
@@ -1892,7 +1904,7 @@ export const scheduledAdsSync = inngest.createFunction(
             profileId: conn.profile_id,
             refreshToken: conn.refresh_token,
             countryCode: conn.country_code,
-            monthsBack: 1, // Last month for scheduled sync
+            monthsBack: 2, // 60 days - covers 14-day attribution window + buffer
           },
         });
         return { triggered: true };
