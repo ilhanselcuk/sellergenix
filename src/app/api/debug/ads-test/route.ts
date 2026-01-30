@@ -165,19 +165,16 @@ export async function GET(request: NextRequest) {
     // V3 API - Simplest possible request with basic columns only
     const uniqueId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    // Base columns that always work
+    // All columns including attribution metrics
     const columns = [
       "campaignId",
       "campaignName",
       "impressions",
       "clicks",
       "cost",
+      "purchases",  // Attributed purchases
+      "sales",      // Attributed sales revenue
     ];
-
-    // Optionally include sales/purchases columns (may not work for all profiles)
-    if (includeSales) {
-      columns.push("purchases", "sales");
-    }
 
     const reportRequestBody = {
       name: `SellerGenix_Debug_${uniqueId}`,
