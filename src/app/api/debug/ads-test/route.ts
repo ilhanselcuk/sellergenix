@@ -165,15 +165,15 @@ export async function GET(request: NextRequest) {
     // V3 API - Simplest possible request with basic columns only
     const uniqueId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    // All columns including attribution metrics
+    // All columns including attribution metrics (V3 requires 14d suffix!)
     const columns = [
       "campaignId",
       "campaignName",
       "impressions",
       "clicks",
       "cost",
-      "purchases",  // Attributed purchases
-      "sales",      // Attributed sales revenue
+      "purchases14d",  // Attributed purchases (14-day window)
+      "sales14d",      // Attributed sales revenue (14-day window)
     ];
 
     const reportRequestBody = {
@@ -339,13 +339,15 @@ export async function GET(request: NextRequest) {
           let totalSales = 0;
           let totalImpressions = 0;
           let totalClicks = 0;
+          let totalPurchases = 0;
 
           for (const row of reportData) {
-            // Check all possible field names
+            // V3 API uses 14d suffix for attribution metrics
             totalCost += row.cost || 0;
-            totalSales += row.sales14d || row.attributedSales14d || row.sales || 0;
+            totalSales += row.sales14d || 0;
             totalImpressions += row.impressions || 0;
             totalClicks += row.clicks || 0;
+            totalPurchases += row.purchases14d || 0;
           }
 
           results.calculatedTotals = {
@@ -353,6 +355,7 @@ export async function GET(request: NextRequest) {
             sales: totalSales,
             impressions: totalImpressions,
             clicks: totalClicks,
+            purchases: totalPurchases,
           };
         }
       } else {

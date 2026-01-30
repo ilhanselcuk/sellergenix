@@ -21,15 +21,17 @@ import { AdsApiResponse, AdsMetrics, SpCampaignReportRow } from './types'
 // ============================================
 
 // Standard metrics for campaign reports - V3 API format
-// V3 uses simplified column names without "14d" suffix
+// IMPORTANT: V3 API REQUIRES "14d" suffix for attribution metrics!
+// Using just "purchases" or "sales" returns 400 error:
+// "configuration columns includes invalid values: (purchases, sales)"
 const SP_CAMPAIGN_METRICS = [
   'campaignId',
   'campaignName',
   'impressions',
   'clicks',
   'cost',
-  'purchases',    // Attributed purchases (V3 format)
-  'sales',        // Attributed sales (V3 format)
+  'purchases14d',  // Attributed purchases (14-day attribution window)
+  'sales14d',      // Attributed sales (14-day attribution window)
 ]
 
 const SB_CAMPAIGN_METRICS = [
@@ -38,8 +40,8 @@ const SB_CAMPAIGN_METRICS = [
   'impressions',
   'clicks',
   'cost',
-  'purchases',
-  'sales',
+  'purchases14d',
+  'sales14d',
 ]
 
 const SD_CAMPAIGN_METRICS = [
@@ -48,8 +50,8 @@ const SD_CAMPAIGN_METRICS = [
   'impressions',
   'clicks',
   'cost',
-  'purchases',
-  'sales',
+  'purchases14d',
+  'sales14d',
 ]
 
 // ============================================
@@ -403,45 +405,45 @@ export async function getAdsMetrics(
       console.log(`[Ads Reports] SD Report Rejected:`, sdResult.reason)
     }
 
-    // Process Sponsored Products - V3 uses 'sales' and 'purchases' (no 14d suffix)
+    // Process Sponsored Products - V3 uses 'sales14d' and 'purchases14d' (14-day attribution)
     let spSpend = 0, spSales = 0, spImpressions = 0, spClicks = 0, spOrders = 0, spUnits = 0
     if (spResult.status === 'fulfilled' && spResult.value.success && spResult.value.data) {
       for (const row of spResult.value.data) {
         spSpend += row.cost || 0
-        // V3 uses 'sales', fallback to legacy names
-        spSales += (row as any).sales || (row as any).sales14d || row.attributedSales14d || 0
+        // V3 uses 'sales14d' - primary column name
+        spSales += (row as any).sales14d || (row as any).sales || row.attributedSales14d || 0
         spImpressions += row.impressions || 0
         spClicks += row.clicks || 0
-        // V3 uses 'purchases', fallback to legacy names
-        spOrders += (row as any).purchases || (row as any).purchases14d || row.attributedConversions14d || 0
+        // V3 uses 'purchases14d' - primary column name
+        spOrders += (row as any).purchases14d || (row as any).purchases || row.attributedConversions14d || 0
         // V3 doesn't have unitsSold at campaign level, use purchases as proxy
-        spUnits += (row as any).purchases || (row as any).purchases14d || row.attributedConversions14d || 0
+        spUnits += (row as any).purchases14d || (row as any).purchases || row.attributedConversions14d || 0
       }
     }
 
-    // Process Sponsored Brands - V3 format
+    // Process Sponsored Brands - V3 format (sales14d, purchases14d)
     let sbSpend = 0, sbSales = 0, sbImpressions = 0, sbClicks = 0, sbOrders = 0, sbUnits = 0
     if (sbResult.status === 'fulfilled' && sbResult.value.success && sbResult.value.data) {
       for (const row of sbResult.value.data) {
         sbSpend += row.cost || 0
-        sbSales += (row as any).sales || row.attributedSales14d || 0
+        sbSales += (row as any).sales14d || (row as any).sales || row.attributedSales14d || 0
         sbImpressions += row.impressions || 0
         sbClicks += row.clicks || 0
-        sbOrders += (row as any).purchases || row.attributedConversions14d || 0
-        sbUnits += (row as any).purchases || row.attributedConversions14d || 0
+        sbOrders += (row as any).purchases14d || (row as any).purchases || row.attributedConversions14d || 0
+        sbUnits += (row as any).purchases14d || (row as any).purchases || row.attributedConversions14d || 0
       }
     }
 
-    // Process Sponsored Display - V3 format
+    // Process Sponsored Display - V3 format (sales14d, purchases14d)
     let sdSpend = 0, sdSales = 0, sdImpressions = 0, sdClicks = 0, sdOrders = 0, sdUnits = 0
     if (sdResult.status === 'fulfilled' && sdResult.value.success && sdResult.value.data) {
       for (const row of sdResult.value.data) {
         sdSpend += row.cost || 0
-        sdSales += (row as any).sales || row.attributedSales14d || 0
+        sdSales += (row as any).sales14d || (row as any).sales || row.attributedSales14d || 0
         sdImpressions += row.impressions || 0
         sdClicks += row.clicks || 0
-        sdOrders += (row as any).purchases || row.attributedConversions14d || 0
-        sdUnits += (row as any).purchases || row.attributedConversions14d || 0
+        sdOrders += (row as any).purchases14d || (row as any).purchases || row.attributedConversions14d || 0
+        sdUnits += (row as any).purchases14d || (row as any).purchases || row.attributedConversions14d || 0
       }
     }
 
