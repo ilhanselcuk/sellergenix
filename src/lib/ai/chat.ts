@@ -4,7 +4,20 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { classifyQuery } from './classifier';
 import { HAIKU_SYSTEM_PROMPT, OPUS_SYSTEM_PROMPT } from './prompts';
-import { getUserContext, getFullHistoricalContext, getCustomRangeMetrics, UserContext, PeriodMetrics } from './context';
+import {
+  getUserContext,
+  getFullHistoricalContext,
+  getCustomRangeMetrics,
+  getSpecificDayMetrics,
+  getRelativeWeekMetrics,
+  getQuarterMetrics,
+  getYearMetrics,
+  getMonthMetrics,
+  comparePeriods,
+  UserContext,
+  PeriodMetrics,
+  PeriodComparison
+} from './context';
 
 // =============================================
 // CUSTOM DATE RANGE DETECTION
@@ -60,10 +73,10 @@ function detectCustomDateRange(message: string): DetectedDateRange | null {
   // Pattern 6: "Nov 12, 2025" or "November 12" or "12 Nov" (English single date)
   const singleDateEN = /(?:(\d{1,2})\s+)?(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s*(\d{1,2})?(?:,?\s*(\d{4}))?/i;
 
-  let matchTR = lowerMessage.match(monthPatternTR);
-  let matchEN = lowerMessage.match(monthPatternEN);
-  let matchNumeric = message.match(numericPattern);
-  let matchISO = message.match(isoPattern);
+  const matchTR = lowerMessage.match(monthPatternTR);
+  const matchEN = lowerMessage.match(monthPatternEN);
+  const matchNumeric = message.match(numericPattern);
+  const matchISO = message.match(isoPattern);
 
   // Only check single date if no range pattern matched
   let singleMatchTR = !matchTR ? lowerMessage.match(singleDateTR) : null;
@@ -165,6 +178,243 @@ function detectCustomDateRange(message: string): DetectedDateRange | null {
   return null;
 }
 
+// =============================================
+// WEEK DETECTION
+// Detects: "bu hafta", "geçen hafta", "this week", "last week"
+// =============================================
+
+type WeekType = 'this' | 'last' | null;
+
+function detectWeekQuery(message: string): WeekType {
+  const lower = message.toLowerCase();
+
+  // Turkish patterns
+  if (lower.includes('bu hafta') || lower.includes('bu haftaki')) return 'this';
+  if (lower.includes('geçen hafta') || lower.includes('gecen hafta') || lower.includes('önceki hafta')) return 'last';
+
+  // English patterns
+  if (lower.includes('this week')) return 'this';
+  if (lower.includes('last week') || lower.includes('previous week')) return 'last';
+
+  return null;
+}
+
+// =============================================
+// QUARTER DETECTION
+// Detects: "Q1", "Q2", "1. çeyrek", "first quarter", etc.
+// =============================================
+
+interface QuarterQuery {
+  quarter: 1 | 2 | 3 | 4;
+  year: number;
+}
+
+function detectQuarterQuery(message: string): QuarterQuery | null {
+  const lower = message.toLowerCase();
+  const currentYear = new Date().getFullYear();
+
+  // Patterns for quarters
+  // "Q1 2025", "Q2", "1st quarter", "ilk çeyrek", "1. çeyrek", "birinci çeyrek"
+  const patterns = [
+    // Q1, Q2, Q3, Q4 format
+    /q([1-4])(?:\s+(\d{4}))?/i,
+    // "1st quarter", "2nd quarter", etc.
+    /([1-4])(?:st|nd|rd|th)?\s+quarter(?:\s+(?:of\s+)?(\d{4}))?/i,
+    // Turkish: "1. çeyrek", "birinci çeyrek", "ilk çeyrek"
+    /([1-4])\.?\s*çeyrek(?:\s+(\d{4}))?/i,
+    /(birinci|ilk|ikinci|üçüncü|dördüncü|son)\s*çeyrek(?:\s+(\d{4}))?/i,
+    // "first quarter", "second quarter" etc.
+    /(first|second|third|fourth|last)\s+quarter(?:\s+(?:of\s+)?(\d{4}))?/i,
+  ];
+
+  const wordToNumber: { [key: string]: 1 | 2 | 3 | 4 } = {
+    'birinci': 1, 'ilk': 1, 'first': 1,
+    'ikinci': 2, 'second': 2,
+    'üçüncü': 3, 'third': 3,
+    'dördüncü': 4, 'son': 4, 'fourth': 4, 'last': 4
+  };
+
+  for (const pattern of patterns) {
+    const match = lower.match(pattern);
+    if (match) {
+      let quarter: 1 | 2 | 3 | 4;
+      let year = currentYear;
+
+      // Check if first capture is a number or word
+      if (/^\d$/.test(match[1])) {
+        quarter = parseInt(match[1]) as 1 | 2 | 3 | 4;
+      } else {
+        quarter = wordToNumber[match[1].toLowerCase()] || 1;
+      }
+
+      // Check for year
+      if (match[2] && /^\d{4}$/.test(match[2])) {
+        year = parseInt(match[2]);
+      }
+
+      return { quarter, year };
+    }
+  }
+
+  return null;
+}
+
+// =============================================
+// YEAR DETECTION
+// Detects: "2025 yılı", "year 2025", "this year", "last year"
+// =============================================
+
+function detectYearQuery(message: string): number | null {
+  const lower = message.toLowerCase();
+  const currentYear = new Date().getFullYear();
+
+  // "this year", "bu yıl"
+  if (lower.includes('this year') || lower.includes('bu yıl') || lower.includes('bu yil')) {
+    return currentYear;
+  }
+
+  // "last year", "geçen yıl"
+  if (lower.includes('last year') || lower.includes('geçen yıl') || lower.includes('gecen yil') || lower.includes('önceki yıl')) {
+    return currentYear - 1;
+  }
+
+  // "2025 yılı", "year 2025", "in 2025", "2025'te"
+  const yearPatterns = [
+    /(\d{4})\s*(?:yılı|yili|yil)/i,  // Turkish: 2025 yılı
+    /year\s*(\d{4})/i,               // English: year 2025
+    /in\s*(\d{4})/i,                 // English: in 2025
+    /(\d{4})'?te/i,                  // Turkish: 2025'te
+    /for\s*(\d{4})/i,                // English: for 2025
+  ];
+
+  for (const pattern of yearPatterns) {
+    const match = lower.match(pattern);
+    if (match) {
+      const year = parseInt(match[1]);
+      if (year >= 2020 && year <= 2030) {  // Reasonable year range
+        return year;
+      }
+    }
+  }
+
+  return null;
+}
+
+// =============================================
+// MONTH DETECTION
+// Detects: "Ocak 2025", "January 2025", "last January"
+// =============================================
+
+interface MonthQuery {
+  month: number; // 1-12
+  year: number;
+}
+
+function detectMonthQuery(message: string): MonthQuery | null {
+  const lower = message.toLowerCase();
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
+
+  // Skip if "this month" or "last month" - these are handled by default context
+  if (lower.includes('this month') || lower.includes('bu ay') ||
+      lower.includes('last month') || lower.includes('geçen ay')) {
+    return null;
+  }
+
+  // Patterns: "Ocak 2025", "January 2025", "Jan 2025", "2025 Ocak"
+  const monthNames = Object.keys(MONTH_MAP);
+  const monthPattern = new RegExp(
+    `(${monthNames.join('|')})(?:\\s+(\\d{4}))?|` +  // Month Year
+    `(\\d{4})\\s+(${monthNames.join('|')})`,          // Year Month
+    'i'
+  );
+
+  const match = lower.match(monthPattern);
+  if (match) {
+    let monthName: string;
+    let year: number;
+
+    if (match[1]) {
+      // Month Year format
+      monthName = match[1];
+      year = match[2] ? parseInt(match[2]) : currentYear;
+    } else {
+      // Year Month format
+      year = parseInt(match[3]);
+      monthName = match[4];
+    }
+
+    const month = MONTH_MAP[monthName.toLowerCase()];
+    if (month) {
+      // If no year specified and month is in the future, assume last year
+      if (!match[2] && !match[3] && month > currentMonth) {
+        year = currentYear - 1;
+      }
+      return { month, year };
+    }
+  }
+
+  return null;
+}
+
+// =============================================
+// COMPARISON DETECTION
+// Detects: "Ocak vs Şubat", "Q1 vs Q2", "January vs February"
+// =============================================
+
+interface ComparisonQuery {
+  type: 'month' | 'quarter';
+  period1: { value: number; year: number };
+  period2: { value: number; year: number };
+}
+
+function detectComparisonQuery(message: string): ComparisonQuery | null {
+  const lower = message.toLowerCase();
+  const currentYear = new Date().getFullYear();
+
+  // Month vs Month patterns
+  const monthNames = Object.keys(MONTH_MAP);
+  const monthVsPattern = new RegExp(
+    `(${monthNames.join('|')})(?:\\s+(\\d{4}))?\\s*(?:vs|versus|ile|karşılaştır|ve|to|-|with)\\s*(${monthNames.join('|')})(?:\\s+(\\d{4}))?`,
+    'i'
+  );
+
+  const monthMatch = lower.match(monthVsPattern);
+  if (monthMatch) {
+    const month1 = MONTH_MAP[monthMatch[1].toLowerCase()];
+    const year1 = monthMatch[2] ? parseInt(monthMatch[2]) : currentYear;
+    const month2 = MONTH_MAP[monthMatch[3].toLowerCase()];
+    const year2 = monthMatch[4] ? parseInt(monthMatch[4]) : currentYear;
+
+    if (month1 && month2) {
+      return {
+        type: 'month',
+        period1: { value: month1, year: year1 },
+        period2: { value: month2, year: year2 }
+      };
+    }
+  }
+
+  // Quarter vs Quarter patterns: "Q1 vs Q2", "1. çeyrek vs 2. çeyrek"
+  const quarterVsPattern = /q([1-4])(?:\s+(\d{4}))?\s*(?:vs|versus|ile|karşılaştır|ve|to|-|with)\s*q([1-4])(?:\s+(\d{4}))?/i;
+  const quarterMatch = lower.match(quarterVsPattern);
+  if (quarterMatch) {
+    return {
+      type: 'quarter',
+      period1: {
+        value: parseInt(quarterMatch[1]),
+        year: quarterMatch[2] ? parseInt(quarterMatch[2]) : currentYear
+      },
+      period2: {
+        value: parseInt(quarterMatch[3]),
+        year: quarterMatch[4] ? parseInt(quarterMatch[4]) : currentYear
+      }
+    };
+  }
+
+  return null;
+}
+
 // Format custom range metrics for AI context
 function formatCustomRangeContext(metrics: PeriodMetrics, range: DetectedDateRange): string {
   return `
@@ -182,6 +432,68 @@ Period: ${range.startDate} to ${range.endDate}
 - ACOS: ${metrics.acos}%
 
 Note: This is REAL data from Amazon Sales API for the exact date range specified.
+`;
+}
+
+// Format period metrics for AI context
+function formatPeriodMetrics(metrics: PeriodMetrics, label: string): string {
+  return `
+=== ${label} ===
+Period: ${metrics.startDate}${metrics.endDate && metrics.endDate !== metrics.startDate ? ` to ${metrics.endDate}` : ''}
+
+- Sales: $${metrics.sales.toLocaleString()}
+- Orders: ${metrics.orders}
+- Units: ${metrics.units}
+- Amazon Fees: $${metrics.amazonFees.toLocaleString()}
+- Gross Profit: $${metrics.grossProfit.toLocaleString()}
+- Net Profit: $${metrics.netProfit.toLocaleString()}
+- Margin: ${metrics.margin}%
+- Ad Spend: $${metrics.adSpend.toLocaleString()}
+- ACOS: ${metrics.acos}%
+
+Note: This is REAL data from Amazon Sales API.
+`;
+}
+
+// Format comparison context for AI
+function formatComparisonContext(comparison: PeriodComparison, label1: string, label2: string): string {
+  const formatChange = (change: { value: number; percent: number; improved: boolean }, unit: string = '') => {
+    const sign = change.value >= 0 ? '+' : '';
+    const arrow = change.improved ? '↑' : '↓';
+    return `${sign}${unit}${Math.abs(change.value).toLocaleString()} (${sign}${change.percent.toFixed(1)}%) ${arrow}`;
+  };
+
+  return `
+=== PERIOD COMPARISON: ${label1} vs ${label2} ===
+
+${label1}:
+- Sales: $${comparison.period1.sales.toLocaleString()}
+- Orders: ${comparison.period1.orders}
+- Units: ${comparison.period1.units}
+- Net Profit: $${comparison.period1.netProfit.toLocaleString()}
+- Margin: ${comparison.period1.margin}%
+- ACOS: ${comparison.period1.acos}%
+
+${label2}:
+- Sales: $${comparison.period2.sales.toLocaleString()}
+- Orders: ${comparison.period2.orders}
+- Units: ${comparison.period2.units}
+- Net Profit: $${comparison.period2.netProfit.toLocaleString()}
+- Margin: ${comparison.period2.margin}%
+- ACOS: ${comparison.period2.acos}%
+
+CHANGES (${label1} compared to ${label2}):
+- Sales: ${formatChange(comparison.changes.sales, '$')}
+- Orders: ${formatChange(comparison.changes.orders)}
+- Units: ${formatChange(comparison.changes.units)}
+- Amazon Fees: ${formatChange(comparison.changes.amazonFees, '$')}
+- Gross Profit: ${formatChange(comparison.changes.grossProfit, '$')}
+- Net Profit: ${formatChange(comparison.changes.netProfit, '$')}
+- Margin: ${formatChange(comparison.changes.margin)}%
+- Ad Spend: ${formatChange(comparison.changes.adSpend, '$')}
+- ACOS: ${formatChange(comparison.changes.acos)}%
+
+SUMMARY: ${comparison.summary}
 `;
 }
 
@@ -394,23 +706,84 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
   // Classify query to determine model
   const classification = classifyQuery(request.message);
 
-  // Detect custom date range in user message
+  // =============================================
+  // DETECT ALL QUERY TYPES
+  // =============================================
   const detectedRange = detectCustomDateRange(request.message);
+  const weekQuery = detectWeekQuery(request.message);
+  const quarterQuery = detectQuarterQuery(request.message);
+  const yearQuery = detectYearQuery(request.message);
+  const monthQuery = detectMonthQuery(request.message);
+  const comparisonQuery = detectComparisonQuery(request.message);
 
-  // Fetch all data in parallel
-  const fetchPromises: [
-    Promise<UserContext>,
-    Promise<{ totalSales: number; totalOrders: number; totalUnits: number; oldestOrderDate: string | null; newestOrderDate: string | null; monthlyBreakdown: Array<{ month: string; sales: number; orders: number }> }>,
-    Promise<PeriodMetrics | null>
-  ] = [
+  // =============================================
+  // FETCH BASE CONTEXT + SPECIFIC METRICS
+  // =============================================
+
+  // Always fetch base context and historical data
+  const basePromises: Promise<any>[] = [
     getUserContext(request.userId),
-    getFullHistoricalContext(request.userId),
-    detectedRange
-      ? getCustomRangeMetrics(request.userId, detectedRange.startDate, detectedRange.endDate)
-      : Promise.resolve(null)
+    getFullHistoricalContext(request.userId)
   ];
 
-  const [context, historical, customRangeMetrics] = await Promise.all(fetchPromises);
+  // Add specific metric fetches based on detected query type
+  const [context, historical] = await Promise.all(basePromises) as [
+    UserContext,
+    { totalSales: number; totalOrders: number; totalUnits: number; oldestOrderDate: string | null; newestOrderDate: string | null; monthlyBreakdown: Array<{ month: string; sales: number; orders: number }> }
+  ];
+
+  // Fetch additional metrics based on detected query types
+  let customRangeMetrics: PeriodMetrics | null = null;
+  let weekMetrics: PeriodMetrics | null = null;
+  let quarterMetrics: PeriodMetrics | null = null;
+  let yearMetrics: PeriodMetrics | null = null;
+  let monthMetrics: PeriodMetrics | null = null;
+  let comparisonResult: PeriodComparison | null = null;
+  let comparisonLabels: { label1: string; label2: string } | null = null;
+
+  // Fetch metrics based on detected query type (priority order)
+  if (comparisonQuery) {
+    // Handle comparison queries (highest priority - "Ocak vs Şubat", "Q1 vs Q2")
+    const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                        'July', 'August', 'September', 'October', 'November', 'December'];
+
+    if (comparisonQuery.type === 'month') {
+      const [metrics1, metrics2] = await Promise.all([
+        getMonthMetrics(request.userId, comparisonQuery.period1.value, comparisonQuery.period1.year),
+        getMonthMetrics(request.userId, comparisonQuery.period2.value, comparisonQuery.period2.year)
+      ]);
+      comparisonResult = comparePeriods(metrics1, metrics2);
+      comparisonLabels = {
+        label1: `${monthNames[comparisonQuery.period1.value]} ${comparisonQuery.period1.year}`,
+        label2: `${monthNames[comparisonQuery.period2.value]} ${comparisonQuery.period2.year}`
+      };
+    } else if (comparisonQuery.type === 'quarter') {
+      const [metrics1, metrics2] = await Promise.all([
+        getQuarterMetrics(request.userId, comparisonQuery.period1.value as 1 | 2 | 3 | 4, comparisonQuery.period1.year),
+        getQuarterMetrics(request.userId, comparisonQuery.period2.value as 1 | 2 | 3 | 4, comparisonQuery.period2.year)
+      ]);
+      comparisonResult = comparePeriods(metrics1, metrics2);
+      comparisonLabels = {
+        label1: `Q${comparisonQuery.period1.value} ${comparisonQuery.period1.year}`,
+        label2: `Q${comparisonQuery.period2.value} ${comparisonQuery.period2.year}`
+      };
+    }
+  } else if (detectedRange) {
+    // Handle custom date range ("25 Ekim - 28 Ocak")
+    customRangeMetrics = await getCustomRangeMetrics(request.userId, detectedRange.startDate, detectedRange.endDate);
+  } else if (weekQuery) {
+    // Handle week queries ("bu hafta", "geçen hafta")
+    weekMetrics = await getRelativeWeekMetrics(request.userId, weekQuery);
+  } else if (quarterQuery) {
+    // Handle quarter queries ("Q1 2025", "1. çeyrek")
+    quarterMetrics = await getQuarterMetrics(request.userId, quarterQuery.quarter, quarterQuery.year);
+  } else if (yearQuery) {
+    // Handle year queries ("2025 yılı", "this year")
+    yearMetrics = await getYearMetrics(request.userId, yearQuery);
+  } else if (monthQuery) {
+    // Handle specific month queries ("Ocak 2025", "January 2025")
+    monthMetrics = await getMonthMetrics(request.userId, monthQuery.month, monthQuery.year);
+  }
 
   // Select model based on classification
   const modelId = classification.model === 'opus'
@@ -423,23 +796,50 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
 
   const maxTokens = classification.model === 'opus' ? 4096 : 1024;
 
-  // Build custom range context if detected
-  const customRangeContext = detectedRange && customRangeMetrics
-    ? formatCustomRangeContext(customRangeMetrics, detectedRange)
-    : '';
+  // =============================================
+  // BUILD ADDITIONAL CONTEXT BASED ON DETECTED QUERIES
+  // =============================================
+  const monthNames = ['', 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+                      'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+
+  let additionalContext = '';
+
+  if (comparisonResult && comparisonLabels) {
+    // Comparison query result
+    additionalContext = formatComparisonContext(comparisonResult, comparisonLabels.label1, comparisonLabels.label2);
+  } else if (detectedRange && customRangeMetrics) {
+    // Custom date range
+    additionalContext = formatCustomRangeContext(customRangeMetrics, detectedRange);
+  } else if (weekQuery && weekMetrics) {
+    // Week query
+    const weekLabel = weekQuery === 'this' ? 'BU HAFTA (This Week)' : 'GEÇEN HAFTA (Last Week)';
+    additionalContext = formatPeriodMetrics(weekMetrics, weekLabel);
+  } else if (quarterQuery && quarterMetrics) {
+    // Quarter query
+    const quarterLabel = `Q${quarterQuery.quarter} ${quarterQuery.year} (${quarterQuery.quarter}. Çeyrek)`;
+    additionalContext = formatPeriodMetrics(quarterMetrics, quarterLabel);
+  } else if (yearQuery && yearMetrics) {
+    // Year query
+    const yearLabel = `${yearQuery} YILI (Year ${yearQuery})`;
+    additionalContext = formatPeriodMetrics(yearMetrics, yearLabel);
+  } else if (monthQuery && monthMetrics) {
+    // Month query
+    const monthLabel = `${monthNames[monthQuery.month]} ${monthQuery.year}`;
+    additionalContext = formatPeriodMetrics(monthMetrics, monthLabel);
+  }
 
   // Build messages array
   const messages: Anthropic.MessageParam[] = [
-    // First: Inject context with full historical data + custom range if detected
+    // First: Inject context with full historical data + specific period data if detected
     {
       role: 'user',
       content: `[SELLER DATA CONTEXT - Use this to answer questions]
 ${formatContextForAI(context)}
 ${formatHistoricalContext(historical)}
-${customRangeContext}
+${additionalContext}
 [END CONTEXT]
 
-I've loaded your complete e-commerce data including full historical records.${customRangeContext ? ' I also fetched PRECISE data for your requested custom date range - use this exact data for your answer.' : ''} Please use this data to answer my questions accurately. Do not mention the context format in your responses.`,
+I've loaded your complete e-commerce data including full historical records.${additionalContext ? ' I also fetched PRECISE data for your specific query - use this exact data for your answer.' : ''} Please use this data to answer my questions accurately. Do not mention the context format in your responses.`,
     },
     {
       role: 'assistant',

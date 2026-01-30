@@ -57,6 +57,7 @@ interface DashboardData {
   products: DatabaseProduct[]
   recentOrders?: any[]
   orderItems?: any[]
+  refunds?: any[]  // Refund data from refunds table
   hasRealData: boolean
 }
 
@@ -65,6 +66,7 @@ interface PeriodMetrics {
   units: number
   orders: number
   refunds: number
+  refundCount?: number  // Number of refunds (count, not dollar amount)
   adSpend: number
   amazonFees: number
   cogs?: number
@@ -268,6 +270,7 @@ function generateRealPeriodData(
     acos,
     adSpend: metrics.adSpend,
     refunds: metrics.refunds,
+    refundCount: metrics.refundCount,  // Real refund count from API
     amazonFees: metrics.amazonFees,
     cogs: 0,
     grossProfit: metrics.grossProfit,
@@ -384,6 +387,22 @@ export default function NewDashboardClient({
       startBatchSync()
     }
   }, [searchParams, hasAmazonConnection])
+
+  // Ads API connection success notification
+  const [showAdsSuccessToast, setShowAdsSuccessToast] = useState(false)
+  useEffect(() => {
+    const adsConnected = searchParams.get('ads_connected')
+    if (adsConnected === 'true') {
+      setShowAdsSuccessToast(true)
+      // Clean up URL
+      const url = new URL(window.location.href)
+      url.searchParams.delete('ads_connected')
+      url.searchParams.delete('profiles')
+      router.replace(url.pathname + url.search)
+      // Hide toast after 5 seconds
+      setTimeout(() => setShowAdsSuccessToast(false), 5000)
+    }
+  }, [searchParams, router])
 
   // Batch sync
   const startBatchSync = useCallback(async () => {
@@ -580,13 +599,37 @@ export default function NewDashboardClient({
     const orderIds = new Set(filteredOrders.map((o: any) => o.amazon_order_id))
     const filteredItems = dashboardData.orderItems.filter((item: any) => orderIds.has(item.amazon_order_id))
 
+    // Build order_item_id to ASIN mapping for refund lookup (only for orders in this period)
+    const orderItemToAsin: { [orderItemId: string]: string } = {}
+    filteredItems.forEach((item: any) => {
+      if (item.order_item_id && item.asin) {
+        orderItemToAsin[item.order_item_id] = item.asin
+      }
+    })
+
+    // Calculate refunds per ASIN from refunds table
+    // IMPORTANT: Only count refunds where the ORIGINAL ORDER was in this period
+    // (The refund might happen later, but we attribute it to when the order was placed)
+    const refundsByAsin: { [asin: string]: number } = {}
+    if (dashboardData.refunds) {
+      dashboardData.refunds.forEach((refund: any) => {
+        // Look up ASIN from order_item_id
+        // This will only find matches for orders in the filtered period (orderItemToAsin only has items from filteredItems)
+        const asin = orderItemToAsin[refund.order_item_id]
+        if (asin) {
+          if (!refundsByAsin[asin]) refundsByAsin[asin] = 0
+          refundsByAsin[asin]++
+        }
+      })
+    }
+
     // Calculate REAL stats from order items - NO ESTIMATES
     const statsByAsin: { [asin: string]: {
       units: number
       sales: number
       orders: Set<string>
       amazonFees: number  // Real fees from order_items (fee_source = 'api')
-      refunds: number     // Real refunds (if available)
+      refunds: number     // Real refunds from refunds table
     } } = {}
 
     filteredItems.forEach((item: any) => {
@@ -601,10 +644,18 @@ export default function NewDashboardClient({
       }
     })
 
+    // Add refund counts to stats
+    Object.keys(refundsByAsin).forEach(asin => {
+      if (statsByAsin[asin]) {
+        statsByAsin[asin].refunds = refundsByAsin[asin]
+      }
+    })
+
     return initialProducts.map(product => {
       const stats = statsByAsin[product.asin] || { units: 0, sales: 0, orders: new Set(), amazonFees: 0, refunds: 0 }
       const sales = stats.sales
       const units = stats.units
+      const refundCount = stats.refunds
       const cogs = product.cogs || 0
       const totalCogs = cogs * units
       const amazonFees = stats.amazonFees  // REAL fees only, $0 if none
@@ -618,7 +669,7 @@ export default function NewDashboardClient({
         ...product,
         units,
         sales,
-        refunds: 0,  // NO FAKE REFUNDS - $0 until we have real data
+        refunds: refundCount,  // Real refund count from refunds table
         adSpend: 0,  // NO FAKE AD SPEND - $0 until Amazon Ads API integration
         grossProfit,
         netProfit,
@@ -746,6 +797,30 @@ export default function NewDashboardClient({
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#F2F0EB' }}>
+      {/* ========== ADS CONNECTION SUCCESS TOAST ========== */}
+      {showAdsSuccessToast && (
+        <div className="fixed top-4 right-4 z-50 animate-slide-in-right">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg" style={{ backgroundColor: '#00704A', color: 'white' }}>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="font-semibold">Amazon Ads Connected!</p>
+              <p className="text-sm opacity-90">PPC data sync started. Check back in 1-2 hours.</p>
+            </div>
+            <button
+              onClick={() => setShowAdsSuccessToast(false)}
+              className="ml-2 p-1 rounded-lg hover:bg-white/20 transition-colors"
+            >
+              <span className="sr-only">Close</span>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ========== STARBUCKS PREMIUM HERO ========== */}
       <div className="border-b" style={{ backgroundColor: '#1E3932', borderColor: '#00704A' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -1014,24 +1089,24 @@ export default function NewDashboardClient({
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className="font-semibold" style={{ color: '#1E3932' }}>Unlock PPC Analytics</h3>
-                  <span className="px-2 py-0.5 text-xs font-medium rounded-full" style={{ backgroundColor: '#6366f1', color: 'white' }}>
-                    Coming Soon
+                  <span className="px-2 py-0.5 text-xs font-medium rounded-full" style={{ backgroundColor: '#22c55e', color: 'white' }}>
+                    Ready to Connect
                   </span>
                 </div>
                 <p className="text-sm mb-3" style={{ color: '#00704A' }}>
                   Connect Amazon Ads API to see real ACOS, ad spend breakdown, campaign performance, and AI-powered PPC optimization.
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    disabled
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors opacity-50 cursor-not-allowed"
+                  <a
+                    href="/api/auth/amazon-ads"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all hover:scale-105 hover:shadow-lg"
                     style={{ backgroundColor: '#6366f1', color: 'white' }}
                   >
                     <Zap className="w-4 h-4" />
                     Connect Amazon Ads
-                  </button>
+                  </a>
                   <span className="text-xs" style={{ color: '#6b7280' }}>
-                    API approval pending • Expected: Jan 29-31, 2026
+                    Takes 30 seconds • One-time setup
                   </span>
                 </div>
               </div>

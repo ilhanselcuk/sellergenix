@@ -65,9 +65,41 @@ export type SyncSettlementFeesEvent = {
   };
 };
 
+/**
+ * Product Images Sync
+ * Fetches real Amazon product images via Catalog API + scrape fallback
+ */
+export type SyncProductImagesEvent = {
+  name: "amazon/sync.product-images";
+  data: {
+    userId: string;
+    refreshToken: string;
+    marketplaceIds?: string[];
+  };
+};
+
+/**
+ * Amazon Ads API Sync
+ * Syncs advertising data (spend, ACOS, campaigns) from Amazon Advertising API
+ * Initial sync: 24 months for full historical data
+ * Scheduled sync: 1 month for recent updates
+ */
+export type SyncAdsEvent = {
+  name: "amazon/sync.ads";
+  data: {
+    userId: string;
+    profileId: string;
+    refreshToken: string;
+    countryCode: string;
+    monthsBack?: number; // Default 24 months for initial sync
+  };
+};
+
 // Union type for all events (cleaned up unused types on 2026-01-28)
 export type InngestEvents =
   | SyncFeesEvent
   | SyncHistoricalDataKioskEvent
   | SyncHistoricalDataReportsEvent
-  | SyncSettlementFeesEvent;
+  | SyncSettlementFeesEvent
+  | SyncProductImagesEvent
+  | SyncAdsEvent;

@@ -76,6 +76,15 @@ interface PeriodMetrics {
   }
   // Refund data from Finance API
   refunds: number
+  refundCount: number  // Number of refunds (count, not dollar amount)
+  // Ads breakdown from Amazon Advertising API (SP/SB/SBV/SD)
+  adsBreakdown?: {
+    sponsoredProducts: number      // SP campaigns
+    sponsoredBrands: number        // SB campaigns
+    sponsoredBrandsVideo: number   // SBV campaigns
+    sponsoredDisplay: number       // SD campaigns
+    total: number                  // Total ad spend
+  }
 }
 
 // SELLERBOARD FEE BREAKDOWN - All fee types tracked individually
@@ -125,6 +134,64 @@ interface RealFeeData {
   }
   // Refund data from Finance API
   refunds: number
+  refundCount: number  // Number of refunds (count, not dollar amount)
+}
+
+// Ads breakdown interface
+interface AdsBreakdown {
+  sponsoredProducts: number
+  sponsoredBrands: number
+  sponsoredBrandsVideo: number
+  sponsoredDisplay: number
+  total: number
+}
+
+/**
+ * Get ads breakdown from ads_daily_metrics table for a date range
+ * Returns SP/SB/SBV/SD spend breakdown
+ */
+async function getAdsForPeriod(
+  userId: string,
+  startDate: Date,
+  endDate: Date
+): Promise<AdsBreakdown> {
+  const emptyAds: AdsBreakdown = {
+    sponsoredProducts: 0,
+    sponsoredBrands: 0,
+    sponsoredBrandsVideo: 0,
+    sponsoredDisplay: 0,
+    total: 0
+  }
+
+  try {
+    const startDateStr = startDate.toISOString().split('T')[0]
+    const endDateStr = endDate.toISOString().split('T')[0]
+
+    const { data: adsData, error } = await supabase
+      .from('ads_daily_metrics')
+      .select('sp_spend, sb_spend, sbv_spend, sd_spend, total_spend')
+      .eq('user_id', userId)
+      .gte('date', startDateStr)
+      .lte('date', endDateStr)
+
+    if (error || !adsData || adsData.length === 0) {
+      return emptyAds
+    }
+
+    // Sum up all days in the period
+    const totals = adsData.reduce((acc, day) => ({
+      sponsoredProducts: acc.sponsoredProducts + (parseFloat(String(day.sp_spend)) || 0),
+      sponsoredBrands: acc.sponsoredBrands + (parseFloat(String(day.sb_spend)) || 0),
+      sponsoredBrandsVideo: acc.sponsoredBrandsVideo + (parseFloat(String(day.sbv_spend)) || 0),
+      sponsoredDisplay: acc.sponsoredDisplay + (parseFloat(String(day.sd_spend)) || 0),
+      total: acc.total + (parseFloat(String(day.total_spend)) || 0)
+    }), emptyAds)
+
+    return totals
+  } catch (error) {
+    console.error('Error fetching ads data:', error)
+    return emptyAds
+  }
 }
 
 /**
@@ -264,35 +331,19 @@ async function getRealFeesForPeriod(
       console.log(`💰 REAL fees from daily_metrics (Finance API): $${realFeesFromFinanceAPI.toFixed(2)}, Refunds: $${realRefundsFromFinanceAPI.toFixed(2)}`)
     }
 
-    // Step 2: Get order IDs in the date range
-    // But FIRST, let's get real refunds from the refunds table (most accurate source)
-    const { data: refundsData } = await supabase
-      .from('refunds')
-      .select('net_refund_cost, refunded_amount')
-      .eq('user_id', userId)
-      .gte('refund_date', startDate.toISOString())
-      .lte('refund_date', endDate.toISOString())
-
-    let totalRefundsFromTable = 0
-    if (refundsData && refundsData.length > 0) {
-      for (const r of refundsData) {
-        // Use net_refund_cost (Sellerboard logic) or refunded_amount
-        totalRefundsFromTable += (r.net_refund_cost || r.refunded_amount || 0)
-      }
-      console.log(`💸 Real refunds from refunds table: $${totalRefundsFromTable.toFixed(2)}`)
-    }
-
-    // Step 2: Get order IDs in the date range
+    // Step 2: Get order IDs in the date range (exclude Canceled to match Sales API)
+    // NOTE: We'll get refunds AFTER getting orders, so we can filter by original order's purchase_date
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
       .select('amazon_order_id, order_status')
       .eq('user_id', userId)
+      .neq('order_status', 'Canceled')
       .gte('purchase_date', startDate.toISOString())
       .lte('purchase_date', endDate.toISOString())
 
     if (ordersError || !orders || orders.length === 0) {
       console.log('⚠️ No orders found for fee calculation in date range:', ordersError?.message)
-      // Still return real fees from daily_metrics if available
+      // No orders = no refunds for this period (refunds are attributed to order's purchase_date)
       const totalFees = hasRealFinanceData ? realFeesFromFinanceAPI : (shouldIncludeServiceFees ? accountServiceFees.total : 0)
       return {
         totalFees: totalFees + (shouldIncludeServiceFees ? accountServiceFees.total : 0),
@@ -301,12 +352,36 @@ async function getRealFeesForPeriod(
         feeSource: hasRealFinanceData ? 'real' : (shouldIncludeServiceFees && accountServiceFees.total > 0 ? 'real' : 'estimated'),
         feeBreakdown: emptyFeeBreakdown,
         serviceFees: shouldIncludeServiceFees ? accountServiceFees : emptyServiceFees,
-        refunds: realRefundsFromFinanceAPI
+        refunds: 0,
+        refundCount: 0
       }
     }
 
     const orderIds = orders.map(o => o.amazon_order_id)
     console.log(`📊 Found ${orderIds.length} orders in date range for fee calculation`)
+
+    // Step 2.1: Get refunds for orders in this date range
+    // IMPORTANT: Filter by order's purchase_date (via orderIds), NOT by refund_date!
+    // This attributes refunds to the period when the ORIGINAL ORDER was placed
+    let totalRefundsFromTable = 0
+    let refundCountFromTable = 0
+    if (orderIds.length > 0) {
+      const { data: refundsData } = await supabase
+        .from('refunds')
+        .select('amazon_order_id, net_refund_cost, refunded_amount')
+        .eq('user_id', userId)
+        .in('amazon_order_id', orderIds)
+
+      if (refundsData && refundsData.length > 0) {
+        refundCountFromTable = refundsData.length
+        for (const r of refundsData) {
+          totalRefundsFromTable += (r.net_refund_cost || r.refunded_amount || 0)
+        }
+        console.log(`💸 Refunds for orders in this period: $${totalRefundsFromTable.toFixed(2)} (${refundCountFromTable} refunds)`)
+      } else {
+        console.log(`💸 No refunds found for orders in this period`)
+      }
+    }
 
     // Create order status lookup map
     const orderStatusMap = new Map<string, string>()
@@ -369,7 +444,8 @@ async function getRealFeesForPeriod(
         feeSource: shouldIncludeServiceFees && accountServiceFees.total > 0 ? 'real' : 'estimated',
         feeBreakdown: emptyFeeBreakdown,
         serviceFees: shouldIncludeServiceFees ? accountServiceFees : emptyServiceFees,
-        refunds: realRefundsFromFinanceAPI
+        refunds: realRefundsFromFinanceAPI,
+        refundCount: refundCountFromTable
       }
     }
 
@@ -674,7 +750,8 @@ async function getRealFeesForPeriod(
       feeBreakdown,
       // Zero out serviceFees for daily periods (< 7 days) - subscription doesn't apply to individual days
       serviceFees: shouldIncludeServiceFees ? accountServiceFees : { subscription: 0, storage: 0, other: 0, total: 0 },
-      refunds: finalRefunds
+      refunds: finalRefunds,
+      refundCount: refundCountFromTable
     }
   } catch (error) {
     console.error('Error fetching real fees:', error)
@@ -685,7 +762,8 @@ async function getRealFeesForPeriod(
       feeSource: 'estimated',
       feeBreakdown: emptyFeeBreakdown,
       serviceFees: { subscription: 0, storage: 0, other: 0, total: 0 },
-      refunds: 0
+      refunds: 0,
+      refundCount: 0
     }
   }
 }
@@ -693,11 +771,12 @@ async function getRealFeesForPeriod(
 /**
  * Format Sales API metrics into dashboard format
  * Now uses REAL fees from database when available
+ * Uses REAL ads data from Amazon Advertising API
  */
 function formatMetrics(
   metrics: any,
   realFeeData?: RealFeeData,
-  adSpendEstimate: number = 0
+  adsData?: AdsBreakdown
 ): PeriodMetrics {
   // SELLERBOARD FEE BREAKDOWN - All fee types tracked individually
   const emptyBreakdown: SellerboardFeeBreakdown = {
@@ -736,7 +815,9 @@ function formatMetrics(
       feeSource: 'estimated',
       feeBreakdown: emptyBreakdown,
       serviceFees: emptyServiceFees,
-      refunds: 0
+      refunds: 0,
+      refundCount: 0,
+      adsBreakdown: undefined
     }
   }
 
@@ -776,9 +857,9 @@ function formatMetrics(
     ? realFeeData.totalCogs
     : sales * 0.30
 
-  // Ad spend: Use passed estimate or default to 8% of sales
-  // TODO: Get real ad spend from Advertising API
-  const adSpend = 0 // Disabled until Ads API is connected (was: sales * 0.08)
+  // Ad spend: Use REAL data from Amazon Advertising API
+  // If no ads data available, default to 0 (don't estimate)
+  const adSpend = adsData?.total || 0
 
   // Calculate profits
   const grossProfit = sales - estimatedCogs - amazonFees
@@ -833,7 +914,10 @@ function formatMetrics(
     feeSource,
     feeBreakdown,
     serviceFees: sales === 0 ? emptyServiceFees : (realFeeData?.serviceFees || emptyServiceFees),
-    refunds: sales === 0 ? 0 : (realFeeData?.refunds || 0)
+    refunds: sales === 0 ? 0 : (realFeeData?.refunds || 0),
+    refundCount: sales === 0 ? 0 : (realFeeData?.refundCount || 0),
+    // Include ads breakdown from Amazon Advertising API (SP/SB/SBV/SD)
+    adsBreakdown: adsData
   }
 }
 
@@ -937,12 +1021,21 @@ export async function GET(request: Request) {
     console.log(`📅 Today range (UTC): ${todayStart.toISOString()} -- ${todayEnd.toISOString()}`)
     console.log(`📅 Yesterday range (UTC): ${yesterdayStart.toISOString()} -- ${yesterdayEnd.toISOString()}`)
 
-    // Fetch real fees for each period in parallel
-    const [todayFees, yesterdayFees, thisMonthFees, lastMonthFees] = await Promise.all([
+    // Fetch real fees AND ads data for each period in parallel
+    const [
+      todayFees, yesterdayFees, thisMonthFees, lastMonthFees,
+      todayAds, yesterdayAds, thisMonthAds, lastMonthAds
+    ] = await Promise.all([
+      // Fees
       getRealFeesForPeriod(userId, todayStart, todayEnd),
       getRealFeesForPeriod(userId, yesterdayStart, yesterdayEnd),
       getRealFeesForPeriod(userId, thisMonthStart, thisMonthEnd),
       getRealFeesForPeriod(userId, lastMonthStart, lastMonthEnd),
+      // Ads (from Amazon Advertising API data)
+      getAdsForPeriod(userId, todayStart, todayEnd),
+      getAdsForPeriod(userId, yesterdayStart, yesterdayEnd),
+      getAdsForPeriod(userId, thisMonthStart, thisMonthEnd),
+      getAdsForPeriod(userId, lastMonthStart, lastMonthEnd),
     ])
 
     console.log('💰 Fee data retrieved:')
@@ -951,15 +1044,18 @@ export async function GET(request: Request) {
     console.log(`   This Month: $${thisMonthFees.totalFees.toFixed(2)} (${thisMonthFees.feeSource})`)
     console.log(`   Last Month: $${lastMonthFees.totalFees.toFixed(2)} (${lastMonthFees.feeSource})`)
 
-    // TODO: Fetch real ad spend from Advertising API
-    // For now, we'll estimate based on sales
+    console.log('📊 Ads data retrieved:')
+    console.log(`   Today: $${todayAds.total.toFixed(2)} (SP: $${todayAds.sponsoredProducts.toFixed(2)})`)
+    console.log(`   Yesterday: $${yesterdayAds.total.toFixed(2)} (SP: $${yesterdayAds.sponsoredProducts.toFixed(2)})`)
+    console.log(`   This Month: $${thisMonthAds.total.toFixed(2)} (SP: $${thisMonthAds.sponsoredProducts.toFixed(2)})`)
+    console.log(`   Last Month: $${lastMonthAds.total.toFixed(2)} (SP: $${lastMonthAds.sponsoredProducts.toFixed(2)})`)
 
-    // Format metrics for dashboard with REAL fees
+    // Format metrics for dashboard with REAL fees AND ads data
     const dashboardMetrics = {
-      today: formatMetrics(result.today, todayFees),
-      yesterday: formatMetrics(result.yesterday, yesterdayFees),
-      thisMonth: formatMetrics(result.thisMonth, thisMonthFees),
-      lastMonth: formatMetrics(result.lastMonth, lastMonthFees),
+      today: formatMetrics(result.today, todayFees, todayAds),
+      yesterday: formatMetrics(result.yesterday, yesterdayFees, yesterdayAds),
+      thisMonth: formatMetrics(result.thisMonth, thisMonthFees, thisMonthAds),
+      lastMonth: formatMetrics(result.lastMonth, lastMonthFees, lastMonthAds),
 
       // Raw data for debugging
       _raw: {
@@ -975,6 +1071,14 @@ export async function GET(request: Request) {
         yesterday: { fees: yesterdayFees.totalFees, source: yesterdayFees.feeSource, orders: yesterdayFees.orderCount },
         thisMonth: { fees: thisMonthFees.totalFees, source: thisMonthFees.feeSource, orders: thisMonthFees.orderCount },
         lastMonth: { fees: lastMonthFees.totalFees, source: lastMonthFees.feeSource, orders: lastMonthFees.orderCount },
+      },
+
+      // Ads breakdown summary
+      _adsInfo: {
+        today: todayAds,
+        yesterday: yesterdayAds,
+        thisMonth: thisMonthAds,
+        lastMonth: lastMonthAds,
       }
     }
 
@@ -1079,7 +1183,11 @@ export async function POST(request: Request) {
       const pstStart = createPSTMidnight(startYear, startMonth, startDay)
       const pstEnd = createPSTEndOfDay(endYear, endMonth, endDay)
 
-      const feeData = await getRealFeesForPeriod(userId, pstStart, pstEnd)
+      // Fetch fees and ads data in parallel
+      const [feeData, adsData] = await Promise.all([
+        getRealFeesForPeriod(userId, pstStart, pstEnd),
+        getAdsForPeriod(userId, pstStart, pstEnd)
+      ])
 
       // Debug logging for fee breakdown
       console.log(`💰 "${period.label}" fee data:`)
@@ -1092,12 +1200,15 @@ export async function POST(request: Request) {
       console.log(`     Long-term Storage: $${feeData.feeBreakdown.longTermStorage.toFixed(2)}`)
       console.log(`     Refund Commission: $${feeData.feeBreakdown.refundCommission.toFixed(2)}`)
       console.log(`   - Refunds: $${feeData.refunds.toFixed(2)}`)
+      console.log(`📢 "${period.label}" ads data:`)
+      console.log(`   - Total ad spend: $${adsData.total.toFixed(2)}`)
+      console.log(`   - SP: $${adsData.sponsoredProducts.toFixed(2)}, SB: $${adsData.sponsoredBrands.toFixed(2)}, SBV: $${adsData.sponsoredBrandsVideo.toFixed(2)}, SD: $${adsData.sponsoredDisplay.toFixed(2)}`)
 
       return {
         label: period.label,
         startDate: period.startDate,
         endDate: period.endDate,
-        metrics: result.success ? formatMetrics(result.metrics, feeData) : null,
+        metrics: result.success ? formatMetrics(result.metrics, feeData, adsData) : null,
         error: result.error || null,
         // Include debug info in response for troubleshooting
         _debug: {
@@ -1108,7 +1219,8 @@ export async function POST(request: Request) {
             orderCount: feeData.orderCount,
             feeSource: feeData.feeSource,
             feeBreakdown: feeData.feeBreakdown,
-            refunds: feeData.refunds
+            refunds: feeData.refunds,
+            refundCount: feeData.refundCount
           }
         }
       }
@@ -1133,6 +1245,7 @@ export async function POST(request: Request) {
         roi: 0,
         feeSource: 'estimated',
         refunds: 0,
+        refundCount: 0,
         error: result.error
       }
       // Collect debug info

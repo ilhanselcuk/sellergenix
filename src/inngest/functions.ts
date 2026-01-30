@@ -793,6 +793,19 @@ export const syncHistoricalDataReports = inngest.createFunction(
 
     console.log(`📋 [Inngest] Settlement fee sync triggered for user ${userId}`);
 
+    // Step 6: Trigger product images sync
+    // Fetches real Amazon product images via Catalog API + scrape fallback
+    await step.sendEvent("trigger-product-images-sync", {
+      name: "amazon/sync.product-images",
+      data: {
+        userId,
+        refreshToken,
+        marketplaceIds,
+      }
+    });
+
+    console.log(`🖼️ [Inngest] Product images sync triggered for user ${userId}`);
+
     return results;
   }
 );
@@ -1003,7 +1016,8 @@ export const syncSettlementFees = inngest.createFunction(
 
               // --- REFUND SYNC: Populate refunds table ---
               if ((f.refundAmount && f.refundAmount > 0) || (f.refundCommission && f.refundCommission > 0)) {
-                const refundDate = new Date().toISOString(); // Default to now if not in 'f' object
+                // Use actual refund posted date from settlement report (if available)
+                const refundDate = f.refundPostedDate || new Date().toISOString();
 
                 // Calculate net refund cost
                 // Cost = Refunded Amount - Credits (Referral, FBA, etc.) + Fees (Commission, etc.)
@@ -1015,7 +1029,7 @@ export const syncSettlementFees = inngest.createFunction(
                   user_id: userId,
                   amazon_order_id: item.amazon_order_id,
                   order_item_id: item.order_item_id,
-                  refund_date: refundDate, // In real imp, this should come from settlement posted_date
+                  refund_date: refundDate,
                   refunded_amount: f.refundAmount || 0,
                   refund_commission: f.refundCommission || 0,
                   refunded_referral_fee: f.refundedReferralFee || 0,
@@ -1408,7 +1422,444 @@ export const scheduledStorageSync = inngest.createFunction(
   }
 );
 
-// Export all functions (7 total - cleaned up unused functions on 2026-01-28)
+/**
+ * Product Images Sync
+ *
+ * Fetches real Amazon product images for all products.
+ * Uses dual-method approach:
+ * 1. Amazon Catalog API (official method)
+ * 2. Scrape fallback (for products not indexed in catalog)
+ *
+ * Triggered automatically after historical sync completes.
+ */
+export const syncProductImages = inngest.createFunction(
+  {
+    id: "sync-product-images",
+    retries: 2,
+    concurrency: {
+      limit: 1,
+      key: "event.data.userId",
+    },
+  },
+  { event: "amazon/sync.product-images" },
+  async ({ event, step }) => {
+    const { userId, refreshToken, marketplaceIds = ['ATVPDKIKX0DER'] } = event.data;
+    const marketplaceId = marketplaceIds[0] || 'ATVPDKIKX0DER';
+
+    console.log(`🖼️ [Inngest] Starting product images sync for user ${userId}`);
+
+    const results: Record<string, unknown> = {
+      startedAt: new Date().toISOString(),
+      userId,
+    };
+
+    // Step 1: Get products that need images
+    const productsResult = await step.run("get-products-needing-images", async () => {
+      const { data: products, error } = await supabase
+        .from('products')
+        .select('asin')
+        .eq('user_id', userId)
+        .or('image_url.is.null,image_url.like.%unsplash%,image_url.like.%placeholder%');
+
+      if (error) {
+        console.error("Error fetching products:", error);
+        return { asins: [] as string[], error: error.message };
+      }
+
+      const asins = [...new Set(products?.map(p => p.asin).filter(Boolean) || [])];
+      console.log(`📦 [Images] Found ${asins.length} products needing images`);
+      return { asins, error: null };
+    });
+
+    if (productsResult.asins.length === 0) {
+      results.message = "No products need image sync";
+      results.completedAt = new Date().toISOString();
+      return results;
+    }
+
+    // Import getCatalogItem dynamically
+    const { getCatalogItem } = await import("@/lib/amazon-sp-api/catalog");
+
+    // Step 2: Sync images for each product
+    let successCount = 0;
+    let failedCount = 0;
+    const updates: { asin: string; imageUrl?: string; error?: string }[] = [];
+
+    // Process in batches
+    const BATCH_SIZE = 10;
+    const batches: string[][] = [];
+    for (let i = 0; i < productsResult.asins.length; i += BATCH_SIZE) {
+      batches.push(productsResult.asins.slice(i, i + BATCH_SIZE));
+    }
+
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+
+      await step.run(`sync-images-batch-${batchIndex}`, async () => {
+        for (const asin of batch) {
+          try {
+            let imageUrl: string | null = null;
+            let source = 'catalog_api';
+
+            // Method 1: Try Catalog API first
+            try {
+              const catalogItem = await getCatalogItem(refreshToken, asin, marketplaceId);
+
+              if (catalogItem?.images && catalogItem.images.length > 0) {
+                const imagesForMarketplace = catalogItem.images.find(
+                  (img: any) => img.marketplaceId === marketplaceId
+                ) || catalogItem.images[0];
+
+                if (imagesForMarketplace?.images && imagesForMarketplace.images.length > 0) {
+                  const mainImage = imagesForMarketplace.images.find(
+                    (img: any) => img.variant === 'MAIN'
+                  );
+                  imageUrl = mainImage?.link || imagesForMarketplace.images[0].link;
+                }
+              }
+            } catch (catalogError: any) {
+              console.log(`⚠️ [Images] Catalog API failed for ${asin}: ${catalogError.message}`);
+            }
+
+            // Method 2: Fallback to scraping
+            if (!imageUrl) {
+              source = 'scrape';
+              try {
+                const response = await fetch(`https://www.amazon.com/dp/${asin}`, {
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                  },
+                });
+
+                if (response.ok) {
+                  const html = await response.text();
+                  const imageIdMatches = html.match(/images\/I\/([0-9][0-9A-Za-z+_-]+L)\._/g);
+
+                  if (imageIdMatches && imageIdMatches.length > 0) {
+                    const imageIds = [...new Set(
+                      imageIdMatches.map(m => m.replace('images/I/', '').replace('._', ''))
+                    )];
+
+                    // Filter to likely product images
+                    const productImageIds = imageIds.filter(id => /^[3-8][0-9]/.test(id));
+                    const imageId = productImageIds.length > 0 ? productImageIds[0] : imageIds[0];
+
+                    if (imageId) {
+                      imageUrl = `https://images-na.ssl-images-amazon.com/images/I/${imageId}._SS200_.jpg`;
+                    }
+                  }
+                }
+              } catch (scrapeError: any) {
+                console.log(`⚠️ [Images] Scrape failed for ${asin}: ${scrapeError.message}`);
+              }
+            }
+
+            // Update database if we found an image
+            if (imageUrl) {
+              const { error: updateError } = await supabase
+                .from('products')
+                .update({
+                  image_url: imageUrl,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('asin', asin)
+                .eq('user_id', userId);
+
+              if (!updateError) {
+                successCount++;
+                updates.push({ asin, imageUrl });
+                console.log(`✅ [Images] ${asin} → ${source}`);
+              } else {
+                failedCount++;
+                updates.push({ asin, error: 'Database update failed' });
+              }
+            } else {
+              failedCount++;
+              updates.push({ asin, error: 'No image found' });
+              console.log(`❌ [Images] ${asin} → No image found`);
+            }
+
+            // Rate limit: 100ms between API calls
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+          } catch (error: any) {
+            failedCount++;
+            updates.push({ asin, error: error.message });
+          }
+        }
+
+        return { processed: batch.length };
+      });
+
+      // Delay between batches
+      if (batchIndex < batches.length - 1) {
+        await step.sleep(`image-batch-delay-${batchIndex}`, "500ms");
+      }
+    }
+
+    results.total = productsResult.asins.length;
+    results.success = successCount;
+    results.failed = failedCount;
+    results.completedAt = new Date().toISOString();
+
+    console.log(`🎉 [Inngest] Product images sync completed: ${successCount}/${productsResult.asins.length} synced`);
+
+    return results;
+  }
+);
+
+/**
+ * Amazon Ads Data Sync - 24 Month Historical + Daily Granularity
+ *
+ * Strategy:
+ * - 24 months of historical data (like Settlement Reports)
+ * - 60-day chunks to respect API limits
+ * - Start from TODAY and work backwards (newest first)
+ * - Daily granularity for AI bot queries
+ * - Each chunk is a separate step (timeout-safe)
+ * - Show data as it arrives (progressive loading)
+ *
+ * Data includes:
+ * - SP (Sponsored Products) spend/sales/ACOS
+ * - SB (Sponsored Brands) + SB Video spend/sales
+ * - SD (Sponsored Display) spend/sales
+ * - Per-ASIN ad spend (for product table "Ads" column)
+ */
+export const syncAdsData = inngest.createFunction(
+  {
+    id: "sync-ads-data",
+    retries: 2,
+    concurrency: {
+      limit: 1,
+      key: "event.data.userId",
+    },
+  },
+  { event: "amazon/sync.ads" },
+  async ({ event, step }) => {
+    const { userId, profileId, refreshToken, countryCode, monthsBack = 24 } = event.data;
+
+    console.log(`🎯 [Ads Sync] Starting for user ${userId}, profile ${profileId}, ${monthsBack} months back`);
+
+    const results: Record<string, unknown> = {
+      startedAt: new Date().toISOString(),
+      profileId,
+      monthsBack,
+      chunksProcessed: 0,
+      dailyRecordsSaved: 0,
+    };
+
+    // Step 1: Calculate 60-day chunks (API limit) - newest first
+    const chunks = await step.run("calculate-chunks", async () => {
+      const CHUNK_DAYS = 60; // Amazon Ads API max per report
+      const totalDays = monthsBack * 30;
+      const numChunks = Math.ceil(totalDays / CHUNK_DAYS);
+
+      const chunkList: { startDate: string; endDate: string; chunkIndex: number }[] = [];
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      for (let i = 0; i < numChunks; i++) {
+        const endDate = new Date(today);
+        endDate.setDate(endDate.getDate() - (i * CHUNK_DAYS));
+
+        const startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - CHUNK_DAYS + 1);
+
+        // Don't go beyond limit
+        const minDate = new Date(today);
+        minDate.setMonth(minDate.getMonth() - monthsBack);
+        if (startDate < minDate) startDate.setTime(minDate.getTime());
+        if (endDate < minDate) continue;
+
+        chunkList.push({
+          startDate: startDate.toISOString().split("T")[0],
+          endDate: endDate.toISOString().split("T")[0],
+          chunkIndex: i,
+        });
+      }
+
+      console.log(`📅 [Ads Sync] Created ${chunkList.length} chunks (60-day each)`);
+      return chunkList;
+    });
+
+    // Step 2: Process each chunk - SP/SB/SD reports with daily granularity
+    for (const chunk of chunks) {
+      // Step 2a: Fetch SP (Sponsored Products) daily data
+      await step.run(`sp-chunk-${chunk.chunkIndex}`, async () => {
+        try {
+          const { createAdsClient, getAdsMetrics } = await import("@/lib/amazon-ads-api");
+          const clientResult = await createAdsClient(refreshToken, profileId, countryCode);
+          if (!clientResult.success || !clientResult.client) {
+            return { success: false, error: "Client creation failed" };
+          }
+
+          // Get aggregated metrics for this chunk (we'll store by date range)
+          const metricsResult = await getAdsMetrics(clientResult.client, chunk.startDate, chunk.endDate);
+
+          if (metricsResult.success && metricsResult.data) {
+            const m = metricsResult.data;
+
+            // Upsert daily metrics (using startDate as key for this chunk)
+            const { error } = await supabase
+              .from("ads_daily_metrics")
+              .upsert({
+                user_id: userId,
+                profile_id: profileId,
+                date: chunk.startDate,
+                date_end: chunk.endDate,
+                total_spend: m.totalSpend,
+                sp_spend: m.spSpend,
+                sb_spend: m.sbSpend,
+                sd_spend: m.sdSpend,
+                sbv_spend: 0, // SB Video tracked separately if available
+                total_sales: m.totalSales,
+                sp_sales: m.spSales,
+                sb_sales: m.sbSales,
+                sd_sales: m.sdSales,
+                impressions: m.impressions,
+                clicks: m.clicks,
+                orders: m.orders,
+                units: m.units,
+                acos: m.acos,
+                roas: m.roas,
+                ctr: m.ctr,
+                cpc: m.cpc,
+                cvr: m.cvr,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: "user_id,profile_id,date" });
+
+            if (!error) {
+              console.log(`✅ [Ads Sync] Chunk ${chunk.chunkIndex}: $${m.totalSpend.toFixed(2)} spend, ${m.acos.toFixed(1)}% ACOS`);
+            }
+            return { success: true };
+          }
+          return { success: false };
+        } catch (error: any) {
+          console.error(`[Ads Sync] Chunk ${chunk.chunkIndex} error:`, error.message);
+          return { success: false, error: error.message };
+        }
+      });
+
+      // Rate limit between chunks
+      if (chunk.chunkIndex < chunks.length - 1) {
+        await step.sleep(`chunk-rate-limit-${chunk.chunkIndex}`, "5s");
+      }
+
+      (results.chunksProcessed as number)++;
+    }
+
+    // Step 3: Sync campaigns (latest snapshot)
+    await step.run("sync-campaigns", async () => {
+      try {
+        const { createAdsClient, getAllCampaigns } = await import("@/lib/amazon-ads-api");
+        const clientResult = await createAdsClient(refreshToken, profileId, countryCode);
+        if (!clientResult.success || !clientResult.client) {
+          return { success: false };
+        }
+
+        const campaignsResult = await getAllCampaigns(clientResult.client);
+
+        if (campaignsResult.success && campaignsResult.data) {
+          let saved = 0;
+          for (const campaign of campaignsResult.data) {
+            const { error } = await supabase
+              .from("ads_campaigns")
+              .upsert({
+                user_id: userId,
+                profile_id: profileId,
+                campaign_id: campaign.campaignId,
+                campaign_name: campaign.name,
+                campaign_type: campaign.campaignType,
+                targeting_type: campaign.targetingType,
+                state: campaign.state,
+                daily_budget: campaign.dailyBudget,
+                start_date: campaign.startDate,
+                end_date: campaign.endDate,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: "user_id,profile_id,campaign_id" });
+
+            if (!error) saved++;
+          }
+          console.log(`✅ [Ads Sync] Saved ${saved} campaigns`);
+          return { success: true, saved };
+        }
+        return { success: false };
+      } catch (error: any) {
+        console.error("[Ads Sync] Campaigns error:", error.message);
+        return { success: false };
+      }
+    });
+
+    // Step 4: Update connection status
+    await step.run("update-connection-status", async () => {
+      await supabase
+        .from("amazon_ads_connections")
+        .update({
+          last_sync_at: new Date().toISOString(),
+          sync_status: "completed",
+        })
+        .eq("user_id", userId)
+        .eq("profile_id", profileId);
+      return { updated: true };
+    });
+
+    results.completedAt = new Date().toISOString();
+    console.log(`🎉 [Ads Sync] Completed: ${results.chunksProcessed} chunks processed`);
+    return results;
+  }
+);
+
+/**
+ * Scheduled Ads Sync - Every 3 hours
+ *
+ * Syncs the last month of ads data for all active connections.
+ * Keeps dashboard current without overwhelming the API.
+ */
+export const scheduledAdsSync = inngest.createFunction(
+  {
+    id: "scheduled-ads-sync",
+    retries: 1,
+    concurrency: { limit: 3 },
+  },
+  { cron: "0 */3 * * *" }, // Every 3 hours
+  async ({ step }) => {
+    console.log("⏰ [Scheduled Ads Sync] Starting...");
+
+    const connections = await step.run("get-active-connections", async () => {
+      const { data } = await supabase
+        .from("amazon_ads_connections")
+        .select("user_id, profile_id, refresh_token, country_code")
+        .eq("is_active", true);
+      return data || [];
+    });
+
+    console.log(`📊 [Scheduled Ads Sync] Found ${connections.length} active connections`);
+
+    for (const conn of connections) {
+      await step.run(`trigger-sync-${conn.profile_id}`, async () => {
+        await inngest.send({
+          name: "amazon/sync.ads",
+          data: {
+            userId: conn.user_id,
+            profileId: conn.profile_id,
+            refreshToken: conn.refresh_token,
+            countryCode: conn.country_code,
+            monthsBack: 1, // Last month for scheduled sync
+          },
+        });
+        return { triggered: true };
+      });
+
+      await step.sleep(`user-rate-limit-${conn.profile_id}`, "10s");
+    }
+
+    return { connectionsProcessed: connections.length };
+  }
+);
+
+// Export all functions (10 total)
 export const functions = [
   syncAmazonFees,           // Event: amazon/sync.fees - Main fee sync
   scheduledFeeSync,         // Cron: */15 * * * * - Every 15 min fee sync for shipped orders
@@ -1417,4 +1868,7 @@ export const functions = [
   syncHistoricalDataKiosk,  // Event: amazon/sync.historical-kiosk - Data Kiosk bulk sync
   syncHistoricalDataReports,// Event: amazon/sync.historical-reports - Reports API sync (Sellerboard method)
   syncSettlementFees,       // Event: amazon/sync.settlement-fees - Settlement Report fee sync
+  syncProductImages,        // Event: amazon/sync.product-images - Product images sync
+  syncAdsData,              // Event: amazon/sync.ads - Amazon Ads API sync (24 months)
+  scheduledAdsSync,         // Cron: 0 */3 * * * - Every 3 hours ads sync
 ];

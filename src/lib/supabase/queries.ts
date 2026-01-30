@@ -367,10 +367,12 @@ export async function getDashboardData(userId: string) {
 
   // Fetch ALL orders - no date limit (Amazon provides up to 2 years of data)
   // We need all data for accurate calculations and historical views
+  // EXCLUDE Canceled orders to match Sales API behavior
   const { data: recentOrders, error: ordersError } = await supabase
     .from('orders')
     .select('*')
     .eq('user_id', userId)
+    .neq('order_status', 'Canceled')
     .order('purchase_date', { ascending: false })
 
   if (ordersError) {
@@ -410,6 +412,22 @@ export async function getDashboardData(userId: string) {
   }
 
   // ========================================
+  // FETCH REFUNDS DATA
+  // ========================================
+  const { data: refundsData, error: refundsError } = await supabase
+    .from('refunds')
+    .select('amazon_order_id, order_item_id, refund_date, refunded_amount, net_refund_cost')
+    .eq('user_id', userId)
+
+  let refunds: any[] = []
+  if (refundsError) {
+    console.error('Error fetching refunds:', refundsError)
+  } else {
+    refunds = refundsData || []
+    console.log(`💸 Fetched ${refunds.length} total refunds`)
+  }
+
+  // ========================================
   // AUTO-FIX $0 PRICES: Use catalog price for pending orders
   // This ensures dashboard always shows correct values
   // ========================================
@@ -440,12 +458,16 @@ export async function getDashboardData(userId: string) {
     console.log(`💰 Auto-fixed ${fixedPriceCount} items with $0 price using catalog prices`)
   }
 
-  // Create order ID set for filtering
-  const orderIds = orders.map(o => o.amazon_order_id)
+  // Create order ID set for filtering (only non-canceled orders)
+  const orderIdSet = new Set(orders.map(o => o.amazon_order_id))
 
-  // Group order items by ASIN
+  // Filter order items to only include items from non-canceled orders
+  const validOrderItems = orderItems.filter(item => orderIdSet.has(item.amazon_order_id))
+  console.log(`📋 Filtered to ${validOrderItems.length} items from non-canceled orders (was ${orderItems.length})`)
+
+  // Group order items by ASIN (only from non-canceled orders)
   const itemsByAsin: { [asin: string]: typeof orderItems } = {}
-  orderItems.forEach(item => {
+  validOrderItems.forEach(item => {
     const asin = item.asin
     if (!itemsByAsin[asin]) {
       itemsByAsin[asin] = []
@@ -782,19 +804,19 @@ export async function getDashboardData(userId: string) {
   const thisMonthStartUTC = new Date(thisMonthStart)
   thisMonthStartUTC.setUTCHours(8, 0, 0, 0) // PST midnight = UTC 08:00
 
-  // Calculate period data
-  const todayData = aggregateMetrics(metrics.filter(m => m.date === todayStr), todayStartUTC, todayEndUTC, orderItems)
-  const yesterdayData = aggregateMetrics(metrics.filter(m => m.date === yesterdayStr), yesterdayStartUTC, yesterdayEndUTC, orderItems)
-  const last7DaysData = aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days), last7Days, pstNow, orderItems)
-  const last30DaysData = aggregateMetrics(metrics, last30Days, pstNow, orderItems)
+  // Calculate period data (using validOrderItems - excludes canceled orders)
+  const todayData = aggregateMetrics(metrics.filter(m => m.date === todayStr), todayStartUTC, todayEndUTC, validOrderItems)
+  const yesterdayData = aggregateMetrics(metrics.filter(m => m.date === yesterdayStr), yesterdayStartUTC, yesterdayEndUTC, validOrderItems)
+  const last7DaysData = aggregateMetrics(metrics.filter(m => new Date(m.date) >= last7Days), last7Days, pstNow, validOrderItems)
+  const last30DaysData = aggregateMetrics(metrics, last30Days, pstNow, validOrderItems)
   const thisMonthData = aggregateMetrics(metrics.filter(m => {
     const date = new Date(m.date)
     return date >= thisMonthStart && date <= today
-  }), thisMonthStartUTC, todayEndUTC, orderItems)
+  }), thisMonthStartUTC, todayEndUTC, validOrderItems)
   const lastMonthData = aggregateMetrics(metrics.filter(m => {
     const date = new Date(m.date)
     return date >= lastMonthStart && date <= lastMonthEnd
-  }), lastMonthStart, lastMonthEnd, orderItems)
+  }), lastMonthStart, lastMonthEnd, validOrderItems)
 
   console.log(`💰 Period data - Today: $${todayData.sales.toFixed(2)}, Yesterday: $${yesterdayData.sales.toFixed(2)}, ThisMonth: $${thisMonthData.sales.toFixed(2)}, Last30D: $${last30DaysData.sales.toFixed(2)}, LastMonth: $${lastMonthData.sales.toFixed(2)}`)
 
@@ -807,7 +829,8 @@ export async function getDashboardData(userId: string) {
     lastMonth: lastMonthData,
     dailyMetrics: metrics,
     recentOrders: orders,
-    orderItems: orderItems,
+    orderItems: validOrderItems,  // Only items from non-canceled orders
+    refunds: refunds,  // Refund data for calculating per-product refunds
     products: productsWithStats,
     hasRealData: !!(metrics.length > 0 || orders.length > 0 || products.length > 0)
   }

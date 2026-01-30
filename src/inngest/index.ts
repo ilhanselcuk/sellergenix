@@ -13,12 +13,17 @@ export {
   scheduledStorageSync,
   syncHistoricalDataKiosk,
   syncHistoricalDataReports,
-  syncSettlementFees
+  syncSettlementFees,
+  syncProductImages,
+  syncAdsData,
+  scheduledAdsSync
 } from "./functions";
 export type {
   SyncFeesEvent,
   SyncHistoricalDataKioskEvent,
   SyncHistoricalDataReportsEvent,
   SyncSettlementFeesEvent,
+  SyncProductImagesEvent,
+  SyncAdsEvent,
   InngestEvents
 } from "./client";

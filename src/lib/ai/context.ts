@@ -10,6 +10,23 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+export interface AdsBreakdown {
+  sponsoredProducts: number;      // SP campaigns
+  sponsoredBrands: number;        // SB campaigns
+  sponsoredBrandsVideo: number;   // SBV campaigns
+  sponsoredDisplay: number;       // SD campaigns
+  total: number;
+  // Sales from ads (attributed)
+  sponsoredProductsSales?: number;
+  sponsoredBrandsSales?: number;
+  sponsoredBrandsVideoSales?: number;
+  sponsoredDisplaySales?: number;
+  totalSales?: number;
+  // Calculated metrics
+  acos?: number;  // (total spend / total sales) * 100
+  roas?: number;  // total sales / total spend
+}
+
 export interface PeriodMetrics {
   label: string;
   startDate: string;
@@ -23,6 +40,8 @@ export interface PeriodMetrics {
   margin: number;
   adSpend: number;
   acos: number;
+  // Amazon Ads breakdown from Advertising API
+  adsBreakdown?: AdsBreakdown;
 }
 
 export interface ProductSummary {
@@ -81,6 +100,13 @@ export interface UserContext {
     thisMonth: FeeBreakdown;
     lastMonth: FeeBreakdown;
   };
+  // Amazon Advertising data (from Advertising API)
+  adsData: {
+    thisMonth: AdsBreakdown | undefined;
+    lastMonth: AdsBreakdown | undefined;
+    last7Days: AdsBreakdown | undefined;
+    last30Days: AdsBreakdown | undefined;
+  };
   topProducts: ProductSummary[];
   todaySoldProducts: SoldProduct[];
   yesterdaySoldProducts: SoldProduct[];
@@ -135,6 +161,80 @@ async function getUserRefreshToken(userId: string): Promise<string | null> {
     .eq('is_active', true)
     .single();
   return data?.refresh_token || null;
+}
+
+// Get Amazon Ads breakdown for a period from ads_daily_metrics table
+async function getAdsBreakdownForPeriod(
+  userId: string,
+  startDate: Date,
+  endDate: Date
+): Promise<AdsBreakdown | undefined> {
+  const startDateStr = startDate.toISOString().split('T')[0];
+  const endDateStr = endDate.toISOString().split('T')[0];
+
+  const { data: adsData } = await supabase
+    .from('ads_daily_metrics')
+    .select(`
+      sp_spend, sb_spend, sbv_spend, sd_spend, total_spend,
+      sp_sales, sb_sales, sbv_sales, sd_sales, total_sales,
+      acos, roas
+    `)
+    .eq('user_id', userId)
+    .gte('date', startDateStr)
+    .lte('date', endDateStr);
+
+  if (!adsData || adsData.length === 0) {
+    return undefined;
+  }
+
+  // Aggregate all days
+  const aggregated = adsData.reduce((acc, day) => {
+    acc.sponsoredProducts += day.sp_spend || 0;
+    acc.sponsoredBrands += day.sb_spend || 0;
+    acc.sponsoredBrandsVideo += day.sbv_spend || 0;
+    acc.sponsoredDisplay += day.sd_spend || 0;
+    acc.total += day.total_spend || 0;
+    acc.sponsoredProductsSales += day.sp_sales || 0;
+    acc.sponsoredBrandsSales += day.sb_sales || 0;
+    acc.sponsoredBrandsVideoSales += day.sbv_sales || 0;
+    acc.sponsoredDisplaySales += day.sd_sales || 0;
+    acc.totalSales += day.total_sales || 0;
+    return acc;
+  }, {
+    sponsoredProducts: 0,
+    sponsoredBrands: 0,
+    sponsoredBrandsVideo: 0,
+    sponsoredDisplay: 0,
+    total: 0,
+    sponsoredProductsSales: 0,
+    sponsoredBrandsSales: 0,
+    sponsoredBrandsVideoSales: 0,
+    sponsoredDisplaySales: 0,
+    totalSales: 0,
+  });
+
+  // Calculate ACOS and ROAS
+  const acos = aggregated.totalSales > 0
+    ? (aggregated.total / aggregated.totalSales) * 100
+    : 0;
+  const roas = aggregated.total > 0
+    ? aggregated.totalSales / aggregated.total
+    : 0;
+
+  return {
+    sponsoredProducts: Math.round(aggregated.sponsoredProducts * 100) / 100,
+    sponsoredBrands: Math.round(aggregated.sponsoredBrands * 100) / 100,
+    sponsoredBrandsVideo: Math.round(aggregated.sponsoredBrandsVideo * 100) / 100,
+    sponsoredDisplay: Math.round(aggregated.sponsoredDisplay * 100) / 100,
+    total: Math.round(aggregated.total * 100) / 100,
+    sponsoredProductsSales: Math.round(aggregated.sponsoredProductsSales * 100) / 100,
+    sponsoredBrandsSales: Math.round(aggregated.sponsoredBrandsSales * 100) / 100,
+    sponsoredBrandsVideoSales: Math.round(aggregated.sponsoredBrandsVideoSales * 100) / 100,
+    sponsoredDisplaySales: Math.round(aggregated.sponsoredDisplaySales * 100) / 100,
+    totalSales: Math.round(aggregated.totalSales * 100) / 100,
+    acos: Math.round(acos * 10) / 10,
+    roas: Math.round(roas * 100) / 100,
+  };
 }
 
 async function getMetricsForPeriod(
@@ -238,6 +338,9 @@ async function getMetricsForPeriod(
         const margin = totalSales > 0 ? (netProfit / totalSales) * 100 : 0;
         const acos = adSpend > 0 && totalSales > 0 ? (adSpend / totalSales) * 100 : 0;
 
+        // Fetch ads breakdown from Amazon Advertising API data
+        const adsBreakdown = await getAdsBreakdownForPeriod(userId, startDate, endDate);
+
         return {
           label,
           startDate: startDate.toISOString().split('T')[0],
@@ -249,8 +352,9 @@ async function getMetricsForPeriod(
           grossProfit: Math.round(grossProfit * 100) / 100,
           netProfit: Math.round(netProfit * 100) / 100,
           margin: Math.round(margin * 10) / 10,
-          adSpend: Math.round(adSpend * 100) / 100,
-          acos: Math.round(acos * 10) / 10,
+          adSpend: adsBreakdown?.total || Math.round(adSpend * 100) / 100,
+          acos: adsBreakdown?.acos || Math.round(acos * 10) / 10,
+          adsBreakdown,
         };
       }
     } catch (error) {
@@ -334,6 +438,9 @@ async function getMetricsForPeriod(
   const margin = totalSales > 0 ? (netProfit / totalSales) * 100 : 0;
   const acos = adSpend > 0 && totalSales > 0 ? (adSpend / totalSales) * 100 : 0;
 
+  // Fetch ads breakdown from Amazon Advertising API data
+  const adsBreakdown = await getAdsBreakdownForPeriod(userId, startDate, endDate);
+
   return {
     label,
     startDate: startDate.toISOString().split('T')[0],
@@ -345,8 +452,9 @@ async function getMetricsForPeriod(
     grossProfit: Math.round(grossProfit * 100) / 100,
     netProfit: Math.round(netProfit * 100) / 100,
     margin: Math.round(margin * 10) / 10,
-    adSpend: Math.round(adSpend * 100) / 100,
-    acos: Math.round(acos * 10) / 10,
+    adSpend: adsBreakdown?.total || Math.round(adSpend * 100) / 100,
+    acos: adsBreakdown?.acos || Math.round(acos * 10) / 10,
+    adsBreakdown,
   };
 }
 
@@ -448,6 +556,208 @@ export async function getCustomRangeMetrics(
   const refreshToken = await getUserRefreshToken(userId);
 
   return getMetricsForPeriod(userId, startDate, endDate, label, refreshToken || undefined);
+}
+
+// Get metrics for a specific day (e.g., "January 25, 2026")
+export async function getSpecificDayMetrics(
+  userId: string,
+  dateStr: string  // YYYY-MM-DD format
+): Promise<PeriodMetrics> {
+  return getCustomRangeMetrics(userId, dateStr, dateStr);
+}
+
+// Get metrics for a specific week (ISO week number)
+export async function getWeekMetrics(
+  userId: string,
+  weekNumber: number,  // 1-53
+  year: number
+): Promise<PeriodMetrics> {
+  // Calculate the start date of the ISO week
+  // ISO weeks start on Monday
+  const jan4 = new Date(Date.UTC(year, 0, 4)); // Jan 4 is always in week 1
+  const dayOfWeek = jan4.getUTCDay() || 7; // Convert Sunday (0) to 7
+  const firstMonday = new Date(jan4.getTime() - (dayOfWeek - 1) * 24 * 60 * 60 * 1000);
+
+  // Add weeks to get to the target week
+  const weekStart = new Date(firstMonday.getTime() + (weekNumber - 1) * 7 * 24 * 60 * 60 * 1000);
+  const weekEnd = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+
+  const startDateStr = weekStart.toISOString().split('T')[0];
+  const endDateStr = weekEnd.toISOString().split('T')[0];
+
+  const label = `Week ${weekNumber}, ${year}`;
+
+  const refreshToken = await getUserRefreshToken(userId);
+  return getMetricsForPeriod(userId, weekStart, weekEnd, label, refreshToken || undefined);
+}
+
+// Get metrics for "this week" or "last week"
+export async function getRelativeWeekMetrics(
+  userId: string,
+  which: 'this' | 'last'
+): Promise<PeriodMetrics> {
+  const pst = getPSTToday();
+  const today = createPSTMidnight(pst.year, pst.month, pst.day);
+
+  // Find Monday of current week
+  const dayOfWeek = today.getUTCDay() || 7; // Sunday = 7
+  const mondayThisWeek = new Date(today.getTime() - (dayOfWeek - 1) * 24 * 60 * 60 * 1000);
+
+  let weekStart: Date;
+  let weekEnd: Date;
+  let label: string;
+
+  if (which === 'this') {
+    weekStart = mondayThisWeek;
+    weekEnd = today; // Up to today
+    label = 'This Week';
+  } else {
+    weekStart = new Date(mondayThisWeek.getTime() - 7 * 24 * 60 * 60 * 1000);
+    weekEnd = new Date(mondayThisWeek.getTime() - 1 * 24 * 60 * 60 * 1000); // Sunday
+    label = 'Last Week';
+  }
+
+  const refreshToken = await getUserRefreshToken(userId);
+  return getMetricsForPeriod(userId, weekStart, weekEnd, label, refreshToken || undefined);
+}
+
+// Get metrics for a quarter (Q1, Q2, Q3, Q4)
+export async function getQuarterMetrics(
+  userId: string,
+  quarter: 1 | 2 | 3 | 4,
+  year: number
+): Promise<PeriodMetrics> {
+  const quarterMonths: { [key: number]: [number, number] } = {
+    1: [0, 2],   // Jan-Mar (months are 0-indexed)
+    2: [3, 5],   // Apr-Jun
+    3: [6, 8],   // Jul-Sep
+    4: [9, 11],  // Oct-Dec
+  };
+
+  const [startMonth, endMonth] = quarterMonths[quarter];
+  const startDate = new Date(Date.UTC(year, startMonth, 1));
+  const endDate = new Date(Date.UTC(year, endMonth + 1, 0)); // Last day of end month
+
+  const label = `Q${quarter} ${year}`;
+
+  const refreshToken = await getUserRefreshToken(userId);
+  return getMetricsForPeriod(userId, startDate, endDate, label, refreshToken || undefined);
+}
+
+// Get metrics for a full year
+export async function getYearMetrics(
+  userId: string,
+  year: number
+): Promise<PeriodMetrics> {
+  const startDate = new Date(Date.UTC(year, 0, 1));  // Jan 1
+  const endDate = new Date(Date.UTC(year, 11, 31)); // Dec 31
+
+  const label = `Year ${year}`;
+
+  const refreshToken = await getUserRefreshToken(userId);
+  return getMetricsForPeriod(userId, startDate, endDate, label, refreshToken || undefined);
+}
+
+// Get metrics for a specific month
+export async function getMonthMetrics(
+  userId: string,
+  month: number, // 1-12
+  year: number
+): Promise<PeriodMetrics> {
+  const startDate = new Date(Date.UTC(year, month - 1, 1));  // First day of month
+  const endDate = new Date(Date.UTC(year, month, 0)); // Last day of month
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+  const label = `${monthNames[month - 1]} ${year}`;
+
+  const refreshToken = await getUserRefreshToken(userId);
+  return getMetricsForPeriod(userId, startDate, endDate, label, refreshToken || undefined);
+}
+
+// Compare two periods and return comparison data
+export interface PeriodComparison {
+  period1: PeriodMetrics;
+  period2: PeriodMetrics;
+  changes: {
+    sales: { value: number; percent: number; improved: boolean };
+    orders: { value: number; percent: number; improved: boolean };
+    units: { value: number; percent: number; improved: boolean };
+    amazonFees: { value: number; percent: number; improved: boolean };
+    grossProfit: { value: number; percent: number; improved: boolean };
+    netProfit: { value: number; percent: number; improved: boolean };
+    margin: { value: number; percent: number; improved: boolean };
+    adSpend: { value: number; percent: number; improved: boolean };
+    acos: { value: number; percent: number; improved: boolean };
+  };
+  summary: string;
+}
+
+export function comparePeriods(
+  period1: PeriodMetrics,
+  period2: PeriodMetrics
+): PeriodComparison {
+  const calculateChange = (
+    current: number,
+    previous: number,
+    higherIsBetter: boolean = true
+  ) => {
+    const value = current - previous;
+    const percent = previous !== 0 ? (value / previous) * 100 : current > 0 ? 100 : 0;
+    const improved = higherIsBetter ? value > 0 : value < 0;
+    return {
+      value: Math.round(value * 100) / 100,
+      percent: Math.round(percent * 10) / 10,
+      improved,
+    };
+  };
+
+  const changes = {
+    sales: calculateChange(period1.sales, period2.sales, true),
+    orders: calculateChange(period1.orders, period2.orders, true),
+    units: calculateChange(period1.units, period2.units, true),
+    amazonFees: calculateChange(period1.amazonFees, period2.amazonFees, false), // Lower is better
+    grossProfit: calculateChange(period1.grossProfit, period2.grossProfit, true),
+    netProfit: calculateChange(period1.netProfit, period2.netProfit, true),
+    margin: calculateChange(period1.margin, period2.margin, true),
+    adSpend: calculateChange(period1.adSpend, period2.adSpend, false), // Lower is better (efficiency)
+    acos: calculateChange(period1.acos, period2.acos, false), // Lower is better
+  };
+
+  // Generate summary
+  const improvements = Object.values(changes).filter(c => c.improved).length;
+  const declines = Object.values(changes).filter(c => !c.improved).length;
+
+  let summary = `Comparing ${period1.label} vs ${period2.label}: `;
+  if (changes.netProfit.improved) {
+    summary += `Net profit increased by ${changes.netProfit.percent}%. `;
+  } else {
+    summary += `Net profit decreased by ${Math.abs(changes.netProfit.percent)}%. `;
+  }
+
+  if (changes.sales.improved) {
+    summary += `Sales ${changes.sales.percent > 0 ? 'up' : 'same'} ${Math.abs(changes.sales.percent)}%. `;
+  } else {
+    summary += `Sales down ${Math.abs(changes.sales.percent)}%. `;
+  }
+
+  summary += `Overall: ${improvements} metrics improved, ${declines} declined.`;
+
+  return {
+    period1,
+    period2,
+    changes,
+    summary,
+  };
+}
+
+// Helper to compare two time periods by their names
+export async function comparePeriodsAsync(
+  userId: string,
+  period1Metrics: PeriodMetrics,
+  period2Metrics: PeriodMetrics
+): Promise<PeriodComparison> {
+  return comparePeriods(period1Metrics, period2Metrics);
 }
 
 // Get ALL historical data summary for the user
@@ -854,6 +1164,14 @@ export async function getUserContext(userId: string): Promise<UserContext> {
     feeBreakdown: {
       thisMonth: feeBreakdownThisMonth,
       lastMonth: feeBreakdownLastMonth,
+    },
+    // Amazon Ads data is now included in each period's adsBreakdown
+    // Also provide a convenient summary for quick access
+    adsData: {
+      thisMonth: thisMonth.adsBreakdown,
+      lastMonth: lastMonth_metrics.adsBreakdown,
+      last7Days: last7Days.adsBreakdown,
+      last30Days: last30Days.adsBreakdown,
     },
     topProducts,
     todaySoldProducts,

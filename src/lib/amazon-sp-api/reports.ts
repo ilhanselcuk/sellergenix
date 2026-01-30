@@ -660,6 +660,7 @@ export interface OrderFeeBreakdown {
   refundAmount: number        // Refunded to customer
   totalFees: number           // Sum of AMAZON fees only (all fees - reimbursements)
   netProceeds: number         // What seller actually receives
+  refundPostedDate?: string   // Date when refund was posted (for refunds table)
 }
 
 export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<string, OrderFeeBreakdown> {
@@ -701,6 +702,7 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
         refundAmount: 0,
         totalFees: 0,
         netProceeds: 0,
+        refundPostedDate: undefined,
       }
       orderFeesMap.set(key, orderFees)
     }
@@ -815,6 +817,11 @@ export function calculateFeesFromSettlement(rows: ParsedSettlementRow[]): Map<st
 
     // ========== REFUNDS ==========
     else if (transactionType === 'refund' || (amountDesc.includes('refund') && !amountDesc.includes('referral'))) {
+      // Capture the posted date for refund records
+      if (!orderFees.refundPostedDate && (row.postedDate || row.postedDateTime)) {
+        orderFees.refundPostedDate = row.postedDateTime || row.postedDate
+      }
+
       // Refund commission (fee charged when refunding)
       if (amountDesc.includes('commission') || amountDesc.includes('admin')) {
         orderFees.refundCommission += Math.abs(amount)
