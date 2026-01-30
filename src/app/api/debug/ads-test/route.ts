@@ -147,7 +147,7 @@ export async function GET(request: NextRequest) {
     (results.steps as string[]).push(`Testing date range: ${startDateStr} to ${endDateStr} (${daysBack} days)`);
 
     // Step 4: Create report request manually to see raw response
-    // V3 API - Start with MINIMAL columns to ensure it works
+    // V3 API - Try simplest possible request
     const uniqueId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const reportRequestBody = {
       name: `SellerGenix_Debug_${uniqueId}`,
@@ -156,16 +156,17 @@ export async function GET(request: NextRequest) {
       configuration: {
         adProduct: "SPONSORED_PRODUCTS",
         groupBy: ["campaign"],
-        // MINIMAL columns first - V3 API might reject unknown columns
         columns: [
           "campaignId",
           "campaignName",
           "impressions",
           "clicks",
           "cost",
+          "purchases",       // V3 uses "purchases" not "purchases14d"
+          "sales",           // V3 uses "sales" not "sales14d"
         ],
         reportTypeId: "spCampaigns",
-        timeUnit: "DAILY",  // DAILY is better for debugging than SUMMARY
+        timeUnit: "SUMMARY",
         format: "GZIP_JSON",
       },
     };
@@ -211,12 +212,17 @@ export async function GET(request: NextRequest) {
     while (Date.now() - startTime < maxWait) {
       (results.steps as string[]).push(`Polling report status...`);
 
-      const statusResponse = await clientResult.client.get<{
+      const statusResponse = await clientResult.client.request<{
         reportId: string;
         status: string;
         url?: string;
         failureReason?: string;
-      }>(`/reporting/reports/${reportId}`);
+      }>(`/reporting/reports/${reportId}`, {
+        method: "GET",
+        headers: {
+          "Accept": "application/vnd.createasyncreportrequest.v3+json",
+        },
+      });
 
       results.lastStatusResponse = statusResponse;
 
