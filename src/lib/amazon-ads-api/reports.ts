@@ -318,15 +318,21 @@ export async function getAdsMetrics(
     ])
 
     // Process Sponsored Products
+    // NOTE: SP reports use different field names than SB/SD reports
+    // SP: sales14d, purchases14d, unitsSold14d
+    // SB/SD: attributedSales14d, attributedConversions14d, attributedUnitsOrdered14d
     let spSpend = 0, spSales = 0, spImpressions = 0, spClicks = 0, spOrders = 0, spUnits = 0
     if (spResult.status === 'fulfilled' && spResult.value.success && spResult.value.data) {
       for (const row of spResult.value.data) {
         spSpend += row.cost || 0
-        spSales += row.attributedSales14d || 0
+        // SP uses 'sales14d', fallback to 'attributedSales14d' for safety
+        spSales += (row as any).sales14d || row.attributedSales14d || 0
         spImpressions += row.impressions || 0
         spClicks += row.clicks || 0
-        spOrders += row.attributedConversions14d || 0
-        spUnits += row.attributedUnitsOrdered14d || 0
+        // SP uses 'purchases14d', fallback to 'attributedConversions14d'
+        spOrders += (row as any).purchases14d || row.attributedConversions14d || 0
+        // SP uses 'unitsSold14d', fallback to 'attributedUnitsOrdered14d'
+        spUnits += (row as any).unitsSold14d || row.attributedUnitsOrdered14d || 0
       }
     }
 
