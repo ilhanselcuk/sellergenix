@@ -1757,6 +1757,7 @@ export const syncAdsData = inngest.createFunction(
           }
 
           console.log(`✅ [Ads Sync] Chunk ${chunk.chunkIndex}: Saved to DB - $${m.totalSpend.toFixed(2)} spend, ${m.acos.toFixed(1)}% ACOS`);
+          (results.dailyRecordsSaved as number)++;
           return { success: true, spend: m.totalSpend, sales: m.totalSales };
         } catch (error: any) {
           console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex} exception:`, error.message);

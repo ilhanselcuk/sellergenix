@@ -404,7 +404,7 @@ export async function getAdsMetrics(
     }
 
     // Process Sponsored Products - V3 uses 'sales' and 'purchases' (no 14d suffix)
-    let spSpend = 0, spSales = 0, spImpressions = 0, spClicks = 0, spOrders = 0
+    let spSpend = 0, spSales = 0, spImpressions = 0, spClicks = 0, spOrders = 0, spUnits = 0
     if (spResult.status === 'fulfilled' && spResult.value.success && spResult.value.data) {
       for (const row of spResult.value.data) {
         spSpend += row.cost || 0
@@ -414,11 +414,13 @@ export async function getAdsMetrics(
         spClicks += row.clicks || 0
         // V3 uses 'purchases', fallback to legacy names
         spOrders += (row as any).purchases || (row as any).purchases14d || row.attributedConversions14d || 0
+        // V3 doesn't have unitsSold at campaign level, use purchases as proxy
+        spUnits += (row as any).purchases || (row as any).purchases14d || row.attributedConversions14d || 0
       }
     }
 
     // Process Sponsored Brands - V3 format
-    let sbSpend = 0, sbSales = 0, sbImpressions = 0, sbClicks = 0, sbOrders = 0
+    let sbSpend = 0, sbSales = 0, sbImpressions = 0, sbClicks = 0, sbOrders = 0, sbUnits = 0
     if (sbResult.status === 'fulfilled' && sbResult.value.success && sbResult.value.data) {
       for (const row of sbResult.value.data) {
         sbSpend += row.cost || 0
@@ -426,11 +428,12 @@ export async function getAdsMetrics(
         sbImpressions += row.impressions || 0
         sbClicks += row.clicks || 0
         sbOrders += (row as any).purchases || row.attributedConversions14d || 0
+        sbUnits += (row as any).purchases || row.attributedConversions14d || 0
       }
     }
 
     // Process Sponsored Display - V3 format
-    let sdSpend = 0, sdSales = 0, sdImpressions = 0, sdClicks = 0, sdOrders = 0
+    let sdSpend = 0, sdSales = 0, sdImpressions = 0, sdClicks = 0, sdOrders = 0, sdUnits = 0
     if (sdResult.status === 'fulfilled' && sdResult.value.success && sdResult.value.data) {
       for (const row of sdResult.value.data) {
         sdSpend += row.cost || 0
@@ -438,6 +441,7 @@ export async function getAdsMetrics(
         sdImpressions += row.impressions || 0
         sdClicks += row.clicks || 0
         sdOrders += (row as any).purchases || row.attributedConversions14d || 0
+        sdUnits += (row as any).purchases || row.attributedConversions14d || 0
       }
     }
 
