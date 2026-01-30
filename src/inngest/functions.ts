@@ -1685,14 +1685,20 @@ export const syncAdsData = inngest.createFunction(
     });
 
     // Step 2: Process each chunk - SP/SB/SD reports with daily granularity
+    console.log(`📊 [Ads Sync] About to process ${chunks.length} chunks`);
+
     for (const chunk of chunks) {
       // Step 2a: Fetch SP (Sponsored Products) daily data
       await step.run(`sp-chunk-${chunk.chunkIndex}`, async () => {
         try {
           console.log(`📊 [Ads Sync] Processing chunk ${chunk.chunkIndex}: ${chunk.startDate} to ${chunk.endDate}`);
+          console.log(`📊 [Ads Sync] ENV CHECK: AMAZON_ADS_CLIENT_ID=${process.env.AMAZON_ADS_CLIENT_ID ? 'SET (' + process.env.AMAZON_ADS_CLIENT_ID.substring(0, 10) + '...)' : 'MISSING!'}`);
+          console.log(`📊 [Ads Sync] ENV CHECK: AMAZON_ADS_CLIENT_SECRET=${process.env.AMAZON_ADS_CLIENT_SECRET ? 'SET' : 'MISSING!'}`);
 
           const { createAdsClient, getAdsMetrics } = await import("@/lib/amazon-ads-api");
+          console.log(`📊 [Ads Sync] Imported createAdsClient, calling...`);
           const clientResult = await createAdsClient(refreshToken, profileId, countryCode);
+          console.log(`📊 [Ads Sync] createAdsClient returned: success=${clientResult.success}, error=${clientResult.error || 'none'}`);
 
           if (!clientResult.success || !clientResult.client) {
             console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex}: Client creation failed - ${clientResult.error || 'Unknown error'}`);
