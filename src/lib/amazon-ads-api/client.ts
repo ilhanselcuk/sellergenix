@@ -10,7 +10,7 @@
  * - Far East (JP, AU, SG): https://advertising-api-fe.amazon.com
  */
 
-import { refreshAdsAccessToken } from './auth'
+import { refreshAdsAccessToken, getAdsClientId } from './auth'
 import { AdsProfile, AdsApiResponse } from './types'
 
 // ============================================
@@ -97,9 +97,17 @@ export class AmazonAdsClient {
   ): Promise<AdsApiResponse<T>> {
     const url = `${this.getBaseUrl()}${endpoint}`
 
+    const clientId = getAdsClientId()
+    if (!clientId) {
+      return {
+        success: false,
+        error: 'Missing AMAZON_ADS_CLIENT_ID environment variable',
+      }
+    }
+
     const headers: Record<string, string> = {
       'Authorization': `Bearer ${this.accessToken}`,
-      'Amazon-Advertising-API-ClientId': process.env.AMAZON_ADS_CLIENT_ID!,
+      'Amazon-Advertising-API-ClientId': clientId,
       'Content-Type': 'application/json',
       ...((options.headers as Record<string, string>) || {}),
     }
@@ -226,11 +234,19 @@ export async function getAdsProfiles(
   accessToken: string
 ): Promise<AdsApiResponse<AdsProfile[]>> {
   try {
+    const clientId = getAdsClientId()
+    if (!clientId) {
+      return {
+        success: false,
+        error: 'Missing AMAZON_ADS_CLIENT_ID environment variable',
+      }
+    }
+
     const response = await fetch(`${API_BASE_URLS.na}/v2/profiles`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'Amazon-Advertising-API-ClientId': process.env.AMAZON_ADS_CLIENT_ID!,
+        'Amazon-Advertising-API-ClientId': clientId,
         'Content-Type': 'application/json',
       },
     })

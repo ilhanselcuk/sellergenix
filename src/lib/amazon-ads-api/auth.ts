@@ -19,11 +19,30 @@ import { AdsTokenResponse } from './types'
 // CONFIGURATION
 // ============================================
 
-const ADS_CLIENT_ID = process.env.AMAZON_ADS_CLIENT_ID!
-const ADS_CLIENT_SECRET = process.env.AMAZON_ADS_CLIENT_SECRET!
-const ADS_REDIRECT_URI = process.env.NODE_ENV === 'production'
-  ? process.env.AMAZON_ADS_REDIRECT_URI!
-  : process.env.AMAZON_ADS_REDIRECT_URI_DEV!
+// IMPORTANT: Read env vars dynamically at runtime, not at module load time
+// This ensures they work in serverless/Inngest worker contexts
+export function getAdsClientId() {
+  const clientId = process.env.AMAZON_ADS_CLIENT_ID
+  if (!clientId) {
+    console.error('[Ads Auth] AMAZON_ADS_CLIENT_ID not set!')
+  }
+  return clientId || ''
+}
+
+function getAdsClientSecret() {
+  const clientSecret = process.env.AMAZON_ADS_CLIENT_SECRET
+  if (!clientSecret) {
+    console.error('[Ads Auth] AMAZON_ADS_CLIENT_SECRET not set!')
+  }
+  return clientSecret || ''
+}
+
+function getAdsRedirectUri() {
+  const uri = process.env.NODE_ENV === 'production'
+    ? process.env.AMAZON_ADS_REDIRECT_URI
+    : process.env.AMAZON_ADS_REDIRECT_URI_DEV
+  return uri || ''
+}
 
 // Amazon OAuth endpoints
 const AMAZON_AUTH_URL = 'https://www.amazon.com/ap/oa'
@@ -46,10 +65,10 @@ const ADS_SCOPE = 'advertising::campaign_management'
  */
 export function getAdsAuthorizationUrl(state: string): string {
   const params = new URLSearchParams({
-    client_id: ADS_CLIENT_ID,
+    client_id: getAdsClientId(),
     scope: ADS_SCOPE,
     response_type: 'code',
-    redirect_uri: ADS_REDIRECT_URI,
+    redirect_uri: getAdsRedirectUri(),
     state: state,
   })
 
@@ -70,6 +89,12 @@ export async function exchangeCodeForTokens(
   code: string
 ): Promise<{ success: boolean; tokens?: AdsTokenResponse; error?: string }> {
   try {
+    const clientId = getAdsClientId()
+    const clientSecret = getAdsClientSecret()
+    const redirectUri = getAdsRedirectUri()
+
+    console.log('[Ads Auth] Exchanging code for tokens...', { clientId: clientId ? 'SET' : 'MISSING' })
+
     const response = await fetch(AMAZON_TOKEN_URL, {
       method: 'POST',
       headers: {
@@ -78,9 +103,9 @@ export async function exchangeCodeForTokens(
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code: code,
-        client_id: ADS_CLIENT_ID,
-        client_secret: ADS_CLIENT_SECRET,
-        redirect_uri: ADS_REDIRECT_URI,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
       }).toString(),
     })
 
@@ -120,6 +145,21 @@ export async function refreshAdsAccessToken(
   refreshToken: string
 ): Promise<{ success: boolean; tokens?: AdsTokenResponse; error?: string }> {
   try {
+    const clientId = getAdsClientId()
+    const clientSecret = getAdsClientSecret()
+
+    console.log('[Ads Auth] Refreshing token...', {
+      clientId: clientId ? 'SET' : 'MISSING',
+      clientSecret: clientSecret ? 'SET' : 'MISSING'
+    })
+
+    if (!clientId || !clientSecret) {
+      return {
+        success: false,
+        error: 'Missing AMAZON_ADS_CLIENT_ID or AMAZON_ADS_CLIENT_SECRET environment variables'
+      }
+    }
+
     const response = await fetch(AMAZON_TOKEN_URL, {
       method: 'POST',
       headers: {
@@ -128,8 +168,8 @@ export async function refreshAdsAccessToken(
       body: new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
-        client_id: ADS_CLIENT_ID,
-        client_secret: ADS_CLIENT_SECRET,
+        client_id: clientId,
+        client_secret: clientSecret,
       }).toString(),
     })
 

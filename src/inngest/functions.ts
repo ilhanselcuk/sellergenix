@@ -1689,55 +1689,72 @@ export const syncAdsData = inngest.createFunction(
       // Step 2a: Fetch SP (Sponsored Products) daily data
       await step.run(`sp-chunk-${chunk.chunkIndex}`, async () => {
         try {
+          console.log(`📊 [Ads Sync] Processing chunk ${chunk.chunkIndex}: ${chunk.startDate} to ${chunk.endDate}`);
+
           const { createAdsClient, getAdsMetrics } = await import("@/lib/amazon-ads-api");
           const clientResult = await createAdsClient(refreshToken, profileId, countryCode);
+
           if (!clientResult.success || !clientResult.client) {
-            return { success: false, error: "Client creation failed" };
+            console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex}: Client creation failed - ${clientResult.error || 'Unknown error'}`);
+            return { success: false, error: clientResult.error || "Client creation failed" };
           }
+
+          console.log(`✅ [Ads Sync] Chunk ${chunk.chunkIndex}: Client created, fetching metrics...`);
 
           // Get aggregated metrics for this chunk (we'll store by date range)
           const metricsResult = await getAdsMetrics(clientResult.client, chunk.startDate, chunk.endDate);
 
-          if (metricsResult.success && metricsResult.data) {
-            const m = metricsResult.data;
-
-            // Upsert daily metrics (using startDate as key for this chunk)
-            const { error } = await supabase
-              .from("ads_daily_metrics")
-              .upsert({
-                user_id: userId,
-                profile_id: profileId,
-                date: chunk.startDate,
-                date_end: chunk.endDate,
-                total_spend: m.totalSpend,
-                sp_spend: m.spSpend,
-                sb_spend: m.sbSpend,
-                sd_spend: m.sdSpend,
-                sbv_spend: 0, // SB Video tracked separately if available
-                total_sales: m.totalSales,
-                sp_sales: m.spSales,
-                sb_sales: m.sbSales,
-                sd_sales: m.sdSales,
-                impressions: m.impressions,
-                clicks: m.clicks,
-                orders: m.orders,
-                units: m.units,
-                acos: m.acos,
-                roas: m.roas,
-                ctr: m.ctr,
-                cpc: m.cpc,
-                cvr: m.cvr,
-                updated_at: new Date().toISOString(),
-              }, { onConflict: "user_id,profile_id,date" });
-
-            if (!error) {
-              console.log(`✅ [Ads Sync] Chunk ${chunk.chunkIndex}: $${m.totalSpend.toFixed(2)} spend, ${m.acos.toFixed(1)}% ACOS`);
-            }
-            return { success: true };
+          if (!metricsResult.success) {
+            console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex}: Metrics fetch failed - ${metricsResult.error || 'Unknown error'}`);
+            return { success: false, error: metricsResult.error || "Metrics fetch failed" };
           }
-          return { success: false };
+
+          if (!metricsResult.data) {
+            console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex}: No data returned from metrics`);
+            return { success: false, error: "No data returned" };
+          }
+
+          const m = metricsResult.data;
+          console.log(`📈 [Ads Sync] Chunk ${chunk.chunkIndex}: Got metrics - spend=$${m.totalSpend.toFixed(2)}, sales=$${m.totalSales.toFixed(2)}`);
+
+          // Upsert daily metrics (using startDate as key for this chunk)
+          const { error: upsertError } = await supabase
+            .from("ads_daily_metrics")
+            .upsert({
+              user_id: userId,
+              profile_id: profileId,
+              date: chunk.startDate,
+              date_end: chunk.endDate,
+              total_spend: m.totalSpend,
+              sp_spend: m.spSpend,
+              sb_spend: m.sbSpend,
+              sd_spend: m.sdSpend,
+              sbv_spend: 0, // SB Video tracked separately if available
+              total_sales: m.totalSales,
+              sp_sales: m.spSales,
+              sb_sales: m.sbSales,
+              sd_sales: m.sdSales,
+              impressions: m.impressions,
+              clicks: m.clicks,
+              orders: m.orders,
+              units: m.units,
+              acos: m.acos,
+              roas: m.roas,
+              ctr: m.ctr,
+              cpc: m.cpc,
+              cvr: m.cvr,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: "user_id,profile_id,date" });
+
+          if (upsertError) {
+            console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex}: DB upsert failed - ${upsertError.message}`);
+            return { success: false, error: upsertError.message };
+          }
+
+          console.log(`✅ [Ads Sync] Chunk ${chunk.chunkIndex}: Saved to DB - $${m.totalSpend.toFixed(2)} spend, ${m.acos.toFixed(1)}% ACOS`);
+          return { success: true, spend: m.totalSpend, sales: m.totalSales };
         } catch (error: any) {
-          console.error(`[Ads Sync] Chunk ${chunk.chunkIndex} error:`, error.message);
+          console.error(`❌ [Ads Sync] Chunk ${chunk.chunkIndex} exception:`, error.message);
           return { success: false, error: error.message };
         }
       });
