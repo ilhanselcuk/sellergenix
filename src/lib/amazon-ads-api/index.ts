@@ -47,6 +47,7 @@ export {
   getSdCampaignReport,
   formatDateForAds,
   getAdsDateRange,
+  chunkDateRange,  // Helper for splitting date ranges (max 30 days per Amazon API)
   // ASIN-level reports (for Products table ad spend)
   getSpAsinReport,
   getAsinAdsMetrics,

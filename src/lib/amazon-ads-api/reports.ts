@@ -669,6 +669,50 @@ export async function getDailyAdsMetrics(
 // ============================================
 
 /**
+ * CRITICAL: Amazon Ads API V3 has a 31-day maximum per report request.
+ * Exceeding this limit causes reports to stay in PENDING forever (no error returned).
+ *
+ * For multi-month data, you MUST chunk requests into ≤30 day segments.
+ */
+const MAX_REPORT_DAYS = 30  // Use 30 to be safe (limit is 31)
+
+/**
+ * Split a date range into chunks of max 30 days each
+ * Required because Amazon Ads API V3 has a 31-day hard limit per report
+ */
+export function chunkDateRange(
+  startDate: string,
+  endDate: string,
+  maxDays: number = MAX_REPORT_DAYS
+): Array<{ startDate: string; endDate: string }> {
+  const chunks: Array<{ startDate: string; endDate: string }> = []
+
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+
+  let chunkStart = new Date(start)
+
+  while (chunkStart < end) {
+    const chunkEnd = new Date(chunkStart)
+    chunkEnd.setDate(chunkEnd.getDate() + maxDays - 1)
+
+    // Don't exceed the overall end date
+    const actualEnd = chunkEnd > end ? end : chunkEnd
+
+    chunks.push({
+      startDate: chunkStart.toISOString().split('T')[0],
+      endDate: actualEnd.toISOString().split('T')[0],
+    })
+
+    // Move to next chunk
+    chunkStart = new Date(actualEnd)
+    chunkStart.setDate(chunkStart.getDate() + 1)
+  }
+
+  return chunks
+}
+
+/**
  * Format date as YYYY-MM-DD for API
  */
 export function formatDateForAds(date: Date): string {
@@ -886,6 +930,9 @@ export async function getAsinAdsMetrics(
 /**
  * Get DAILY ASIN-level advertising metrics for a date range
  * Returns per-ASIN, per-day ad spend, sales, ACOS, ROAS, etc.
+ *
+ * IMPORTANT: Amazon Ads API V3 has a 31-day hard limit per report.
+ * This function automatically chunks requests exceeding 30 days.
  */
 export async function getDailyAsinAdsMetrics(
   client: AmazonAdsClient,
@@ -895,42 +942,65 @@ export async function getDailyAsinAdsMetrics(
   try {
     console.log(`[Ads Reports] Fetching DAILY ASIN-level metrics for ${startDate} to ${endDate}`)
 
-    // Get ASIN-level report with DAILY granularity
-    const result = await getSpAsinReport(client, startDate, endDate, 'DAILY')
+    // Check if date range exceeds 30 days - if so, chunk it
+    const chunks = chunkDateRange(startDate, endDate, 30)
+    console.log(`[Ads Reports] Date range split into ${chunks.length} chunk(s)`)
 
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error }
+    const allMetrics: DailyAsinAdsMetrics[] = []
+
+    // Process each chunk sequentially (to avoid rate limits)
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]
+      console.log(`[Ads Reports] Processing chunk ${i + 1}/${chunks.length}: ${chunk.startDate} to ${chunk.endDate}`)
+
+      // Get ASIN-level report with DAILY granularity for this chunk
+      const result = await getSpAsinReport(client, chunk.startDate, chunk.endDate, 'DAILY')
+
+      if (!result.success || !result.data) {
+        console.error(`[Ads Reports] Chunk ${i + 1} failed:`, result.error)
+        // Continue with other chunks even if one fails
+        continue
+      }
+
+      console.log(`[Ads Reports] Chunk ${i + 1} returned ${result.data.length} rows`)
+
+      // Convert to DailyAsinAdsMetrics format
+      const chunkMetrics: DailyAsinAdsMetrics[] = result.data
+        .filter(row => row.date)  // Only include rows with date
+        .map(row => {
+          const spend = row.cost || 0
+          const sales = row.sales14d || 0
+          const impressions = row.impressions || 0
+          const clicks = row.clicks || 0
+          const orders = row.purchases14d || 0
+
+          return {
+            date: row.date!,
+            asin: row.advertisedAsin,
+            sku: row.advertisedSku,
+            spend,
+            sales,
+            impressions,
+            clicks,
+            orders,
+            acos: sales > 0 ? (spend / sales) * 100 : 0,
+            roas: spend > 0 ? sales / spend : 0,
+            ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+            cpc: clicks > 0 ? spend / clicks : 0,
+          }
+        })
+
+      allMetrics.push(...chunkMetrics)
+
+      // Small delay between chunks to respect rate limits
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
     }
 
-    // Convert to DailyAsinAdsMetrics format
-    const metrics: DailyAsinAdsMetrics[] = result.data
-      .filter(row => row.date)  // Only include rows with date
-      .map(row => {
-        const spend = row.cost || 0
-        const sales = row.sales14d || 0
-        const impressions = row.impressions || 0
-        const clicks = row.clicks || 0
-        const orders = row.purchases14d || 0
+    console.log(`[Ads Reports] DAILY ASIN-level metrics: ${allMetrics.length} total rows from ${chunks.length} chunk(s)`)
 
-        return {
-          date: row.date!,
-          asin: row.advertisedAsin,
-          sku: row.advertisedSku,
-          spend,
-          sales,
-          impressions,
-          clicks,
-          orders,
-          acos: sales > 0 ? (spend / sales) * 100 : 0,
-          roas: spend > 0 ? sales / spend : 0,
-          ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
-          cpc: clicks > 0 ? spend / clicks : 0,
-        }
-      })
-
-    console.log(`[Ads Reports] DAILY ASIN-level metrics: ${metrics.length} rows`)
-
-    return { success: true, data: metrics }
+    return { success: true, data: allMetrics }
   } catch (error) {
     console.error('[Ads Reports] Get daily ASIN metrics error:', error)
     return {

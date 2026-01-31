@@ -702,18 +702,119 @@ Allowed values: (sales14d, purchases14d, cost, impressions, clicks...)"
 
 **KRİTİK LİMİT:** Amazon Ads API tek bir report request'te **MAKSİMUM 31 GÜN** veri döndürür.
 
+**⚠️ EN PİS AMAZON DAVRANIŞI:** 31 günü aşarsan:
+- API hata DÖNMEZ
+- Report oluşturulmuş gibi görünür
+- Ama **PENDING'de SONSUZA KADAR takılır** (COMPLETED olmaz!)
+- Seni delirtir (debug etmesi çok zor)
+
 ```typescript
-// ❌ YANLIŞ - 60 gün istersen hata veya eksik veri alırsın!
+// ❌ YANLIŞ - 60 gün istersen PENDING'de takılırsın!
 const reportRequestBody = {
   startDate: "2025-12-01",
   endDate: "2026-01-30",  // 60 gün - ÇALIŞMAZ!
   ...
 }
 
-// ✅ DOĞRU - 31 günlük chunk'lara böl
-const chunk1 = { startDate: "2025-12-01", endDate: "2025-12-31" }  // 31 gün
-const chunk2 = { startDate: "2026-01-01", endDate: "2026-01-30" }  // 30 gün
+// ✅ DOĞRU - 30 günlük chunk'lara böl
+const chunk1 = { startDate: "2025-12-01", endDate: "2025-12-30" }  // 30 gün
+const chunk2 = { startDate: "2025-12-31", endDate: "2026-01-29" }  // 30 gün
+const chunk3 = { startDate: "2026-01-30", endDate: "2026-01-30" }  // 1 gün
 ```
+
+**Chunking Helper (reports.ts):**
+```typescript
+import { chunkDateRange } from '@/lib/amazon-ads-api'
+
+const chunks = chunkDateRange('2025-12-01', '2026-01-30', 30)
+// chunks = [
+//   { startDate: '2025-12-01', endDate: '2025-12-30' },
+//   { startDate: '2025-12-31', endDate: '2026-01-29' },
+//   { startDate: '2026-01-30', endDate: '2026-01-30' }
+// ]
+```
+
+---
+
+#### 🎯 ASIN-LEVEL RAPOR KURALLARI (spAdvertisedProduct)
+
+**ASIN bazlı reklam verisi için `spAdvertisedProduct` report type kullanılır.**
+
+**❌ YAPILMAMASI GEREKENLER:**
+
+1. **groupBy KULLANMA!**
+   ```typescript
+   // ❌ YANLIŞ - groupBy varsa rapor sonsuz PENDING veya 0 row döner
+   configuration: {
+     groupBy: ['advertiser'],  // YANLIŞ!
+     reportTypeId: 'spAdvertisedProduct',
+   }
+
+   // ✅ DOĞRU - spAdvertisedProduct zaten ASIN kırılımı, groupBy gerekmiyor
+   configuration: {
+     // NO groupBy!
+     reportTypeId: 'spAdvertisedProduct',
+   }
+   ```
+
+2. **31 günü aşma!** (yukarıdaki chunking kuralı geçerli)
+
+3. **Yanlış column isimleri kullanma!**
+   ```typescript
+   // ❌ YANLIŞ
+   columns: ['purchases', 'sales']  // 400 hatası verir
+
+   // ✅ DOĞRU
+   columns: ['purchases14d', 'sales14d']  // V3 API için 14d suffix zorunlu
+   ```
+
+**✅ ALTIN STANDART ASIN REQUEST:**
+```typescript
+{
+  "name": "SellerGenix_ASIN_1706700000000",
+  "startDate": "2026-01-01",
+  "endDate": "2026-01-30",  // MAX 30 gün!
+  "configuration": {
+    "adProduct": "SPONSORED_PRODUCTS",
+    // ❌ groupBy YOK!
+    "reportTypeId": "spAdvertisedProduct",
+    "timeUnit": "DAILY",
+    "format": "GZIP_JSON",
+    "columns": [
+      "date",
+      "advertisedAsin",
+      "advertisedSku",
+      "impressions",
+      "clicks",
+      "cost",
+      "purchases14d",
+      "sales14d"
+    ]
+  }
+}
+```
+
+**📁 İlgili Dosyalar:**
+- `/src/lib/amazon-ads-api/reports.ts` → `getDailyAsinAdsMetrics()` (auto-chunking var)
+- `/src/app/api/debug/sync-asin-ads/route.ts` → Debug endpoint
+- `/supabase/migrations/010_ads_asin_metrics.sql` → `ads_asin_daily_metrics` tablosu
+
+---
+
+#### ✅ HIZLI CHECKLIST (Her ASIN Sync İçin)
+
+- [ ] date range ≤ 30 gün (veya chunking kullan)
+- [ ] `spAdvertisedProduct` reportTypeId
+- [ ] ❌ groupBy YOK
+- [ ] columns: `purchases14d`, `sales14d` (14d suffix)
+- [ ] format: `GZIP_JSON`
+- [ ] timeUnit: `DAILY` (date column'ı eklemeyi unutma)
+- [ ] Polling max 2-3 dk, sonra hata döndür
+
+**Bunlardan biri bozulursa:**
+- PENDING'de takılır
+- 0 row döner
+- Timeout olur
 
 #### 📅 HISTORICAL DATA LOOKBACK LİMİTLERİ
 
