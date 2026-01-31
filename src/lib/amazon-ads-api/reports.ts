@@ -153,9 +153,9 @@ export async function getReportStatus(
 /**
  * Download report data from URL - handles GZIP decompression
  */
-export async function downloadReport(
+export async function downloadReport<T = SpCampaignReportRow[]>(
   url: string
-): Promise<AdsApiResponse<SpCampaignReportRow[]>> {
+): Promise<AdsApiResponse<T>> {
   try {
     console.log(`[Ads Reports] Downloading report from URL: ${url.substring(0, 100)}...`)
     const response = await fetch(url)
@@ -212,7 +212,7 @@ export async function downloadReport(
       console.log(`[Ads Reports] First row sample:`, JSON.stringify(data[0]).substring(0, 500))
     }
 
-    return { success: true, data }
+    return { success: true, data: data as T }
   } catch (error) {
     console.error('[Ads Reports] Download error:', error)
     return {
@@ -820,12 +820,12 @@ export async function getSpAsinReport(
 
   // Download and return data
   console.log(`[SP ASIN Report] Downloading from URL...`)
-  const downloadResult = await downloadReport(statusResult.data.url)
+  const downloadResult = await downloadReport<SpAdvertisedProductReportRow[]>(statusResult.data.url)
   console.log(`[SP ASIN Report] Download result: success=${downloadResult.success}, rows=${downloadResult.data?.length || 0}`)
   if (downloadResult.data && downloadResult.data.length > 0) {
     console.log(`[SP ASIN Report] Sample row:`, JSON.stringify(downloadResult.data[0]))
   }
-  return downloadResult as AdsApiResponse<SpAdvertisedProductReportRow[]>
+  return downloadResult
 }
 
 /**
