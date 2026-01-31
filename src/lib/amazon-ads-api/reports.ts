@@ -757,11 +757,9 @@ async function createAsinReport(
     endDate: request.endDate,
     configuration: {
       adProduct: 'SPONSORED_PRODUCTS',
-      // spAdvertisedProduct report requires groupBy: ['advertiser']
-      // The report still returns ASIN-level data via advertisedAsin column
-      groupBy: ['advertiser'],
+      // NO groupBy for spAdvertisedProduct - the reportTypeId itself gives ASIN-level data
       columns: request.columns || SP_ADVERTISED_PRODUCT_METRICS,
-      reportTypeId: 'spAdvertisedProduct',  // ASIN-level report type
+      reportTypeId: 'spAdvertisedProduct',
       timeUnit: request.timeUnit,
       format: 'GZIP_JSON',
     },
