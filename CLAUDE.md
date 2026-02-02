@@ -8,6 +8,84 @@
 
 **⚠️ BU BÖLÜM EN ÖNCELİKLİ KURALLARI İÇERİR - SAKIN ATLAMA!**
 
+---
+
+### 🔴🔴🔴 SON OTURUM DURUMU (2 Şubat 2026) 🔴🔴🔴
+
+**Son Güncelleme:** 2 Şubat 2026
+**Konu:** ASIN-Level Amazon Ads Data Sync Düzeltmesi
+
+#### ✅ YAPILAN İŞLER:
+
+**1. groupBy Hatası Düzeltildi (commit c3275b5)**
+- **Dosya:** `/src/lib/amazon-ads-api/reports.ts`
+- **Sorun:** `spAdvertisedProduct` report type için `groupBy: ['advertiser']` kullanılıyordu - BU YANLIŞ!
+- **Çözüm:** groupBy tamamen kaldırıldı. `spAdvertisedProduct` zaten ASIN kırılımı veriyor.
+- **Sonuç:** Report artık PENDING'de takılmıyor
+
+**2. 31 Gün Chunking Eklendi (commit 9479e61)**
+- **Dosya:** `/src/lib/amazon-ads-api/reports.ts`
+- **Sorun:** Amazon Ads V3 API tek report'ta MAX 31 gün destekliyor. Aşarsan report sonsuza kadar PENDING kalıyor (hata bile dönmüyor!)
+- **Çözüm:** `chunkDateRange()` helper fonksiyonu eklendi, `getDailyAsinAdsMetrics()` otomatik chunking yapıyor
+- **Sonuç:** 60 gün istesen bile 30'ar günlük 2 chunk'a bölüyor
+
+#### ⏳ TEST EDİLMESİ GEREKEN:
+
+Dashboard'da F12 → Console'da şu kodu çalıştır:
+```javascript
+// 🎯 ASIN Ads Sync Test (7 gün)
+fetch('/api/debug/sync-asin-ads?days=7', { method: 'POST' })
+  .then(r => r.json())
+  .then(d => {
+    console.log('📊 ASIN Ads Sonuç:', d)
+    if (d.success) {
+      console.log('✅ Toplam kayıt:', d.stats?.totalRecords)
+      console.log('📦 Unique ASIN sayısı:', d.stats?.uniqueAsins)
+      console.log('💰 Toplam harcama:', d.stats?.totalSpend)
+    }
+  })
+```
+
+**Beklenen Sonuç:**
+- `totalRecords > 0` olmalı (önce 0 idi)
+- `uniqueAsins` listesi dolu olmalı
+- `ads_asin_daily_metrics` tablosu dolmalı
+
+#### 📋 KONTROL LİSTESİ:
+
+- [x] groupBy kaldırıldı (spAdvertisedProduct için YANLIŞ)
+- [x] 31-gün chunking eklendi (MAX_REPORT_DAYS = 30)
+- [x] chunkDateRange() helper fonksiyonu eklendi ve export edildi
+- [x] V3 API kuralları CLAUDE.md'ye eklendi
+- [ ] **BEKLEYEN:** Kullanıcı test edecek (yukarıdaki console komutu ile)
+- [ ] **BEKLEYEN:** ASIN verisinin dashboard'da görünmesi
+
+#### 🔗 İLGİLİ KOMİTLER:
+```
+c3275b5 - fix: Remove incorrect groupBy from spAdvertisedProduct report
+9479e61 - feat: Add 31-day chunking for Amazon Ads ASIN reports
+```
+
+#### ⚠️ ÖNEMLİ NOTLAR (Bir Sonraki Claude İçin):
+
+1. **Amazon Ads V3 ASIN Report Kuralları:**
+   - `reportTypeId: 'spAdvertisedProduct'` zaten ASIN kırılımı veriyor
+   - **groupBy KULLANMA** - sadece kampanya raporlarında kullanılır
+   - MAX 31 gün per request (aşarsan PENDING'de kalır, hata dönmez!)
+   - Column isimleri: `purchases14d`, `sales14d` (14d suffix zorunlu)
+
+2. **Chunking Mantığı:**
+   - 60 gün istersen → 2 chunk (0-30, 31-60)
+   - Her chunk için ayrı report oluşturulur
+   - Chunk'lar arasında 1 saniye bekleniyor (rate limit)
+
+3. **Veri Stratejisi:**
+   - Yeni müşteri: Geçmiş 30 gün çekilir
+   - Günlük: O günün verisi çekilir ve eklenir
+   - Yıllar sonra bile: Günlük eklenen veriler sayesinde 5+ yıllık data olabilir
+
+---
+
 #### 1️⃣ DİL KURALI
 - **Kullanıcı ile HER ZAMAN TÜRKÇE konuş!**
 - Kod dosyalarındaki UI metinleri İngilizce olmalı
@@ -97,6 +175,17 @@ fetch('/api/debug/cleanup-service-fees').then(r => r.json()).then(d => console.l
 
 // 🗑️ Service Fees Cleanup (gerçek silme)
 fetch('/api/debug/cleanup-service-fees', { method: 'POST' }).then(r => r.json()).then(d => console.log('🗑️ Cleaned:', d))
+
+// 🎯 ASIN-Level Ads Sync (7 gün - ÖNEMLİ: 31 günü geçme!)
+fetch('/api/debug/sync-asin-ads?days=7', { method: 'POST' })
+  .then(r => r.json())
+  .then(d => {
+    console.log('📊 ASIN Ads:', d)
+    if (d.success) console.log('✅ Kayıt:', d.stats?.totalRecords, '| ASIN:', d.stats?.uniqueAsins)
+  })
+
+// 📈 ASIN Ads Durumu Kontrol
+fetch('/api/debug/sync-asin-ads').then(r => r.json()).then(d => console.log('📊 ASIN Ads Status:', d))
 
 // 🚀 Inngest Settlement Sync (24 ay - background)
 fetch('/api/inngest', {
